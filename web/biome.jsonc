@@ -1,8 +1,20 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "files": {
-    // The GeoJSON the pipeline exports is data, not source.
-    "includes": ["**", "!public/data"]
+  // Skip what `.gitignore` does: the build and the data the pipeline exports.
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+    "root": ".."
+  },
+  "linter": {
+    "rules": {
+      "complexity": {
+        // `tsconfig.json`'s `noPropertyAccessFromIndexSignature` wants the opposite:
+        // brackets for a key that's only known to be in an index signature.
+        "useLiteralKeys": "off"
+      }
+    }
   },
   "formatter": {
     "indentStyle": "space",

@@ -9,12 +9,14 @@
   <body>
     <div id="map"></div>
     <form id="controls">
-      <label>Station <input name="station" value="H04" size="6" /></label>
+      <h1>Subway sheds with QueensLink</h1>
+      <p>From <strong id="station-name">…</strong> in the weekday morning peak.
+        Click a station to change it; orange ones are new with QueensLink.</p>
       <fieldset>
         <legend>Show</legend>
-        <label><input type="radio" name="view" value="baseline" /> Today</label>
-        <label><input type="radio" name="view" value="queenslink" checked /> QueensLink</label>
-        <label><input type="radio" name="view" value="saved" /> Minutes saved</label>
+        <label><input type="radio" name="view" value="baseline" /> Minutes without QueensLink</label>
+        <label><input type="radio" name="view" value="queenslink" checked /> Minutes with QueensLink</label>
+        <label><input type="radio" name="view" value="saved" /> Minutes saved by QueensLink</label>
       </fieldset>
     </form>
     <script type="module" src="/src/main.ts"></script>

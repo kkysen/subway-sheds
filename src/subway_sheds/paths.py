@@ -7,6 +7,9 @@ CACHE = ROOT / ".cache"
 
 OSM_PBF = CACHE / "nyc.osm.pbf"
 
+# NYC's land, from `nyc-subway-isochrones`, to keep the grid out of the water.
+SHORELINE = CACHE / "nyc-shoreline.json"
+
 # The QueensLink scenario feed, committed unpacked so its repairs are commits.
 QUEENSLINK_FEED = ROOT / "gtfs" / "queenslink"
 
