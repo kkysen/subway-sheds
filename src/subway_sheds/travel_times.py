@@ -85,3 +85,16 @@ def from_stations(
 
 def output_path(scenario: Scenario, station: str) -> Path:
     return paths.TRAVEL_TIMES / str(scenario) / f"{station}.parquet"
+
+
+def cells_geojson(station: str) -> str:
+    """
+    Each grid cell either scenario reaches from `station`, as a square with both travel times.
+    """
+    cells = grid(gtfs.stations(Scenario.QUEENSLINK.gtfs)).to_crs(METRIC_CRS)
+    for scenario in Scenario:
+        times = pd.read_parquet(output_path(scenario, station)).set_index("cell")["minutes"]
+        cells[str(scenario)] = cells["id"].map(times)
+    cells = cells[cells[[str(s) for s in Scenario]].notna().any(axis=1)]
+    cells.geometry = cells.geometry.buffer(GRID_SPACING_M / 2, cap_style="square")
+    return cells.to_crs(WGS84).to_json(drop_id=True, to_wgs84=True)

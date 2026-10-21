@@ -1,0 +1,19 @@
+{
+  "name": "subway-sheds-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsrs --noEmit && vite build",
+    "check": "tsrs --noEmit && biome check"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.2",
+    "@types/geojson": "^7946.0.16",
+    "tsrs": "0.18.0-ts7.1.0-dev.20260929",
+    "vite": "^8.3.5"
+  },
+  "dependencies": {
+    "maplibre-gl": "^6.15.0"
+  }
+}

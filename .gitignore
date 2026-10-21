@@ -10,6 +10,11 @@ __pycache__
 # Downloaded Sources and Pipeline Output
 .cache/
 
+# Web
+node_modules/
+web/dist/
+web/public/data/
+
 # IDEs
 .idea/
 .vscode/

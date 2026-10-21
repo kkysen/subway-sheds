@@ -1,0 +1,27 @@
+html,
+body,
+#map {
+  margin: 0;
+  height: 100%;
+}
+
+#controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 8px 12px;
+  background: white;
+  border-radius: 4px;
+  font:
+    14px system-ui,
+    sans-serif;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+}
+
+#controls fieldset {
+  display: flex;
+  flex-direction: column;
+  margin: 8px 0 0;
+  border: none;
+  padding: 0;
+}

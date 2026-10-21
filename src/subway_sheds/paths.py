@@ -14,3 +14,6 @@ QUEENSLINK_SOURCE = ROOT / "B1_MVS.zip"
 GTFS = CACHE / "gtfs"
 
 TRAVEL_TIMES = CACHE / "travel_times"
+
+# What the web page loads; `web/` serves `public/` as is.
+WEB_DATA = ROOT / "web" / "public" / "data"

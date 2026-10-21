@@ -59,3 +59,13 @@ def station(stop_ids: list[str] = typer.Argument(help="Parent station IDs, e.g. 
             group.to_parquet(dest, index=False)
             reached = group["minutes"].notna().sum()
             typer.echo(f"{scenario} {stop_id}: {reached} of {len(group)} cells within reach")
+
+
+@app.command()
+def export(stop_ids: list[str] = typer.Argument(help="Stations already computed.")) -> None:
+    """Write stations' travel times as GeoJSON for the web page."""
+    paths.WEB_DATA.mkdir(parents=True, exist_ok=True)
+    for stop_id in stop_ids:
+        dest = paths.WEB_DATA / f"{stop_id}.geojson"
+        dest.write_text(travel_times.cells_geojson(stop_id))
+        typer.echo(f"wrote {dest.relative_to(paths.ROOT)}")
