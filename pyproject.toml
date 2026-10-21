@@ -1,0 +1,60 @@
+[project]
+name = "subway-sheds"
+version = "0.1.0"
+description = "NYC subway travel-time sheds, with and without QueensLink"
+readme = "README.md"
+requires-python = ">=3.15"
+dependencies = [
+    "duckdb>=2.0.0",
+    "geopandas>=1.2.0",
+    "httpx>=0.28.1",
+    "pyarrow>=26.0.0",
+    "r5py>=1.1.7",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+subway-sheds = "subway_sheds.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pandas-stubs>=3.0.5.260914",
+    "pre-commit>=4.7.0",
+    "pyrefly>=1.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+    "ty>=0.0.90",
+    "types-geopandas>=1.1.4.20261006",
+    "types-shapely>=2.1.0.20260728",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# `typer.Argument()`/`typer.Option()` as parameter defaults is the library's own idiom,
+# not the mutable-default-argument bug B008 exists to catch.
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
+[tool.pyrefly]
+preset = "strict"
+
+[tool.ty.rules]
+blanket-ignore-comment = "warn"
+division-by-zero = "warn"
+missing-override-decorator = "warn"
+missing-type-argument = "warn"
+possibly-missing-attribute = "warn"
+possibly-missing-import = "warn"
+possibly-unresolved-reference = "warn"
+unsupported-dynamic-base = "warn"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,12 @@
+# `java` is what `r5py` runs R5 on; R5 needs 21.
+# `ant` and the JDK build `jpype1` (which `r5py` uses) from source,
+# since it has no wheel for Python 3.15 yet.
+# `node` builds and checks `web/`.
+# `uv` and `pre-commit` are here so that `mise install` is the whole of setup.
+# Python and the Python tools are not: `uv` manages those through `uv.lock`.
+[tools]
+ant = "1.10.18"
+java = "temurin-21.0.12+101.0.LTS"
+node = "26.12.0"
+pre-commit = "4.7.0"
+uv = "0.13.3"

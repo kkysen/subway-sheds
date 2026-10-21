@@ -1,0 +1,15 @@
+# Virtual Environment
+.venv/
+
+# Python Caching
+__pycache__
+
+# Tooling Cache
+.ruff_cache/
+
+# Downloaded Sources and Pipeline Output
+.cache/
+
+# IDEs
+.idea/
+.vscode/
