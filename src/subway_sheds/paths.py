@@ -7,10 +7,10 @@ CACHE = ROOT / ".cache"
 
 OSM_PBF = CACHE / "nyc.osm.pbf"
 
-# The QueensLink scenario feed as given, a zip with its files under `B1_MVS/`.
-QUEENSLINK_SOURCE = ROOT / "B1_MVS.zip"
+# The QueensLink scenario feed, committed unpacked so its repairs are commits.
+QUEENSLINK_FEED = ROOT / "gtfs" / "queenslink"
 
-# Feeds repacked as R5 wants them: flat zips with valid stops.
+# Feeds zipped or downloaded as R5 reads them.
 GTFS = CACHE / "gtfs"
 
 TRAVEL_TIMES = CACHE / "travel_times"

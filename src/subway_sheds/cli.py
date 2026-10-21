@@ -3,12 +3,11 @@ from pathlib import Path
 import httpx
 import typer
 
-from subway_sheds import gtfs, paths, travel_times
+from subway_sheds import gtfs, paths, scenarios, travel_times
 from subway_sheds.scenarios import Scenario
 
 app = typer.Typer(no_args_is_help=True)
 
-MTA_SUBWAY_GTFS_URL = "https://rrgtfsfeeds.s3.amazonaws.com/gtfs_subway.zip"
 # BBBike's New York City extract: the five boroughs and a margin, a fraction of the state's size.
 NYC_OSM_URL = "https://download.bbbike.org/osm/bbbike/NewYork/NewYork.osm.pbf"
 
@@ -26,19 +25,21 @@ def _download(url: str, dest: Path) -> None:
 
 @app.command()
 def fetch(force: bool = typer.Option(False, help="Download again even if already cached.")) -> None:
-    """Download the baseline GTFS and OSM extract, and repack both feeds for R5."""
-    mta = paths.CACHE / "mta_subway.zip"
-    for url, dest in [(MTA_SUBWAY_GTFS_URL, mta), (NYC_OSM_URL, paths.OSM_PBF)]:
+    """Download the MTA feed and streets, and make both scenarios' feeds."""
+    for url, dest in [
+        (scenarios.mta_feed_url(), scenarios.mta_feed()),
+        (NYC_OSM_URL, paths.OSM_PBF),
+    ]:
         if force or not dest.exists():
             typer.echo(f"downloading {url}")
             _download(url, dest)
-
-    for scenario, source in [
-        (Scenario.BASELINE, mta),
-        (Scenario.QUEENSLINK, paths.QUEENSLINK_SOURCE),
-    ]:
-        for repair in gtfs.repack(source, scenario.gtfs):
-            typer.echo(f"{scenario}: repaired {repair}")
+    gtfs.zip_feed(paths.QUEENSLINK_FEED, Scenario.QUEENSLINK.gtfs)
+    gtfs.splice_routes(
+        scenarios.mta_feed(),
+        paths.QUEENSLINK_FEED,
+        set(scenarios.BASELINE_ROUTES_FROM_QUEENSLINK),
+        Scenario.BASELINE.gtfs,
+    )
 
 
 @app.command()
