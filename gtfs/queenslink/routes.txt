@@ -9,7 +9,7 @@ FX,MTA NYCT,FX,Brooklyn F Express,"Trains operate rush hour only between Jamaica
 J,MTA NYCT,J,Nassau St Local,"Trains operate weekdays between Jamaica Center-Parsons/Archer, Queens, and Broad",1,https://www.mta.info/schedules/subway/j-train,8E5C33,FFFFFF
 Z,MTA NYCT,Z,Nassau St Express,"Trains operate weekday rush hours only. During weekday rush hours, J and Z train",1,https://www.mta.info/schedules/subway/j-train,8E5C33,FFFFFF
 L,MTA NYCT,L,14 St-Canarsie Local,"Trains operate between 8 Av, Manhattan, and Canarsie-Rockaway Pkwy, Brooklyn, at",1,https://www.mta.info/schedules/subway/l-train,7C858C,FFFFFF
-M*,MTA NYCT,QL-M,Myrtle Local/QBL Local/Rockaway Local,QueensLink M Scenario,1,thequeenslink.org,FF8319,1
+M*,MTA NYCT,QL-M,Myrtle Local/QBL Local/Rockaway Local,QueensLink M Scenario,1,https://thequeenslink.org,FF8319,1
 G,MTA NYCT,G,Brooklyn-Queens Crosstown,"Trains operate between Court Square, Queens and Church Av, Brooklyn on weekdays,",1,http://web.mta.info/nyct/service/pdf/tgcur.pdf,6CBE45,
 N,MTA NYCT,N,Broadway Local,"Trains operate from Astoria-Ditmars Blvd, Queens, to Coney Island-Stillwell Av,",1,https://www.mta.info/schedules/subway/n-train,F6BC26,000000
 Q,MTA NYCT,Q,Broadway Express,"Trains operate between 96 St (2 Av), Manhattan, and Coney Island-Stillwell Av, B",1,https://www.mta.info/schedules/subway/q-train,F6BC26,000000
