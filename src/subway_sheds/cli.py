@@ -45,6 +45,7 @@ def _get_text(url: str) -> str:
 
     Geofabrik's servers sometimes take minutes to answer even for a few lines,
     most often over IPv6, though another of them, which a retry may reach, answers at once.
+    From CI, though, none of them sometimes answer for minutes.
     """
     # Binding to IPv4's any address is how `httpx` is told to connect over IPv4.
     transport = httpx.HTTPTransport(local_address="0.0.0.0")
@@ -68,8 +69,16 @@ def _fetch_streets(force: bool) -> None:
 
     Only its few-line `state.txt` is downloaded to tell, not the 500 MB extract,
     which is checked against its MD5 and deleted once filtered.
+    If Geofabrik doesn't answer, streets already filtered are kept,
+    since a day or so older streets route the same.
     """
-    latest = _get_text(NEW_YORK_OSM_STATE_URL)
+    try:
+        latest = _get_text(NEW_YORK_OSM_STATE_URL)
+    except httpx.TimeoutException, httpx.ConnectError:
+        if force or not paths.OSM_PBF.exists():
+            raise
+        typer.echo(f"keeping the streets, since {NEW_YORK_OSM_STATE_URL} didn't answer", err=True)
+        return
     if (
         not force
         and paths.OSM_PBF.exists()
