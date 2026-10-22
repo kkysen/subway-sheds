@@ -79,16 +79,31 @@ jobs:
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
 
-      # The downloads, so a flaky server (BBBike's has timed out from here) only has to answer once,
-      # and so the streets don't change under the travel times whenever BBBike updates its extract.
-      # Bump the version to download them again.
+      # The MTA feed and shoreline, which never change.
       - uses: actions/cache@v6.1.0
         with:
           path: |
             .cache/mdb
-            .cache/nyc.osm.pbf
             .cache/nyc-shoreline.json
           key: downloads-v1
+
+      # The streets filtered from Geofabrik's New York State extract, by its OSM data's version,
+      # so the 500 MB extract is downloaded only when Geofabrik has a newer one (daily at most).
+      # An older one is restored otherwise, which `fetch` sees is out of date and replaces.
+      - name: OSM version
+        id: osm
+        run: >-
+          echo "sequence=$(curl -fsS --retry 5
+          https://download.geofabrik.de/north-america/us/new-york-updates/state.txt
+          | sed -n 's/^sequenceNumber=//p')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            .cache/nyc-streets.osm.pbf
+            .cache/nyc-streets.source-state.txt
+          key: streets-${{ steps.osm.outputs.sequence }}
+          restore-keys: streets-
 
       - name: fetch
         run: uv run subway-sheds fetch
@@ -98,8 +113,10 @@ jobs:
         id: travel-times
         with:
           path: .cache/travel_times
-          # With the downloads' version, since they go into it too.
-          key: travel-times-downloads-v1-${{ hashFiles('gtfs/**', 'src/**', 'uv.lock') }}
+          # With the downloads' version and the streets, since they go into it too.
+          key: >-
+            travel-times-downloads-v1-${{
+            hashFiles('gtfs/**', 'src/**', 'uv.lock', '.cache/nyc-streets.osm.pbf') }}
 
       - name: route
         if: steps.travel-times.outputs.cache-hit != 'true'

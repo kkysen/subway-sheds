@@ -5,7 +5,11 @@ ROOT = Path(__file__).resolve().parents[2]
 # Everything downloaded or computed: it's large and reproducible, so it isn't committed.
 CACHE = ROOT / ".cache"
 
-OSM_PBF = CACHE / "nyc.osm.pbf"
+# The streets R5 walks on, filtered from Geofabrik's New York State extract,
+# and the `state.txt` Geofabrik gave for the extract they were filtered from,
+# which names the OSM data's version.
+OSM_PBF = CACHE / "nyc-streets.osm.pbf"
+OSM_SOURCE_STATE = CACHE / "nyc-streets.source-state.txt"
 
 # NYC's land, from `nyc-subway-isochrones`, to keep the grid out of the water.
 SHORELINE = CACHE / "nyc-shoreline.json"

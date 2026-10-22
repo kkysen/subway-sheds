@@ -21,7 +21,11 @@ R5 departs every minute of the weekday morning peak and reports the median trip.
 - **Baseline**: that same MTA feed,
   with the QueensLink feed's Q and 7 in place of its own,
   so that QueensLink is all that differs.
-- **Streets**: BBBike's New York City OpenStreetMap extract.
+- **Streets**: what R5 walks on (streets, sidewalks, footpaths, steps, and platforms)
+  within NYC and a 2 km margin,
+  filtered from Geofabrik's daily New York State OpenStreetMap extract to about 20 MB.
+  `fetch` downloads the 500 MB extract only when Geofabrik's `state.txt` names newer OSM data
+  than the streets were filtered from, checks it against its MD5, and deletes it once filtered.
 - **Land**: `nyc-subway-isochrones`' NYC shoreline, which keeps the grid out of the water.
 
 Travel times are routed from every station to a grid of about 22,000 cells over the city's land,
@@ -35,7 +39,7 @@ so `uv` builds it with the JDK and `ant` from `mise`:
 run `uv` through `mise x --`, or from a shell where `mise` is activated.
 
 ```sh
-uv run subway-sheds fetch    # download the MTA feed, streets, and land, and make both feeds
+uv run subway-sheds fetch    # download the MTA feed, land, and streets, and make both feeds
 uv run subway-sheds route    # route every station, in both scenarios
 uv run subway-sheds export   # for the web page, into `web/public/data/`
 npm --prefix web install
