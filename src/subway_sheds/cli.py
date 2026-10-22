@@ -83,12 +83,7 @@ def fetch(force: bool = typer.Option(False, help="Download again even if already
             _download(url, dest)
     _fetch_streets(force)
     gtfs.zip_feed(paths.QUEENSLINK_FEED, Scenario.QUEENSLINK.gtfs)
-    gtfs.splice_routes(
-        scenarios.mta_feed(),
-        paths.QUEENSLINK_FEED,
-        set(scenarios.BASELINE_ROUTES_FROM_QUEENSLINK),
-        Scenario.BASELINE.gtfs,
-    )
+    gtfs.write_feed(scenarios.baseline_feed(), Scenario.BASELINE.gtfs)
 
 
 @app.command()

@@ -13,14 +13,19 @@ R5 departs every minute of the weekday morning peak and reports the median trip.
 - **QueensLink**: the QueensLink scenario feed, in [`gtfs/queenslink/`](gtfs/queenslink).
   It's MTA's subway feed for 2025-11-02 to 2025-12-07
   (the Mobility Database's [`mdb-516-202511010043`](https://mobilitydatabase.org/feeds/gtfs/mdb-516))
-  with QueensLink's M replacing the M and the Rockaway Park shuttle, and the G changed.
+  with QueensLink's M replacing the M and the Rockaway Park shuttle,
+  and the G run on past Court Sq along the Queens Blvd local to Forest Hills.
+  Its F and M have also swapped tunnels, as they did after that feed,
+  the F via 53 St and the M via 63 St.
   It also assumes Second Avenue Subway Phase 2 is open (the Q to 125 St),
   and runs the 7 on its regular schedule from an older feed,
   rather than this one's, with no regular 7 express during construction.
   It was committed as given, `B1_MVS.zip`, and the repairs R5 needed followed as commits.
-- **Baseline**: that same MTA feed,
-  with the QueensLink feed's Q and 7 in place of its own,
-  so that QueensLink is all that differs.
+- **Baseline**: the QueensLink feed without QueensLink, so that QueensLink is all that differs:
+  its M turned at 63 Dr for Forest Hills-71 Av, as the M runs since the swap,
+  instead of branching off toward the Rockaways,
+  its G cut back to Court Sq,
+  and the Rockaway Park shuttle from MTA's feed.
 - **Streets**: what R5 walks on (streets, sidewalks, footpaths, steps, and platforms)
   within NYC and a 2 km margin,
   filtered from Geofabrik's daily New York State OpenStreetMap extract to about 20 MB.
