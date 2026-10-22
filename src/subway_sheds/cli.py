@@ -20,7 +20,11 @@ SHORELINE_URL = (
 def _download(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.with_name(dest.name + ".partial")
-    with httpx.stream("GET", url, follow_redirects=True, timeout=60) as response:
+    # Retry failing to connect, which BBBike's server sometimes does.
+    with (
+        httpx.Client(transport=httpx.HTTPTransport(retries=5), timeout=60) as client,
+        client.stream("GET", url, follow_redirects=True) as response,
+    ):
         response.raise_for_status()
         with partial.open("wb") as f:
             for chunk in response.iter_bytes():
