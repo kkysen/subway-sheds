@@ -89,3 +89,11 @@ body,
   justify-content: space-between;
   font-size: 11px;
 }
+
+.legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  opacity: 0.6;
+  vertical-align: baseline;
+}

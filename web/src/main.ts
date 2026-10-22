@@ -105,105 +105,108 @@ const travelTimeBands: readonly Band[] = [
 // The minutes routed out to, past which a cell isn't reached.
 const MAX_MINUTES = 90;
 
+// Minutes saved, by as much as the most any station's trip anywhere is shortened, about an hour.
 const savedBands: readonly Band[] = [
   [1, "#deebf7"],
-  [5, "#9ecae1"],
-  [10, "#6baed6"],
-  [15, "#3182bd"],
-  [20, "#08519c"],
+  [5, "#c6dbef"],
+  [10, "#9ecae1"],
+  [15, "#6baed6"],
+  [20, "#4292c6"],
+  [30, "#2171b5"],
+  [45, "#08519c"],
+  [60, "#08306b"],
 ];
 
-// What a cell not reached in a scenario counts as.
-// Only a little past the last minute, so that the edge of what's reached is traced
-// between cells, as edges between bands are, rather than along them.
-const FAR = MAX_MINUTES + 10;
-
-// Minutes saved past which the last band has no end, and which more is counted as,
-// so that edges there are traced between cells too.
-const MOST_SAVED = 25;
+// Places only QueensLink reaches within `MAX_MINUTES`, which there's no saying how much it saves.
+const QUEENSLINK_ONLY_COLOR = "#6a3d9a";
 
 const bands = (view: View): readonly Band[] => (view === "saved" ? savedBands : travelTimeBands);
-const bandsEnd = (view: View): number => (view === "saved" ? MOST_SAVED : MAX_MINUTES);
 
-// The view's value for each cell of the raster, minutes or minutes saved,
-// and which cells it has one for, 1 or 0: the land's, but for minutes saved,
-// only those either scenario reaches. Where a scenario doesn't reach, minutes are `FAR`;
-// a place only QueensLink reaches counts as saving the most.
-function cellValues(
-  grid: Grid,
-  times: Uint8Array,
-  day: Day,
-  view: View,
-): { values: Float64Array; shown: Float64Array } {
+// The colors the view's cells are drawn in, the class of cell each is for being its index.
+const classColors = (view: View): string[] => [
+  ...bands(view).map(([, color]) => color),
+  ...(view === "saved" ? [QUEENSLINK_ONLY_COLOR] : []),
+];
+
+// Cells with nothing to show: off the land, not reached, or, for minutes saved, not saving any.
+const NOTHING = -1;
+
+// The band of `bands` that `value` is in, or `NOTHING` before the first.
+function bandOf(value: number, bands: readonly Band[]): number {
+  let band = NOTHING;
+  bands.forEach(([start], i) => {
+    if (value >= start) {
+      band = i;
+    }
+  });
+  return band;
+}
+
+// Each cell of the raster's class: the index of its color in `classColors`, or `NOTHING`.
+function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8Array {
   const { width, height } = rasterSize(grid);
   const count = grid.cols.length;
   // Each day's times are every cell's in the baseline, then every cell's with QueensLink.
   const start = days.indexOf(day) * 2 * count;
-  const values = new Float64Array(width * height);
-  const shown = new Float64Array(width * height);
-  const minutes = (time: number): number => (time === UNREACHED ? FAR : time);
+  const classes = new Int8Array(width * height).fill(NOTHING);
   grid.cols.forEach((col, i) => {
     const baseline = times[start + i] ?? UNREACHED;
     const queenslink = times[start + count + i] ?? UNREACHED;
     const at = (grid.rows[i] ?? 0) * width + col;
-    shown[at] = view !== "saved" || baseline !== UNREACHED || queenslink !== UNREACHED ? 1 : 0;
-    if (view === "baseline") {
-      values[at] = minutes(baseline);
-    } else if (view === "queenslink") {
-      values[at] = minutes(queenslink);
-    } else {
-      const saved = (baseline === UNREACHED ? Infinity : baseline) - minutes(queenslink);
-      values[at] = Math.min(saved, MOST_SAVED);
+    if (view !== "saved") {
+      const minutes = view === "baseline" ? baseline : queenslink;
+      classes[at] = minutes === UNREACHED ? NOTHING : bandOf(minutes, travelTimeBands);
+    } else if (queenslink !== UNREACHED) {
+      classes[at] =
+        baseline === UNREACHED ? savedBands.length : bandOf(baseline - queenslink, savedBands);
     }
   });
-  // A cell not shown that's next to one shown takes the average of those it's next to,
-  // so that interpolating toward it near the edge doesn't pull the minutes there toward 0.
-  const filled = values.slice();
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      if (shown[row * width + col] === 1) {
-        continue;
-      }
-      let sum = 0;
-      let count = 0;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const y = row + dy;
-          const x = col + dx;
-          if (x >= 0 && x < width && y >= 0 && y < height && shown[y * width + x] === 1) {
-            sum += values[y * width + x] ?? 0;
-            count++;
-          }
-        }
-      }
-      if (count > 0) {
-        filled[row * width + col] = sum / count;
-      }
-    }
-  }
-  return { values: filled, shown };
+  return classes;
 }
 
 // How many times finer than the grid the bands are traced, so that their edges curve
 // rather than turn at each cell.
 const UPSAMPLE = 3;
 
-// `values` at `UPSAMPLE` times the resolution, interpolated between cells' centers.
-function upsample(values: Float64Array, width: number, height: number): Float64Array {
+// How much of a cell's class it is, 1 or 0, for each cell, a little blurred into its neighbors,
+// then interpolated between cells' centers at `UPSAMPLE` times the resolution.
+function membership(classes: Int8Array, which: number, width: number, height: number) {
+  const is = (col: number, row: number): number =>
+    classes[
+      Math.min(Math.max(row, 0), height - 1) * width + Math.min(Math.max(col, 0), width - 1)
+    ] === which
+      ? 1
+      : 0;
+  // Blurred by 1-2-1 across and then up, so that edges round off rather than run cell by cell.
+  const across = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      across[row * width + col] = (is(col - 1, row) + 2 * is(col, row) + is(col + 1, row)) / 4;
+    }
+  }
+  const blurred = new Float32Array(width * height);
+  const at = (col: number, row: number): number =>
+    across[Math.min(Math.max(row, 0), height - 1) * width + col] ?? 0;
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      blurred[row * width + col] = (at(col, row - 1) + 2 * at(col, row) + at(col, row + 1)) / 4;
+    }
+  }
+
   const fineWidth = width * UPSAMPLE;
   const fineHeight = height * UPSAMPLE;
-  const fine = new Float64Array(fineWidth * fineHeight);
+  const fine = new Float32Array(fineWidth * fineHeight);
   // A fine pixel's position in cells, and the cells either side of it, with its weight between.
   const between = (i: number, size: number): [number, number, number] => {
-    const at = Math.min(Math.max((i + 0.5) / UPSAMPLE - 0.5, 0), size - 1);
-    const low = Math.min(Math.floor(at), size - 2);
-    return [Math.max(low, 0), Math.min(low + 1, size - 1), at - Math.max(low, 0)];
+    const position = Math.min(Math.max((i + 0.5) / UPSAMPLE - 0.5, 0), size - 1);
+    const low = Math.min(Math.floor(position), Math.max(size - 2, 0));
+    return [low, Math.min(low + 1, size - 1), position - low];
   };
   for (let y = 0; y < fineHeight; y++) {
     const [y0, y1, ty] = between(y, height);
     for (let x = 0; x < fineWidth; x++) {
       const [x0, x1, tx] = between(x, width);
-      const value = (col: number, row: number): number => values[row * width + col] ?? 0;
+      const value = (col: number, row: number): number => blurred[row * width + col] ?? 0;
       const south = value(x0, y0) * (1 - tx) + value(x1, y0) * tx;
       const north = value(x0, y1) * (1 - tx) + value(x1, y1) * tx;
       fine[y * fineWidth + x] = south * (1 - ty) + north * ty;
@@ -212,40 +215,50 @@ function upsample(values: Float64Array, width: number, height: number): Float64A
   return fine;
 }
 
-// How steeply, in minutes per cell, the bands fall off at the edge of the cells shown,
-// for the edge to be traced along that between them and those not shown,
-// whatever the minutes either side, rather than drawing every band between in a sliver.
-const EDGE = 20;
-
-// The view's bands as smooth shapes, each where its value is from the band's minutes
-// up to the next band's, among the cells shown. Bands next to each other
-// are traced along the same edge, so they meet without gaps or overlaps.
-function bandFeatures(
-  grid: Grid,
-  { values, shown }: { values: Float64Array; shown: Float64Array },
-  view: View,
-): GeoJSON.FeatureCollection {
+// The view's classes as smooth shapes. Each fine pixel goes to the class it's most of,
+// which nothing to show competes for too, so that the shapes meet without gaps or overlaps,
+// and a band is drawn only where some cell is in it.
+function bandFeatures(grid: Grid, classes: Int8Array, view: View): GeoJSON.FeatureCollection {
   const { width, height } = rasterSize(grid);
-  const fine = upsample(values, width, height);
-  const fineShown = upsample(shown, width, height);
   const fineWidth = width * UPSAMPLE;
-  const contour = contours()
-    .size([fineWidth, height * UPSAMPLE])
-    .thresholds([0]);
-  // A fine pixel's value is at its center, a half pixel in from its corner.
+  const fineHeight = height * UPSAMPLE;
+  const colors = classColors(view);
+  const present = [NOTHING, ...colors.keys()].filter((which) => classes.includes(which));
+
+  // Each fine pixel's most and next most class, and how much of each it is.
+  const most = new Int8Array(fineWidth * fineHeight).fill(NOTHING);
+  const mostAmount = new Float32Array(fineWidth * fineHeight).fill(-1);
+  const nextAmount = new Float32Array(fineWidth * fineHeight).fill(-1);
+  for (const which of present) {
+    membership(classes, which, width, height).forEach((amount, j) => {
+      if (amount > (mostAmount[j] ?? -1)) {
+        nextAmount[j] = mostAmount[j] ?? -1;
+        mostAmount[j] = amount;
+        most[j] = which;
+      } else if (amount > (nextAmount[j] ?? -1)) {
+        nextAmount[j] = amount;
+      }
+    });
+  }
+
+  const contour = contours().size([fineWidth, fineHeight]).thresholds([0]);
+  // A fine pixel's amount is at its center, a half pixel in from its corner.
   const toMap = ([x, y]: number[]): [number, number] =>
     toLngLat(
       grid.x0 + ((x ?? 0) / UPSAMPLE - 0.5) * grid.spacing,
       grid.y0 + ((y ?? 0) / UPSAMPLE - 0.5) * grid.spacing,
     );
-  const viewBands = bands(view);
-  const features: GeoJSON.Feature[] = viewBands.map(([low, color], i) => {
-    const high = viewBands[i + 1]?.[0] ?? bandsEnd(view);
-    const inBand = fine.map((value, j) =>
-      Math.min(value - low, high - value, ((fineShown[j] ?? 0) - 0.5) * EDGE),
+  const features: GeoJSON.Feature[] = [];
+  for (const which of present) {
+    if (which === NOTHING) {
+      continue;
+    }
+    // By how much the pixel is more of this class than any other, or less than the most.
+    const ahead = Array.from(membership(classes, which, width, height), (amount, j) =>
+      most[j] === which ? amount - (nextAmount[j] ?? 0) : amount - (mostAmount[j] ?? 0),
     );
-    const [shape] = contour(Array.from(inBand));
-    return {
+    const [shape] = contour(ahead);
+    features.push({
       type: "Feature",
       geometry: {
         type: "MultiPolygon",
@@ -253,9 +266,9 @@ function bandFeatures(
           polygon.map((ring) => ring.map(toMap)),
         ),
       },
-      properties: { color },
-    };
-  });
+      properties: { color: colors[which] },
+    });
+  }
   return { type: "FeatureCollection", features };
 }
 
@@ -274,13 +287,21 @@ function legendItems(view: View): HTMLElement[] {
     labels.append(label);
   }
   const last = document.createElement("span");
-  last.textContent = view === "saved" ? "" : String(MAX_MINUTES);
+  last.textContent = view === "saved" ? "+" : String(MAX_MINUTES);
   labels.append(last);
   const note = document.createElement("p");
-  note.textContent =
-    view === "saved"
-      ? "Minutes saved; places only QueensLink reaches are darkest."
-      : "Minutes from the station, walking at the end.";
+  if (view === "saved") {
+    const swatch = document.createElement("span");
+    swatch.className = "legend-swatch";
+    swatch.style.background = QUEENSLINK_ONLY_COLOR;
+    note.append(
+      "Minutes saved. ",
+      swatch,
+      ` Reached only with QueensLink, within ${MAX_MINUTES} minutes.`,
+    );
+  } else {
+    note.textContent = "Minutes from the station, walking at the end.";
+  }
   return [bar, labels, note];
 }
 
@@ -357,7 +378,7 @@ function drawCells(): void {
       ?.setData(
         bandFeatures(
           grid,
-          cellValues(grid, selectedTimes, currentDay(), currentView()),
+          cellClasses(grid, selectedTimes, currentDay(), currentView()),
           currentView(),
         ),
       );
