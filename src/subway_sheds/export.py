@@ -6,7 +6,7 @@ import shutil
 import numpy as np
 import pandas as pd
 
-from subway_sheds import gtfs, paths, travel_times
+from subway_sheds import gtfs, lines, paths, travel_times
 from subway_sheds.grid import SPACING, Grid
 from subway_sheds.scenarios import Scenario
 
@@ -21,6 +21,8 @@ def write(grid: Grid) -> None:
     - `grid.json`: the Web Mercator center of cell (0, 0), the spacing,
       and each cell's column and row.
     - `stations.json`: each station in either scenario, and which.
+    - `lines.json`: GeoJSON of the lines between stations, each with its color
+      and which scenarios run on it.
     - `times/{station}.bin`: minutes from the station to each cell, one byte each,
       every cell's in the baseline and then every cell's with QueensLink.
     """
@@ -59,6 +61,27 @@ def write(grid: Grid) -> None:
             scenarios.append(str(scenario))
     (paths.WEB_DATA / "stations.json").write_text(
         json.dumps(list(stations.values()), separators=(",", ":"))
+    )
+
+    segments: dict[tuple[str, tuple[str, str]], dict[str, object]] = {}
+    for scenario in Scenario:
+        for segment in lines.segments(gtfs.read_feed(scenario.gtfs)):
+            feature = segments.setdefault(
+                (segment.color, segment.stations),
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": segment.coordinates},
+                    "properties": {"color": segment.color},
+                },
+            )
+            properties = feature["properties"]
+            assert isinstance(properties, dict)
+            properties[str(scenario)] = True
+    (paths.WEB_DATA / "lines.json").write_text(
+        json.dumps(
+            {"type": "FeatureCollection", "features": list(segments.values())},
+            separators=(",", ":"),
+        )
     )
 
     cell_count = len(grid.cols)
