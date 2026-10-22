@@ -267,3 +267,55 @@ def weekday_service_date(feed_path: Path) -> datetime.date:
     ]
     # `max` keeps the first of equals, so the earliest date with full service.
     return max(wednesdays, key=trip_count)
+
+
+def match_frequencies(feed: Feed, route: str, like: Feed, like_route: str, station: str) -> None:
+    """
+    Run `route`'s trips, which run on frequencies, as often as `like_route` runs in `like`,
+    hour by hour, as each passes `station` (a parent station) in each direction.
+
+    A trip matches `like_route`'s trips on the same platform of `station`
+    whose service ID contains its own, e.g. `Weekday` matches `BFA19GEN-M063-Weekday-00`.
+    """
+    like_parents = _parents(like)
+    like_services = {
+        t["trip_id"]: t["service_id"] for t in like.rows["trips.txt"] if t["route_id"] == like_route
+    }
+    # Each platform's and service's departures in each hour.
+    departures: Counter[tuple[str, str, int]] = Counter()
+    for st in like.rows["stop_times.txt"]:
+        if st["trip_id"] in like_services and like_parents[st["stop_id"]] == station:
+            hour = _seconds(st["departure_time"]) // 3600
+            departures[st["stop_id"], like_services[st["trip_id"]], hour] += 1
+
+    parents = _parents(feed)
+    services = {t["trip_id"]: t["service_id"] for t in feed.rows["trips.txt"]}
+    frequencies = feed.rows["frequencies.txt"]
+    matched: list[dict[str, str]] = []
+    for trip, rows in _trip_stop_times(feed, route).items():
+        old = [f for f in frequencies if f["trip_id"] == trip]
+        if not old:
+            continue
+        at = next(st for st in rows if parents[st["stop_id"]] == station)
+        # How long after the trip starts it passes `station`.
+        offset = _seconds(at["departure_time"]) - _seconds(rows[0]["departure_time"])
+        hourly: Counter[int] = Counter()
+        for (platform, service, hour), count in departures.items():
+            if platform == at["stop_id"] and services[trip] in service:
+                hourly[hour] += count
+        if not hourly:
+            raise ValueError(f"no {like_route} trips like {trip} at {at['stop_id']}")
+        matched += [
+            old[0]
+            | {
+                # Not before the service day starts, which trips passing just after it miss.
+                "start_time": _time(max(hour * 3600 - offset, 0)),
+                "end_time": _time((hour + 1) * 3600 - offset),
+                # Rounded up, so that no more than `count` fit in the hour.
+                "headway_secs": str(-(-3600 // count)),
+            }
+            for hour, count in sorted(hourly.items())
+            if (hour + 1) * 3600 > offset
+        ]
+    trips = {f["trip_id"] for f in matched}
+    feed.rows["frequencies.txt"] = [f for f in frequencies if f["trip_id"] not in trips] + matched

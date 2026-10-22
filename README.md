@@ -24,6 +24,7 @@ R5 departs every minute of the weekday morning peak and reports the median trip.
 - **Baseline**: the QueensLink feed without QueensLink, so that QueensLink is all that differs:
   its M turned at 63 Dr for Forest Hills-71 Av, as the M runs since the swap,
   instead of branching off toward the Rockaways,
+  and running as often as MTA's M, hour by hour, rather than QueensLink's a little more often,
   its G cut back to Court Sq,
   and the Rockaway Park shuttle from MTA's feed.
 - **Streets**: what R5 walks on (streets, sidewalks, footpaths, steps, and platforms)

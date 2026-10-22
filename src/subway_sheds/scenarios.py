@@ -18,6 +18,10 @@ QUEENSLINK_M_BRANCH = "G10"
 QUEENSLINK_M_BRANCH_STATION = "V01"
 M_TERMINAL = ["G09", "G08"]
 M_TERMINAL_LIKE = "R"
+# QueensLink's M runs a little more often than the M does, so the baseline's runs as often as
+# MTA's M, hour by hour, at Myrtle-Wyckoff Avs, which both serve.
+M = "M"
+M_FREQUENCY_STATION = "M08"
 ROCKAWAY_PARK_SHUTTLE = "H"
 # QueensLink also runs the G past Court Sq along the Queens Blvd local to Forest Hills;
 # the baseline cuts it back to the stations it serves in MTA's feed.
@@ -57,6 +61,7 @@ def baseline_feed() -> gtfs.Feed:
         M_TERMINAL,
         M_TERMINAL_LIKE,
     )
+    gtfs.match_frequencies(feed, QUEENSLINK_M, mta, M, M_FREQUENCY_STATION)
     mta_parents = {s["stop_id"]: s["parent_station"] or s["stop_id"] for s in mta.rows["stops.txt"]}
     mta_g_trips = {t["trip_id"] for t in mta.rows["trips.txt"] if t["route_id"] == G}
     mta_g_stations = {

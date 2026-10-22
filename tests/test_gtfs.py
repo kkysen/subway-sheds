@@ -220,3 +220,52 @@ def test_keep_route_stations(tmp_path: Path) -> None:
         ("in", "S2S"),
         ("in", "S1S"),
     ]
+
+
+def test_match_frequencies(tmp_path: Path) -> None:
+    # M passes S2 2 minutes after starting, on a frequency of every 5 minutes all morning;
+    # MTA's M passes it 3 times from 7 to 8 and 4 times from 8 to 9, on weekdays.
+    feed = gtfs.read_feed(
+        _feed_dir(
+            tmp_path / "feed",
+            {
+                "stops.txt": BRANCH_STOPS,
+                "trips.txt": "route_id,service_id,trip_id\nM,Weekday,out\n",
+                "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+                "out,00:00:00,00:00:00,S1N,1\nout,00:02:00,00:02:00,S2N,2\n",
+                "frequencies.txt": "trip_id,start_time,end_time,headway_secs,exact_times\n"
+                "out,06:00:00,10:00:00,300,1\n",
+            },
+        )
+    )
+    like = gtfs.read_feed(
+        _feed_dir(
+            tmp_path / "like",
+            {
+                "stops.txt": BRANCH_STOPS,
+                "trips.txt": "route_id,service_id,trip_id\n"
+                + "".join(f"M,X-Weekday-00,m{i}\n" for i in range(7))
+                + "M,X-Saturday-00,sat\n",
+                "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+                + "".join(
+                    f"m{i},{t},{t},S2N,1\n"
+                    for i, t in enumerate(
+                        ["07:00:00", "07:20:00", "07:40:00"]
+                        + ["08:00:00", "08:15:00", "08:30:00", "08:45:00"]
+                    )
+                )
+                + "sat,07:10:00,07:10:00,S2N,1\n",
+            },
+        )
+    )
+    gtfs.match_frequencies(feed, "M", like, "M", "S2")
+    dest = tmp_path / "matched.zip"
+    gtfs.write_feed(feed, dest)
+
+    assert [
+        (f["start_time"], f["end_time"], f["headway_secs"], f["exact_times"])
+        for f in _read(dest, "frequencies.txt")
+    ] == [
+        ("06:58:00", "07:58:00", "1200", "1"),
+        ("07:58:00", "08:58:00", "900", "1"),
+    ]
