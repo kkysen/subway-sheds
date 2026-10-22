@@ -115,23 +115,23 @@ function cellFeatures(
   return { type: "FeatureCollection", features };
 }
 
-// Travel time in minutes, in the 10-minute bands the original subway isochrones used.
+// Travel time in minutes, in the 10-minute bands the original subway isochrones used,
+// each band's color from its lowest minute on.
+const travelTimeBands: readonly (readonly [number, string])[] = [
+  [0, "#1a9850"],
+  [10, "#66bd63"],
+  [20, "#a6d96a"],
+  [30, "#fee08b"],
+  [40, "#fdae61"],
+  [60, "#f46d43"],
+  [75, "#d73027"],
+];
+
 const travelTimeColor = (scenario: Scenario): ExpressionSpecification => [
   "step",
   ["get", scenario],
-  "#1a9850",
-  10,
-  "#66bd63",
-  20,
-  "#a6d96a",
-  30,
-  "#fee08b",
-  40,
-  "#fdae61",
-  60,
-  "#f46d43",
-  75,
-  "#d73027",
+  travelTimeBands[0]?.[1] ?? "",
+  ...travelTimeBands.slice(1).flat(),
 ];
 
 // Cells only QueensLink reaches have no baseline time; count them as saving the most.
@@ -141,16 +141,18 @@ const minutesSaved: ExpressionSpecification = [
   ["coalesce", ["get", "queenslink"], 999],
 ];
 
+// Minutes saved, and the color at each, between which colors blend.
+const savedStops: readonly (readonly [number, string])[] = [
+  [1, "#deebf7"],
+  [10, "#6baed6"],
+  [20, "#08519c"],
+];
+
 const savedColor: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   minutesSaved,
-  1,
-  "#deebf7",
-  10,
-  "#6baed6",
-  20,
-  "#08519c",
+  ...savedStops.flat(),
 ];
 
 const fillColor = (view: View): ExpressionSpecification =>
@@ -159,6 +161,12 @@ const fillColor = (view: View): ExpressionSpecification =>
 // Only the cells the view has something to show for.
 const filter = (view: View): ExpressionSpecification =>
   view === "saved" ? [">", minutesSaved, 0] : ["has", view];
+
+// The lines of the scenario the view shows, with QueensLink's for what it saves.
+const linesFilter = (view: View): ExpressionSpecification => [
+  "has",
+  view === "saved" ? "queenslink" : view,
+];
 
 function element<T extends Element>(selector: string, type: new () => T): T {
   const found = document.querySelector(selector);
@@ -189,9 +197,10 @@ const map = new MapLibreMap({
 // Listened for before awaiting the data, which the map can finish loading before.
 const loaded = new Promise((resolve) => map.once("load", resolve));
 
-const [grid, stations] = await Promise.all([
+const [grid, stations, lines] = await Promise.all([
   fetchJson<Grid>("grid.json"),
   fetchJson<Station[]>("stations.json"),
+  fetchJson<GeoJSON.FeatureCollection>("lines.json"),
 ]);
 const squares = cellSquares(grid);
 const stationsById = new Map(stations.map((station) => [station.id, station]));
@@ -272,6 +281,19 @@ await loaded;
     firstLabels,
   );
 
+  map.addSource("lines", { type: "geojson", data: lines });
+  map.addLayer({
+    id: "lines",
+    type: "line",
+    source: "lines",
+    filter: linesFilter(view),
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 14, 4],
+    },
+  });
+
   map.addSource("stations", {
     type: "geojson",
     data: {
@@ -328,4 +350,5 @@ controls.addEventListener("change", () => {
   const view = currentView();
   map.setFilter("cells", filter(view));
   map.setPaintProperty("cells", "fill-color", fillColor(view));
+  map.setFilter("lines", linesFilter(view));
 });
