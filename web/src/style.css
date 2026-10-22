@@ -59,3 +59,33 @@ body,
     font-size: 14px;
   }
 }
+
+#legend {
+  margin-top: 8px;
+}
+
+#legend p {
+  margin-top: 4px;
+}
+
+.legend-bands {
+  display: flex;
+  height: 10px;
+}
+
+.legend-bands span {
+  flex: 1;
+  /* As the cells are drawn, at 60% over the map. */
+  opacity: 0.6;
+}
+
+.legend-bar {
+  height: 10px;
+  opacity: 0.6;
+}
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}

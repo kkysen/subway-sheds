@@ -155,6 +155,49 @@ const savedColor: ExpressionSpecification = [
   ...savedStops.flat(),
 ];
 
+// The minutes routed out to, past which a cell isn't reached.
+const MAX_MINUTES = 90;
+
+function legendItems(view: View): HTMLElement[] {
+  if (view === "saved") {
+    const bar = document.createElement("div");
+    bar.className = "legend-bar";
+    const last = savedStops.at(-1)?.[0] ?? 1;
+    const first = savedStops[0]?.[0] ?? 0;
+    bar.style.background = `linear-gradient(to right, ${savedStops
+      .map(([minutes, color]) => `${color} ${((minutes - first) / (last - first)) * 100}%`)
+      .join(", ")})`;
+    const labels = document.createElement("div");
+    labels.className = "legend-labels";
+    for (const [minutes] of savedStops) {
+      const label = document.createElement("span");
+      label.textContent = minutes === last ? `${minutes}+` : String(minutes);
+      labels.append(label);
+    }
+    const note = document.createElement("p");
+    note.textContent = "Minutes saved; places only QueensLink reaches are darkest.";
+    return [bar, labels, note];
+  }
+  const bar = document.createElement("div");
+  bar.className = "legend-bands";
+  const labels = document.createElement("div");
+  labels.className = "legend-labels";
+  for (const [minutes, color] of travelTimeBands) {
+    const band = document.createElement("span");
+    band.style.background = color;
+    bar.append(band);
+    const label = document.createElement("span");
+    label.textContent = String(minutes);
+    labels.append(label);
+  }
+  const last = document.createElement("span");
+  last.textContent = String(MAX_MINUTES);
+  labels.append(last);
+  const note = document.createElement("p");
+  note.textContent = "Minutes from the station, walking at the end.";
+  return [bar, labels, note];
+}
+
 const fillColor = (view: View): ExpressionSpecification =>
   view === "saved" ? savedColor : travelTimeColor(view);
 
@@ -178,6 +221,13 @@ function element<T extends Element>(selector: string, type: new () => T): T {
 
 const controls = element("#controls", HTMLFormElement);
 const stationName = element("#station-name", HTMLElement);
+const legend = element("#legend", HTMLElement);
+
+function showView(view: View): void {
+  legend.replaceChildren(...legendItems(view));
+}
+
+showView(currentView());
 
 function currentView(): View {
   const value = new FormData(controls).get("view");
@@ -351,4 +401,5 @@ controls.addEventListener("change", () => {
   map.setFilter("cells", filter(view));
   map.setPaintProperty("cells", "fill-color", fillColor(view));
   map.setFilter("lines", linesFilter(view));
+  showView(view);
 });
