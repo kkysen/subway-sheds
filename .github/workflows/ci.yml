@@ -12,15 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      # Java, `ant`, Node, and `uv`, as `mise.toml` pins them.
-      - uses: jdx/mise-action@v5.2.2
-
-      # `uv`'s cache, mostly for `jpype1`, which is built from source for Python 3.15.
-      - uses: actions/cache@v6.1.0
+      # `uv` from `setup-uv` rather than `mise.toml`, since it also caches `uv`'s downloads
+      # and builds between runs, mostly `jpype1`, which is built from source for Python 3.15.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-          restore-keys: uv-${{ runner.os }}-
+          enable-cache: true
+
+      # Java, `ant`, and Node, as `mise.toml` pins them, but not `uv`, which `setup-uv` installed.
+      - uses: jdx/mise-action@v5.2.2
+        env:
+          MISE_DISABLE_TOOLS: uv
 
       - uses: actions/cache@v6.1.0
         with:
@@ -64,14 +65,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - uses: jdx/mise-action@v5.2.2
-
-      # `uv`'s cache, mostly for `jpype1`, which is built from source for Python 3.15.
-      - uses: actions/cache@v6.1.0
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-          restore-keys: uv-${{ runner.os }}-
+          enable-cache: true
+
+      - uses: jdx/mise-action@v5.2.2
+        env:
+          MISE_DISABLE_TOOLS: uv
 
       - uses: actions/cache@v6.1.0
         with:
