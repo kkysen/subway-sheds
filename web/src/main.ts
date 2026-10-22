@@ -4,7 +4,13 @@ import {
   type GeoJSONSource,
   type MapLayerMouseEvent,
   Map as MapLibreMap,
+  setWorkerUrl,
 } from "maplibre-gl";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
+
+// MapLibre loads its worker from a file of its own, which it looks for next to the bundle;
+// importing it with `?url` is what gets Vite to emit it at all.
+setWorkerUrl(workerUrl);
 
 type Scenario = "baseline" | "queenslink";
 type View = Scenario | "saved";
