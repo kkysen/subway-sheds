@@ -2,7 +2,9 @@
 
 import datetime
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import override
 
 import geopandas as gpd
 import pandas as pd
@@ -19,9 +21,28 @@ DEPARTURE_WINDOW = datetime.timedelta(hours=1)
 PERCENTILES = [50]
 MAX_TIME = datetime.timedelta(minutes=90)
 
+
+class _ParallelTravelTimeMatrix(r5py.TravelTimeMatrix):
+    """
+    A `TravelTimeMatrix` that routes its origins on several threads at once.
+
+    `r5py` routes them one at a time, keeping only a few cores busy,
+    though it defines how many threads to use (`NUM_THREADS`, half the cores).
+    Each origin is routed in Java, which `jpype` runs without holding the GIL.
+    """
+
+    @override
+    def _compute(self) -> pd.DataFrame:
+        self._prepare_origins_destinations()
+        self.request.destinations = self.destinations
+        with ThreadPoolExecutor(self.NUM_THREADS) as pool:
+            matrices = list(pool.map(self._travel_times_per_origin, self.origins.id))
+        return pd.concat(matrices, ignore_index=True)
+
+
 # `TravelTimeMatrix` subclasses `GeoDataFrame`, so type checkers check calls to it against
 # pandas' constructor overloads rather than its own `__init__`, which takes keywords for R5.
-_travel_time_matrix: Callable[..., pd.DataFrame] = r5py.TravelTimeMatrix
+_travel_time_matrix: Callable[..., pd.DataFrame] = _ParallelTravelTimeMatrix
 
 
 def output_path(scenario: Scenario) -> Path:
