@@ -15,6 +15,19 @@ jobs:
       # Java, `ant`, Node, and `uv`, as `mise.toml` pins them.
       - uses: jdx/mise-action@v5.2.2
 
+      # `uv`'s cache, mostly for `jpype1`, which is built from source for Python 3.15.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
       - name: ruff format
         run: uv run ruff format --check
 
@@ -53,6 +66,30 @@ jobs:
 
       - uses: jdx/mise-action@v5.2.2
 
+      # `uv`'s cache, mostly for `jpype1`, which is built from source for Python 3.15.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      # The downloads, so a flaky server (BBBike's has timed out from here) only has to answer once,
+      # and so the streets don't change under the travel times whenever BBBike updates its extract.
+      # Bump the version to download them again.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            .cache/mdb
+            .cache/nyc.osm.pbf
+            .cache/nyc-shoreline.json
+          key: downloads-v1
+
       - name: fetch
         run: uv run subway-sheds fetch
 
@@ -61,7 +98,8 @@ jobs:
         id: travel-times
         with:
           path: .cache/travel_times
-          key: travel-times-${{ hashFiles('gtfs/**', 'src/**', 'uv.lock') }}
+          # With the downloads' version, since they go into it too.
+          key: travel-times-downloads-v1-${{ hashFiles('gtfs/**', 'src/**', 'uv.lock') }}
 
       - name: route
         if: steps.travel-times.outputs.cache-hit != 'true'
