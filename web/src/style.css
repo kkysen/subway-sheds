@@ -38,3 +38,24 @@ body,
 #controls p {
   margin: 0;
 }
+
+#controls summary {
+  cursor: pointer;
+}
+
+/* The heading is the summary's only content, so it shares its line with the marker. */
+#controls summary h1 {
+  display: inline;
+}
+
+@media (max-width: 600px) {
+  #controls {
+    max-width: calc(100% - 44px);
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  #controls h1 {
+    font-size: 14px;
+  }
+}
