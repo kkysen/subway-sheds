@@ -1,4 +1,5 @@
 import "maplibre-gl/dist/maplibre-gl.css";
+import { contours } from "d3-contour";
 import {
   type ExpressionSpecification,
   type GeoJSONSource,
@@ -82,58 +83,16 @@ function toLngLat(x: number, y: number): [number, number] {
   return [lng, lat];
 }
 
-// Each cell's square, which is a square because the grid is laid out in Web Mercator.
-function cellSquares(grid: Grid): GeoJSON.Polygon[] {
-  const half = grid.spacing / 2;
-  return grid.cols.map((col, i) => {
-    const x = grid.x0 + col * grid.spacing;
-    const y = grid.y0 + (grid.rows[i] ?? 0) * grid.spacing;
-    return {
-      type: "Polygon",
-      coordinates: [
-        [
-          toLngLat(x - half, y - half),
-          toLngLat(x + half, y - half),
-          toLngLat(x + half, y + half),
-          toLngLat(x - half, y + half),
-          toLngLat(x - half, y - half),
-        ],
-      ],
-    };
-  });
+// The grid as a raster, `width` cells by `height`, cell (0, 0) at its southwest corner.
+function rasterSize(grid: Grid): { width: number; height: number } {
+  return { width: Math.max(...grid.cols) + 1, height: Math.max(...grid.rows) + 1 };
 }
 
-// The cells either scenario reaches on `day`, with each scenario's minutes where it does.
-function cellFeatures(
-  squares: readonly GeoJSON.Polygon[],
-  times: Uint8Array,
-  day: Day,
-): GeoJSON.FeatureCollection {
-  const count = squares.length;
-  // Each day's times are every cell's in the baseline, then every cell's with QueensLink.
-  const start = days.indexOf(day) * 2 * count;
-  const features: GeoJSON.Feature[] = [];
-  squares.forEach((geometry, i) => {
-    const baseline = times[start + i] ?? UNREACHED;
-    const queenslink = times[start + count + i] ?? UNREACHED;
-    if (baseline === UNREACHED && queenslink === UNREACHED) {
-      return;
-    }
-    const properties: Partial<Record<Scenario, number>> = {};
-    if (baseline !== UNREACHED) {
-      properties.baseline = baseline;
-    }
-    if (queenslink !== UNREACHED) {
-      properties.queenslink = queenslink;
-    }
-    features.push({ type: "Feature", geometry, properties });
-  });
-  return { type: "FeatureCollection", features };
-}
+// Each band the view is drawn in, from its minutes up to the next band's, and its color.
+type Band = readonly [number, string];
 
-// Travel time in minutes, in the 10-minute bands the original subway isochrones used,
-// each band's color from its lowest minute on.
-const travelTimeBands: readonly (readonly [number, string])[] = [
+// Travel time in minutes, in the 10-minute bands the original subway isochrones used.
+const travelTimeBands: readonly Band[] = [
   [0, "#1a9850"],
   [10, "#66bd63"],
   [20, "#a6d96a"],
@@ -143,62 +102,170 @@ const travelTimeBands: readonly (readonly [number, string])[] = [
   [75, "#d73027"],
 ];
 
-const travelTimeColor = (scenario: Scenario): ExpressionSpecification => [
-  "step",
-  ["get", scenario],
-  travelTimeBands[0]?.[1] ?? "",
-  ...travelTimeBands.slice(1).flat(),
-];
-
-// Cells only QueensLink reaches have no baseline time; count them as saving the most.
-const minutesSaved: ExpressionSpecification = [
-  "-",
-  ["coalesce", ["get", "baseline"], 999],
-  ["coalesce", ["get", "queenslink"], 999],
-];
-
-// Minutes saved, and the color at each, between which colors blend.
-const savedStops: readonly (readonly [number, string])[] = [
-  [1, "#deebf7"],
-  [10, "#6baed6"],
-  [20, "#08519c"],
-];
-
-const savedColor: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  minutesSaved,
-  ...savedStops.flat(),
-];
-
 // The minutes routed out to, past which a cell isn't reached.
 const MAX_MINUTES = 90;
 
-function legendItems(view: View): HTMLElement[] {
-  if (view === "saved") {
-    const bar = document.createElement("div");
-    bar.className = "legend-bar";
-    const last = savedStops.at(-1)?.[0] ?? 1;
-    const first = savedStops[0]?.[0] ?? 0;
-    bar.style.background = `linear-gradient(to right, ${savedStops
-      .map(([minutes, color]) => `${color} ${((minutes - first) / (last - first)) * 100}%`)
-      .join(", ")})`;
-    const labels = document.createElement("div");
-    labels.className = "legend-labels";
-    for (const [minutes] of savedStops) {
-      const label = document.createElement("span");
-      label.textContent = minutes === last ? `${minutes}+` : String(minutes);
-      labels.append(label);
+const savedBands: readonly Band[] = [
+  [1, "#deebf7"],
+  [5, "#9ecae1"],
+  [10, "#6baed6"],
+  [15, "#3182bd"],
+  [20, "#08519c"],
+];
+
+// What a cell not reached in a scenario counts as.
+// Only a little past the last minute, so that the edge of what's reached is traced
+// between cells, as edges between bands are, rather than along them.
+const FAR = MAX_MINUTES + 10;
+
+// Minutes saved past which the last band has no end, and which more is counted as,
+// so that edges there are traced between cells too.
+const MOST_SAVED = 25;
+
+const bands = (view: View): readonly Band[] => (view === "saved" ? savedBands : travelTimeBands);
+const bandsEnd = (view: View): number => (view === "saved" ? MOST_SAVED : MAX_MINUTES);
+
+// The view's value for each cell of the raster, minutes or minutes saved,
+// and which cells it has one for, 1 or 0: the land's, but for minutes saved,
+// only those either scenario reaches. Where a scenario doesn't reach, minutes are `FAR`;
+// a place only QueensLink reaches counts as saving the most.
+function cellValues(
+  grid: Grid,
+  times: Uint8Array,
+  day: Day,
+  view: View,
+): { values: Float64Array; shown: Float64Array } {
+  const { width, height } = rasterSize(grid);
+  const count = grid.cols.length;
+  // Each day's times are every cell's in the baseline, then every cell's with QueensLink.
+  const start = days.indexOf(day) * 2 * count;
+  const values = new Float64Array(width * height);
+  const shown = new Float64Array(width * height);
+  const minutes = (time: number): number => (time === UNREACHED ? FAR : time);
+  grid.cols.forEach((col, i) => {
+    const baseline = times[start + i] ?? UNREACHED;
+    const queenslink = times[start + count + i] ?? UNREACHED;
+    const at = (grid.rows[i] ?? 0) * width + col;
+    shown[at] = view !== "saved" || baseline !== UNREACHED || queenslink !== UNREACHED ? 1 : 0;
+    if (view === "baseline") {
+      values[at] = minutes(baseline);
+    } else if (view === "queenslink") {
+      values[at] = minutes(queenslink);
+    } else {
+      const saved = (baseline === UNREACHED ? Infinity : baseline) - minutes(queenslink);
+      values[at] = Math.min(saved, MOST_SAVED);
     }
-    const note = document.createElement("p");
-    note.textContent = "Minutes saved; places only QueensLink reaches are darkest.";
-    return [bar, labels, note];
+  });
+  // A cell not shown that's next to one shown takes the average of those it's next to,
+  // so that interpolating toward it near the edge doesn't pull the minutes there toward 0.
+  const filled = values.slice();
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      if (shown[row * width + col] === 1) {
+        continue;
+      }
+      let sum = 0;
+      let count = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const y = row + dy;
+          const x = col + dx;
+          if (x >= 0 && x < width && y >= 0 && y < height && shown[y * width + x] === 1) {
+            sum += values[y * width + x] ?? 0;
+            count++;
+          }
+        }
+      }
+      if (count > 0) {
+        filled[row * width + col] = sum / count;
+      }
+    }
   }
+  return { values: filled, shown };
+}
+
+// How many times finer than the grid the bands are traced, so that their edges curve
+// rather than turn at each cell.
+const UPSAMPLE = 3;
+
+// `values` at `UPSAMPLE` times the resolution, interpolated between cells' centers.
+function upsample(values: Float64Array, width: number, height: number): Float64Array {
+  const fineWidth = width * UPSAMPLE;
+  const fineHeight = height * UPSAMPLE;
+  const fine = new Float64Array(fineWidth * fineHeight);
+  // A fine pixel's position in cells, and the cells either side of it, with its weight between.
+  const between = (i: number, size: number): [number, number, number] => {
+    const at = Math.min(Math.max((i + 0.5) / UPSAMPLE - 0.5, 0), size - 1);
+    const low = Math.min(Math.floor(at), size - 2);
+    return [Math.max(low, 0), Math.min(low + 1, size - 1), at - Math.max(low, 0)];
+  };
+  for (let y = 0; y < fineHeight; y++) {
+    const [y0, y1, ty] = between(y, height);
+    for (let x = 0; x < fineWidth; x++) {
+      const [x0, x1, tx] = between(x, width);
+      const value = (col: number, row: number): number => values[row * width + col] ?? 0;
+      const south = value(x0, y0) * (1 - tx) + value(x1, y0) * tx;
+      const north = value(x0, y1) * (1 - tx) + value(x1, y1) * tx;
+      fine[y * fineWidth + x] = south * (1 - ty) + north * ty;
+    }
+  }
+  return fine;
+}
+
+// How steeply, in minutes per cell, the bands fall off at the edge of the cells shown,
+// for the edge to be traced along that between them and those not shown,
+// whatever the minutes either side, rather than drawing every band between in a sliver.
+const EDGE = 20;
+
+// The view's bands as smooth shapes, each where its value is from the band's minutes
+// up to the next band's, among the cells shown. Bands next to each other
+// are traced along the same edge, so they meet without gaps or overlaps.
+function bandFeatures(
+  grid: Grid,
+  { values, shown }: { values: Float64Array; shown: Float64Array },
+  view: View,
+): GeoJSON.FeatureCollection {
+  const { width, height } = rasterSize(grid);
+  const fine = upsample(values, width, height);
+  const fineShown = upsample(shown, width, height);
+  const fineWidth = width * UPSAMPLE;
+  const contour = contours()
+    .size([fineWidth, height * UPSAMPLE])
+    .thresholds([0]);
+  // A fine pixel's value is at its center, a half pixel in from its corner.
+  const toMap = ([x, y]: number[]): [number, number] =>
+    toLngLat(
+      grid.x0 + ((x ?? 0) / UPSAMPLE - 0.5) * grid.spacing,
+      grid.y0 + ((y ?? 0) / UPSAMPLE - 0.5) * grid.spacing,
+    );
+  const viewBands = bands(view);
+  const features: GeoJSON.Feature[] = viewBands.map(([low, color], i) => {
+    const high = viewBands[i + 1]?.[0] ?? bandsEnd(view);
+    const inBand = fine.map((value, j) =>
+      Math.min(value - low, high - value, ((fineShown[j] ?? 0) - 0.5) * EDGE),
+    );
+    const [shape] = contour(Array.from(inBand));
+    return {
+      type: "Feature",
+      geometry: {
+        type: "MultiPolygon",
+        coordinates: (shape?.coordinates ?? []).map((polygon) =>
+          polygon.map((ring) => ring.map(toMap)),
+        ),
+      },
+      properties: { color },
+    };
+  });
+  return { type: "FeatureCollection", features };
+}
+
+function legendItems(view: View): HTMLElement[] {
+  const viewBands = bands(view);
   const bar = document.createElement("div");
   bar.className = "legend-bands";
   const labels = document.createElement("div");
   labels.className = "legend-labels";
-  for (const [minutes, color] of travelTimeBands) {
+  for (const [minutes, color] of viewBands) {
     const band = document.createElement("span");
     band.style.background = color;
     bar.append(band);
@@ -207,19 +274,15 @@ function legendItems(view: View): HTMLElement[] {
     labels.append(label);
   }
   const last = document.createElement("span");
-  last.textContent = String(MAX_MINUTES);
+  last.textContent = view === "saved" ? "" : String(MAX_MINUTES);
   labels.append(last);
   const note = document.createElement("p");
-  note.textContent = "Minutes from the station, walking at the end.";
+  note.textContent =
+    view === "saved"
+      ? "Minutes saved; places only QueensLink reaches are darkest."
+      : "Minutes from the station, walking at the end.";
   return [bar, labels, note];
 }
-
-const fillColor = (view: View): ExpressionSpecification =>
-  view === "saved" ? savedColor : travelTimeColor(view);
-
-// Only the cells the view has something to show for.
-const filter = (view: View): ExpressionSpecification =>
-  view === "saved" ? [">", minutesSaved, 0] : ["has", view];
 
 // The lines of the scenario the view shows, with QueensLink's for what it saves.
 const linesFilter = (view: View): ExpressionSpecification => [
@@ -277,7 +340,6 @@ const [grid, stations, lines] = await Promise.all([
   fetchJson<Station[]>("stations.json"),
   fetchJson<GeoJSON.FeatureCollection>("lines.json"),
 ]);
-const squares = cellSquares(grid);
 const stationsById = new Map(stations.map((station) => [station.id, station]));
 
 // Broad Channel, whose trip to most of the city QueensLink shortens.
@@ -292,7 +354,13 @@ function drawCells(): void {
   if (selectedTimes !== undefined) {
     map
       .getSource<GeoJSONSource>("cells")
-      ?.setData(cellFeatures(squares, selectedTimes, currentDay()));
+      ?.setData(
+        bandFeatures(
+          grid,
+          cellValues(grid, selectedTimes, currentDay(), currentView()),
+          currentView(),
+        ),
+      );
   }
 }
 
@@ -361,8 +429,17 @@ await loaded;
       id: "cells",
       type: "fill",
       source: "cells",
-      filter: filter(view),
-      paint: { "fill-color": fillColor(view), "fill-opacity": 0.6 },
+      paint: { "fill-color": ["get", "color"], "fill-opacity": 0.6 },
+    },
+    firstLabels,
+  );
+  // The edges between bands, so that each stands out from the next.
+  map.addLayer(
+    {
+      id: "band-edges",
+      type: "line",
+      source: "cells",
+      paint: { "line-color": "#000000", "line-opacity": 0.25, "line-width": 0.75 },
     },
     firstLabels,
   );
@@ -432,15 +509,10 @@ addEventListener("hashchange", () => {
   void selectStation(stationFromHash());
 });
 
-controls.addEventListener("change", (event) => {
-  if (event.target instanceof HTMLInputElement && event.target.name === "day") {
-    dayName.textContent = dayNames[currentDay()];
-    drawCells();
-    return;
-  }
+controls.addEventListener("change", () => {
   const view = currentView();
-  map.setFilter("cells", filter(view));
-  map.setPaintProperty("cells", "fill-color", fillColor(view));
+  dayName.textContent = dayNames[currentDay()];
   map.setFilter("lines", linesFilter(view));
   showView(view);
+  drawCells();
 });

@@ -9,11 +9,13 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.2",
+    "@types/d3-contour": "^3.0.6",
     "@types/geojson": "^7946.0.16",
     "tsrs": "0.18.0-ts7.1.0-dev.20260929",
     "vite": "^8.3.5"
   },
   "dependencies": {
+    "d3-contour": "^4.0.2",
     "maplibre-gl": "^6.15.0"
   }
 }
