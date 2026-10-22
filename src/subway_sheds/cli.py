@@ -2,6 +2,7 @@ import hashlib
 from pathlib import Path
 
 import httpx
+import pandas as pd
 import typer
 
 from subway_sheds import export, gtfs, osm, paths, scenarios, travel_times
@@ -93,7 +94,8 @@ def fetch(force: bool = typer.Option(False, help="Download again even if already
 @app.command()
 def route(
     stop_ids: list[str] | None = typer.Argument(
-        None, help="Parent station IDs, e.g. H04; every station if none."
+        None,
+        help="Parent station IDs, e.g. H04, whose times to replace; every station if none.",
     ),
 ) -> None:
     """Route from stations to the grid in each scenario."""
@@ -106,6 +108,15 @@ def route(
             stations = [s for s in stations if s.id in stop_ids]
         times = travel_times.from_stations(scenario, stations, destinations)
         dest = travel_times.output_path(scenario)
+        if stop_ids and dest.exists():
+            # Replace only these stations' times, keeping every other station's.
+            routed = {s.id for s in stations}
+            kept = pd.read_parquet(dest)
+            kept = kept[~kept["station"].astype(str).isin(routed)]
+            times = pd.concat(
+                [kept.astype({"station": str}), times.astype({"station": str})],
+                ignore_index=True,
+            ).astype({"station": "category"})
         dest.parent.mkdir(parents=True, exist_ok=True)
         times.to_parquet(dest, index=False)
         typer.echo(f"{scenario}: {len(stations)} stations, {len(times)} reachable cells")
