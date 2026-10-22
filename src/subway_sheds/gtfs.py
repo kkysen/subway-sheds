@@ -119,11 +119,12 @@ def _time(seconds: int) -> str:
 
 
 def _trip_stop_times(feed: Feed, route: str) -> dict[str, list[dict[str, str]]]:
-    """Each of `route`'s trips' stop times, in order."""
-    trips = {t["trip_id"] for t in feed.rows["trips.txt"] if t["route_id"] == route}
-    stop_times: dict[str, list[dict[str, str]]] = {trip: [] for trip in trips}
+    """Each of `route`'s trips' stop times, in order, the trips in `trips.txt`'s order."""
+    stop_times: dict[str, list[dict[str, str]]] = {
+        t["trip_id"]: [] for t in feed.rows["trips.txt"] if t["route_id"] == route
+    }
     for stop_time in feed.rows["stop_times.txt"]:
-        if stop_time["trip_id"] in trips:
+        if stop_time["trip_id"] in stop_times:
             stop_times[stop_time["trip_id"]].append(stop_time)
     for rows in stop_times.values():
         rows.sort(key=lambda st: int(st["stop_sequence"]))
