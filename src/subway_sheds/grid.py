@@ -5,7 +5,10 @@ from dataclasses import dataclass
 import geopandas as gpd
 import numpy as np
 import numpy.typing as npt
+import osmium
+import osmium.osm
 import shapely
+from pyproj import Transformer
 
 from subway_sheds import paths
 
@@ -17,6 +20,15 @@ WEB_MERCATOR = "EPSG:3857"
 # In Web Mercator meters, which are about 0.76 meters on the ground at NYC's latitude,
 # so cells are about 190 meters across.
 SPACING = 250
+
+# How far, on the ground, a cell's center can be from anywhere R5 walks
+# for the cell to count: well past a cell's half-diagonal, about 135 meters,
+# so that parks and the like with paths through them count,
+# but marsh islands in Jamaica Bay, with none, don't.
+# R5 would otherwise link them to a street however far, and give them times.
+MAX_STREET_DISTANCE = 250
+# Web Mercator meters per meter on the ground at NYC's latitude.
+MERCATOR_SCALE = 1 / 0.758
 
 
 @dataclass(frozen=True)
@@ -37,8 +49,24 @@ class Grid:
         ).to_crs(WGS84)
 
 
+def _streets() -> shapely.STRtree:
+    """What R5 walks on, as lines in Web Mercator."""
+    to_mercator = Transformer.from_crs(WGS84, WEB_MERCATOR, always_xy=True)
+    lines: list[shapely.LineString] = []
+    for way in osmium.FileProcessor(
+        paths.OSM_PBF, osmium.osm.NODE | osmium.osm.WAY
+    ).with_locations():
+        if not isinstance(way, osmium.osm.Way):
+            continue
+        lons = [node.location.lon for node in way.nodes if node.location.valid()]
+        lats = [node.location.lat for node in way.nodes if node.location.valid()]
+        if len(lons) >= 2:
+            lines.append(shapely.LineString(np.column_stack(to_mercator.transform(lons, lats))))
+    return shapely.STRtree(lines)
+
+
 def land_grid() -> Grid:
-    """The cells whose centers are on the city's land."""
+    """The cells whose centers are on the city's land, near something to walk on."""
     land = gpd.read_file(paths.SHORELINE).to_crs(WEB_MERCATOR).union_all()
     min_x, min_y, max_x, max_y = land.bounds
     # Line cells up with multiples of the spacing, so the grid doesn't move if the land does.
@@ -51,4 +79,12 @@ def land_grid() -> Grid:
     cols = cols.ravel()
     rows = rows.ravel()
     on_land = shapely.contains_xy(land, x0 + cols * SPACING, y0 + rows * SPACING)
-    return Grid(x0=float(x0), y0=float(y0), cols=cols[on_land], rows=rows[on_land])
+    cols = cols[on_land]
+    rows = rows[on_land]
+    centers = shapely.points(x0 + cols * SPACING, y0 + rows * SPACING)
+    near, _ = _streets().query(
+        centers, predicate="dwithin", distance=MAX_STREET_DISTANCE * MERCATOR_SCALE
+    )
+    walkable = np.zeros(len(centers), dtype=bool)
+    walkable[near] = True
+    return Grid(x0=float(x0), y0=float(y0), cols=cols[walkable], rows=rows[walkable])

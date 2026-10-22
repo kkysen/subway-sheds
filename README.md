@@ -36,8 +36,9 @@ the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11 to noon.
   than the streets were filtered from, checks it against its MD5, and deletes it once filtered.
 - **Land**: `nyc-subway-isochrones`' NYC shoreline, which keeps the grid out of the water.
 
-Travel times are routed from every station to a grid of about 22,000 cells over the city's land,
+Travel times are routed from every station to a grid of about 21,500 cells over the city's land,
 about 190 m across, on the Wednesday and the Saturday with the most trips scheduled.
+Cells more than 250 m from anything to walk on, like marsh islands in Jamaica Bay, are left out.
 
 ## Usage
 
