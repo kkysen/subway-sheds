@@ -87,28 +87,33 @@ jobs:
             .cache/nyc-shoreline.json
           key: downloads-v1
 
-      # The streets filtered from Geofabrik's New York State extract, by its OSM data's version,
-      # so the 500 MB extract is downloaded only when Geofabrik has a newer one (daily at most).
-      # An older one is restored otherwise, which `fetch` sees is out of date and replaces.
-      # Geofabrik's servers sometimes take minutes to answer even this,
-      # most often over IPv6, though another of them, which a retry may reach, answers at once.
-      - name: OSM version
-        id: osm
-        run: >-
-          echo "sequence=$(curl -4fsS --max-time 10 --retry 8 --retry-all-errors
-          https://download.geofabrik.de/north-america/us/new-york-updates/state.txt
-          | sed -n 's/^sequenceNumber=//p')" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@v6.1.0
+      # The streets filtered from Geofabrik's New York State extract, the newest cached,
+      # which `fetch` sees whether Geofabrik has newer OSM data than (daily at most),
+      # and only then downloads the 500 MB extract to replace them.
+      # They're saved by the version they were filtered from, which only `fetch` asks Geofabrik:
+      # its servers sometimes take minutes to answer even that, more from CI than elsewhere.
+      - uses: actions/cache/restore@v6.1.0
+        id: streets
         with:
           path: |
             .cache/nyc-streets.osm.pbf
             .cache/nyc-streets.source-state.txt
-          key: streets-${{ steps.osm.outputs.sequence }}
+          # Never saved under, so that the newest of the `restore-keys` is restored.
+          key: streets-newest
           restore-keys: streets-
 
       - name: fetch
         run: uv run subway-sheds fetch
+
+      - uses: actions/cache/save@v6.1.0
+        if: >-
+          steps.streets.outputs.cache-matched-key
+          != format('streets-{0}', hashFiles('.cache/nyc-streets.source-state.txt'))
+        with:
+          path: |
+            .cache/nyc-streets.osm.pbf
+            .cache/nyc-streets.source-state.txt
+          key: streets-${{ hashFiles('.cache/nyc-streets.source-state.txt') }}
 
       # Routing takes a while, and only what goes into it changes its output.
       - uses: actions/cache@v6.1.0
