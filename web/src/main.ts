@@ -52,7 +52,7 @@ interface Station {
   readonly scenarios: readonly Scenario[];
 }
 
-// In a station's times, a cell not reached within the 90 minutes routed.
+// In a station's times, a cell not reached within the `ROUTED_MINUTES` routed.
 const UNREACHED = 255;
 
 const data = (path: string): string => `${import.meta.env.BASE_URL}data/${path}`;
@@ -93,10 +93,14 @@ type Band = readonly [number, string];
 
 // Where bands of minutes, traveled or saved, start, the same for both,
 // so that, e.g., 15 minutes there and 15 minutes saved fall on the same edge.
-const BAND_STARTS = [5, 10, 15, 20, 30, 45, 60] as const;
+const BAND_STARTS = [5, 10, 15, 20, 30, 45, 60, 75] as const;
 
-// The minutes routed out to, past which a cell isn't reached.
+// The minutes travel times are drawn out to.
 const MAX_MINUTES = 90;
+
+// The minutes routed out to, past which a cell isn't reached: past `MAX_MINUTES`,
+// so that there's saying how much QueensLink saves places that take longer than that without it.
+const ROUTED_MINUTES = 120;
 
 // Travel time in minutes, from green to red.
 const travelTimeBands: readonly Band[] = [
@@ -109,11 +113,10 @@ const travelTimeBands: readonly Band[] = [
   [BAND_STARTS[4], "#fee08b"],
   [BAND_STARTS[5], "#fdae61"],
   [BAND_STARTS[6], "#f46d43"],
-  [75, "#d73027"],
+  [BAND_STARTS[7], "#d73027"],
 ];
 
-// Minutes saved, from a minute, by as much as the most any trip anywhere is shortened,
-// about an hour, from light to dark blue.
+// Minutes saved, from a minute, from light to dark blue.
 const savedBands: readonly Band[] = [
   [1, "#deebf7"],
   [BAND_STARTS[0], "#c6dbef"],
@@ -122,10 +125,12 @@ const savedBands: readonly Band[] = [
   [BAND_STARTS[3], "#4292c6"],
   [BAND_STARTS[4], "#2171b5"],
   [BAND_STARTS[5], "#08519c"],
-  [BAND_STARTS[6], "#08306b"],
+  [BAND_STARTS[6], "#08458a"],
+  [BAND_STARTS[7], "#08306b"],
+  [MAX_MINUTES, "#041f47"],
 ];
 
-// Places only QueensLink reaches within `MAX_MINUTES`, which there's no saying how much it saves.
+// Places only QueensLink reaches within `ROUTED_MINUTES`, which there's no saying how much it saves.
 const QUEENSLINK_ONLY_COLOR = "#6a3d9a";
 
 const bands = (view: View): readonly Band[] => (view === "saved" ? savedBands : travelTimeBands);
@@ -163,7 +168,7 @@ function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8A
     const at = (grid.rows[i] ?? 0) * width + col;
     if (view !== "saved") {
       const minutes = view === "baseline" ? baseline : queenslink;
-      classes[at] = minutes === UNREACHED ? NOTHING : bandOf(minutes, travelTimeBands);
+      classes[at] = minutes > MAX_MINUTES ? NOTHING : bandOf(minutes, travelTimeBands);
     } else if (queenslink !== UNREACHED) {
       classes[at] =
         baseline === UNREACHED ? savedBands.length : bandOf(baseline - queenslink, savedBands);
@@ -305,7 +310,7 @@ function legendItems(view: View): HTMLElement[] {
     note.append(
       "Minutes saved. ",
       swatch,
-      ` Reached only with QueensLink, within ${MAX_MINUTES} minutes.`,
+      ` Reached only with QueensLink, within ${ROUTED_MINUTES} minutes.`,
     );
   } else {
     note.textContent = "Minutes from the station, walking at the end.";

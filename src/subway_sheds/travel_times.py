@@ -19,7 +19,9 @@ from subway_sheds.scenarios import Day, Scenario
 # so waiting for a train counts the way it does for someone who doesn't time their arrival.
 DEPARTURE_WINDOW = datetime.timedelta(hours=1)
 PERCENTILES = [50]
-MAX_TIME = datetime.timedelta(minutes=90)
+# Past the 90 minutes the page draws travel times out to,
+# so that it can tell how much QueensLink saves places that take longer than that without it.
+MAX_TIME = datetime.timedelta(minutes=120)
 
 
 class _ParallelTravelTimeMatrix(r5py.TravelTimeMatrix):
