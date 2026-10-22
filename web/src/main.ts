@@ -91,30 +91,38 @@ function rasterSize(grid: Grid): { width: number; height: number } {
 // Each band the view is drawn in, from its minutes up to the next band's, and its color.
 type Band = readonly [number, string];
 
-// Travel time in minutes, in the 10-minute bands the original subway isochrones used.
-const travelTimeBands: readonly Band[] = [
-  [0, "#1a9850"],
-  [10, "#66bd63"],
-  [20, "#a6d96a"],
-  [30, "#fee08b"],
-  [40, "#fdae61"],
-  [60, "#f46d43"],
-  [75, "#d73027"],
-];
+// Where bands of minutes, traveled or saved, start, the same for both,
+// so that, e.g., 15 minutes there and 15 minutes saved fall on the same edge.
+const BAND_STARTS = [5, 10, 15, 20, 30, 45, 60] as const;
 
 // The minutes routed out to, past which a cell isn't reached.
 const MAX_MINUTES = 90;
 
-// Minutes saved, by as much as the most any station's trip anywhere is shortened, about an hour.
+// Travel time in minutes, from green to red.
+const travelTimeBands: readonly Band[] = [
+  [0, "#1a9850"],
+  [BAND_STARTS[0], "#66bd63"],
+  [BAND_STARTS[1], "#a6d96a"],
+  [BAND_STARTS[2], "#d9ef8b"],
+  // Deeper than the palette's `#ffffbf`, which over the map at 60% is all but white.
+  [BAND_STARTS[3], "#fdf28d"],
+  [BAND_STARTS[4], "#fee08b"],
+  [BAND_STARTS[5], "#fdae61"],
+  [BAND_STARTS[6], "#f46d43"],
+  [75, "#d73027"],
+];
+
+// Minutes saved, from a minute, by as much as the most any trip anywhere is shortened,
+// about an hour, from light to dark blue.
 const savedBands: readonly Band[] = [
   [1, "#deebf7"],
-  [5, "#c6dbef"],
-  [10, "#9ecae1"],
-  [15, "#6baed6"],
-  [20, "#4292c6"],
-  [30, "#2171b5"],
-  [45, "#08519c"],
-  [60, "#08306b"],
+  [BAND_STARTS[0], "#c6dbef"],
+  [BAND_STARTS[1], "#9ecae1"],
+  [BAND_STARTS[2], "#6baed6"],
+  [BAND_STARTS[3], "#4292c6"],
+  [BAND_STARTS[4], "#2171b5"],
+  [BAND_STARTS[5], "#08519c"],
+  [BAND_STARTS[6], "#08306b"],
 ];
 
 // Places only QueensLink reaches within `MAX_MINUTES`, which there's no saying how much it saves.
