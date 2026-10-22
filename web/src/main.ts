@@ -2,8 +2,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import {
   type ExpressionSpecification,
   type GeoJSONSource,
-  type MapLayerMouseEvent,
   Map as MapLibreMap,
+  type MapMouseEvent,
   setWorkerUrl,
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
@@ -224,6 +224,37 @@ function stationFromHash(): string {
   return stationsById.has(id) ? id : DEFAULT_STATION;
 }
 
+// How far from a station, in pixels, a click or tap still picks it,
+// since the dots are only a few pixels across when zoomed out.
+const HIT_RADIUS = 12;
+
+// The station nearest the point, of those within reach of it.
+function stationAt(event: MapMouseEvent): string | undefined {
+  const { x, y } = event.point;
+  let nearest: string | undefined;
+  let nearestDistance = Infinity;
+  const near = map.queryRenderedFeatures(
+    [
+      [x - HIT_RADIUS, y - HIT_RADIUS],
+      [x + HIT_RADIUS, y + HIT_RADIUS],
+    ],
+    { layers: ["stations"] },
+  );
+  for (const feature of near) {
+    const id: unknown = feature.properties["id"];
+    const station = typeof id === "string" ? stationsById.get(id) : undefined;
+    if (station === undefined) {
+      continue;
+    }
+    const distance = event.point.dist(map.project([station.lon, station.lat]));
+    if (distance < nearestDistance) {
+      nearest = station.id;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
 await loaded;
 {
   const view = currentView();
@@ -276,17 +307,14 @@ await loaded;
     },
   });
 
-  map.on("click", "stations", (event: MapLayerMouseEvent) => {
-    const id: unknown = event.features?.[0]?.properties["id"];
-    if (typeof id === "string") {
+  map.on("click", (event: MapMouseEvent) => {
+    const id = stationAt(event);
+    if (id !== undefined) {
       void selectStation(id);
     }
   });
-  map.on("mouseenter", "stations", () => {
-    map.getCanvas().style.cursor = "pointer";
-  });
-  map.on("mouseleave", "stations", () => {
-    map.getCanvas().style.cursor = "";
+  map.on("mousemove", (event: MapMouseEvent) => {
+    map.getCanvas().style.cursor = stationAt(event) === undefined ? "" : "pointer";
   });
 
   void selectStation(stationFromHash());
