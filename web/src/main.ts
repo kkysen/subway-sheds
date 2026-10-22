@@ -186,6 +186,9 @@ const map = new MapLibreMap({
   zoom: 10.5,
 });
 
+// Listened for before awaiting the data, which the map can finish loading before.
+const loaded = new Promise((resolve) => map.once("load", resolve));
+
 const [grid, stations] = await Promise.all([
   fetchJson<Grid>("grid.json"),
   fetchJson<Station[]>("stations.json"),
@@ -196,12 +199,19 @@ const stationsById = new Map(stations.map((station) => [station.id, station]));
 // Broad Channel, whose trip to most of the city QueensLink shortens.
 const DEFAULT_STATION = "H04";
 
+// The station last asked for, so that a slower fetch for an earlier one can't replace it.
+let selected = "";
+
 async function selectStation(id: string): Promise<void> {
   const station = stationsById.get(id);
   if (station === undefined) {
     return;
   }
+  selected = id;
   const times = await fetchTimes(id);
+  if (selected !== id) {
+    return;
+  }
   map.getSource<GeoJSONSource>("cells")?.setData(cellFeatures(squares, times));
   map.setFilter("selected-station", ["==", ["get", "id"], id]);
   const only = station.scenarios.length === 1 ? " (QueensLink only)" : "";
@@ -214,7 +224,8 @@ function stationFromHash(): string {
   return stationsById.has(id) ? id : DEFAULT_STATION;
 }
 
-map.on("load", () => {
+await loaded;
+{
   const view = currentView();
   // Under the labels, so street and place names stay readable.
   const firstLabels = map.getStyle().layers.find((layer) => layer.type === "symbol")?.id;
@@ -279,7 +290,7 @@ map.on("load", () => {
   });
 
   void selectStation(stationFromHash());
-});
+}
 
 addEventListener("hashchange", () => {
   void selectStation(stationFromHash());
