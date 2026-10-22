@@ -25,9 +25,11 @@ SHORELINE_URL = (
 def _download(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.with_name(dest.name + ".partial")
-    # Retry failing to connect, which a server sometimes does.
+    # Retry failing to connect, which a server sometimes does,
+    # over IPv4, which Geofabrik's servers answer more reliably; see `_get_text`.
+    transport = httpx.HTTPTransport(retries=5, local_address="0.0.0.0")
     with (
-        httpx.Client(transport=httpx.HTTPTransport(retries=5), timeout=60) as client,
+        httpx.Client(transport=transport, timeout=60) as client,
         client.stream("GET", url, follow_redirects=True) as response,
     ):
         response.raise_for_status()
@@ -35,6 +37,28 @@ def _download(url: str, dest: Path) -> None:
             for chunk in response.iter_bytes():
                 f.write(chunk)
     partial.rename(dest)
+
+
+def _get_text(url: str) -> str:
+    """
+    A small file's text, over IPv4, retrying a server slow to answer.
+
+    Geofabrik's servers sometimes take minutes to answer even for a few lines,
+    most often over IPv6, though another of them, which a retry may reach, answers at once.
+    """
+    # Binding to IPv4's any address is how `httpx` is told to connect over IPv4.
+    transport = httpx.HTTPTransport(local_address="0.0.0.0")
+    for attempt in range(8):
+        try:
+            with httpx.Client(transport=transport, timeout=10) as client:
+                response = client.get(url, follow_redirects=True)
+        except httpx.TimeoutException, httpx.ConnectError:
+            if attempt == 7:
+                raise
+            continue
+        response.raise_for_status()
+        return response.text
+    raise AssertionError("unreachable")
 
 
 def _fetch_streets(force: bool) -> None:
@@ -45,9 +69,7 @@ def _fetch_streets(force: bool) -> None:
     Only its few-line `state.txt` is downloaded to tell, not the 500 MB extract,
     which is checked against its MD5 and deleted once filtered.
     """
-    response = httpx.get(NEW_YORK_OSM_STATE_URL, follow_redirects=True, timeout=60)
-    response.raise_for_status()
-    latest = response.text
+    latest = _get_text(NEW_YORK_OSM_STATE_URL)
     if (
         not force
         and paths.OSM_PBF.exists()
@@ -57,12 +79,11 @@ def _fetch_streets(force: bool) -> None:
         return
     extract = paths.CACHE / "new-york-latest.osm.pbf"
     typer.echo(f"downloading {NEW_YORK_OSM_URL}")
-    md5 = httpx.get(f"{NEW_YORK_OSM_URL}.md5", follow_redirects=True, timeout=60)
-    md5.raise_for_status()
+    md5 = _get_text(f"{NEW_YORK_OSM_URL}.md5")
     _download(NEW_YORK_OSM_URL, extract)
     with extract.open("rb") as f:
         actual = hashlib.file_digest(f, "md5").hexdigest()
-    expected = md5.text.split()[0]
+    expected = md5.split()[0]
     if actual != expected:
         extract.unlink()
         raise RuntimeError(f"{NEW_YORK_OSM_URL} has MD5 {actual}, not {expected}")

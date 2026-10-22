@@ -90,10 +90,12 @@ jobs:
       # The streets filtered from Geofabrik's New York State extract, by its OSM data's version,
       # so the 500 MB extract is downloaded only when Geofabrik has a newer one (daily at most).
       # An older one is restored otherwise, which `fetch` sees is out of date and replaces.
+      # Geofabrik's servers sometimes take minutes to answer even this,
+      # most often over IPv6, though another of them, which a retry may reach, answers at once.
       - name: OSM version
         id: osm
         run: >-
-          echo "sequence=$(curl -fsS --retry 5
+          echo "sequence=$(curl -4fsS --max-time 10 --retry 8 --retry-all-errors
           https://download.geofabrik.de/north-america/us/new-york-updates/state.txt
           | sed -n 's/^sequenceNumber=//p')" >> "$GITHUB_OUTPUT"
 
