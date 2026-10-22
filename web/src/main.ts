@@ -17,6 +17,19 @@ type View = Scenario | "saved";
 
 const views: readonly View[] = ["baseline", "queenslink", "saved"];
 
+// In the order the pipeline writes them, as `Day` lists them in `src/subway_sheds/scenarios.py`.
+const days = ["weekday", "saturday"] as const;
+type Day = (typeof days)[number];
+
+function isDay(value: unknown): value is Day {
+  return days.some((day) => day === value);
+}
+
+const dayNames: Record<Day, string> = {
+  weekday: "in the weekday morning peak",
+  saturday: "on Saturday midday",
+};
+
 function isView(value: unknown): value is View {
   return views.some((view) => view === value);
 }
@@ -90,16 +103,19 @@ function cellSquares(grid: Grid): GeoJSON.Polygon[] {
   });
 }
 
-// The cells either scenario reaches, with each scenario's minutes where it does.
+// The cells either scenario reaches on `day`, with each scenario's minutes where it does.
 function cellFeatures(
   squares: readonly GeoJSON.Polygon[],
   times: Uint8Array,
+  day: Day,
 ): GeoJSON.FeatureCollection {
   const count = squares.length;
+  // Each day's times are every cell's in the baseline, then every cell's with QueensLink.
+  const start = days.indexOf(day) * 2 * count;
   const features: GeoJSON.Feature[] = [];
   squares.forEach((geometry, i) => {
-    const baseline = times[i] ?? UNREACHED;
-    const queenslink = times[count + i] ?? UNREACHED;
+    const baseline = times[start + i] ?? UNREACHED;
+    const queenslink = times[start + count + i] ?? UNREACHED;
     if (baseline === UNREACHED && queenslink === UNREACHED) {
       return;
     }
@@ -221,6 +237,7 @@ function element<T extends Element>(selector: string, type: new () => T): T {
 
 const controls = element("#controls", HTMLFormElement);
 const stationName = element("#station-name", HTMLElement);
+const dayName = element("#day-name", HTMLElement);
 const legend = element("#legend", HTMLElement);
 
 function showView(view: View): void {
@@ -228,6 +245,14 @@ function showView(view: View): void {
 }
 
 showView(currentView());
+
+function currentDay(): Day {
+  const value = new FormData(controls).get("day");
+  if (!isDay(value)) {
+    throw new Error(`unknown day ${String(value)}`);
+  }
+  return value;
+}
 
 function currentView(): View {
   const value = new FormData(controls).get("view");
@@ -260,6 +285,16 @@ const DEFAULT_STATION = "H04";
 
 // The station last asked for, so that a slower fetch for an earlier one can't replace it.
 let selected = "";
+// The times from the station shown.
+let selectedTimes: Uint8Array | undefined;
+
+function drawCells(): void {
+  if (selectedTimes !== undefined) {
+    map
+      .getSource<GeoJSONSource>("cells")
+      ?.setData(cellFeatures(squares, selectedTimes, currentDay()));
+  }
+}
 
 async function selectStation(id: string): Promise<void> {
   const station = stationsById.get(id);
@@ -271,7 +306,8 @@ async function selectStation(id: string): Promise<void> {
   if (selected !== id) {
     return;
   }
-  map.getSource<GeoJSONSource>("cells")?.setData(cellFeatures(squares, times));
+  selectedTimes = times;
+  drawCells();
   map.setFilter("selected-station", ["==", ["get", "id"], id]);
   const only = station.scenarios.length === 1 ? " (QueensLink only)" : "";
   stationName.textContent = `${station.name}${only}`;
@@ -396,7 +432,12 @@ addEventListener("hashchange", () => {
   void selectStation(stationFromHash());
 });
 
-controls.addEventListener("change", () => {
+controls.addEventListener("change", (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.name === "day") {
+    dayName.textContent = dayNames[currentDay()];
+    drawCells();
+    return;
+  }
   const view = currentView();
   map.setFilter("cells", filter(view));
   map.setPaintProperty("cells", "fill-color", fillColor(view));
