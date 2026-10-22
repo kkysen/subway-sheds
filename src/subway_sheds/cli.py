@@ -1,4 +1,5 @@
 import hashlib
+import itertools
 from pathlib import Path
 
 import httpx
@@ -7,7 +8,7 @@ import typer
 
 from subway_sheds import export, gtfs, osm, paths, scenarios, travel_times
 from subway_sheds.grid import land_grid
-from subway_sheds.scenarios import Scenario
+from subway_sheds.scenarios import Day, Scenario
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -93,16 +94,16 @@ def route(
         help="Parent station IDs, e.g. H04, whose times to replace; every station if none.",
     ),
 ) -> None:
-    """Route from stations to the grid in each scenario."""
+    """Route from stations to the grid in each scenario, on each day."""
     destinations = land_grid().points()
     typer.echo(f"{len(destinations)} cells")
-    for scenario in Scenario:
+    for scenario, day in itertools.product(Scenario, Day):
         stations = gtfs.stations(scenario.gtfs)
         if stop_ids:
             # A station only in one scenario, like QueensLink's new ones, is routed only there.
             stations = [s for s in stations if s.id in stop_ids]
-        times = travel_times.from_stations(scenario, stations, destinations)
-        dest = travel_times.output_path(scenario)
+        times = travel_times.from_stations(scenario, day, stations, destinations)
+        dest = travel_times.output_path(scenario, day)
         if stop_ids and dest.exists():
             # Replace only these stations' times, keeping every other station's.
             routed = {s.id for s in stations}
@@ -114,7 +115,7 @@ def route(
             ).astype({"station": "category"})
         dest.parent.mkdir(parents=True, exist_ok=True)
         times.to_parquet(dest, index=False)
-        typer.echo(f"{scenario}: {len(stations)} stations, {len(times)} reachable cells")
+        typer.echo(f"{scenario} {day}: {len(stations)} stations, {len(times)} reachable cells")
 
 
 @app.command(name="export")

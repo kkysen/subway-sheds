@@ -1,3 +1,4 @@
+import datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -23,9 +24,27 @@ M_TERMINAL_LIKE = "R"
 M = "M"
 M_FREQUENCY_STATION = "M08"
 ROCKAWAY_PARK_SHUTTLE = "H"
+# On weekends, QueensLink's M runs its whole route,
+# but MTA's runs only between Middle Village and Essex St, so the baseline runs MTA's.
+WEEKEND_SERVICES = frozenset({"Saturday", "Sunday"})
 # QueensLink also runs the G past Court Sq along the Queens Blvd local to Forest Hills;
 # the baseline cuts it back to the stations it serves in MTA's feed.
 G = "G"
+
+
+class Day(StrEnum):
+    # The morning peak of the weekday with the most trips.
+    WEEKDAY = "weekday"
+    # Midday of the Saturday with the most trips, since weekends have no peak.
+    SATURDAY = "saturday"
+
+    @property
+    def weekday(self) -> int:
+        return 2 if self is Day.WEEKDAY else 5
+
+    @property
+    def departure(self) -> datetime.time:
+        return datetime.time(7, 30) if self is Day.WEEKDAY else datetime.time(11)
 
 
 class Scenario(StrEnum):
@@ -53,6 +72,17 @@ def baseline_feed() -> gtfs.Feed:
     feed = gtfs.read_feed(paths.QUEENSLINK_FEED)
     mta = gtfs.read_feed(mta_feed())
     gtfs.splice_routes(feed, mta, {ROCKAWAY_PARK_SHUTTLE})
+    gtfs.drop_trips(
+        feed,
+        {
+            t["trip_id"]
+            for t in feed.rows["trips.txt"]
+            if t["route_id"] == QUEENSLINK_M and t["service_id"] in WEEKEND_SERVICES
+        },
+    )
+    gtfs.splice_routes(
+        feed, mta, {M}, lambda service: any(day in service for day in WEEKEND_SERVICES)
+    )
     gtfs.reroute_branch(
         feed,
         QUEENSLINK_M,

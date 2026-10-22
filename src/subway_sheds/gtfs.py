@@ -5,7 +5,7 @@ import datetime
 import io
 import zipfile
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,14 +62,25 @@ def write_feed(feed: Feed, dest: Path) -> None:
             out.writestr(name, _write_csv(feed.headers[name], rows))
 
 
-def splice_routes(base: Feed, donor: Feed, routes: set[str]) -> None:
+def drop_trips(feed: Feed, trips: set[str]) -> None:
+    """Remove `trips`, with their stop times and frequencies."""
+    for name in ("trips.txt", "stop_times.txt", "frequencies.txt"):
+        if name in feed.rows:
+            feed.rows[name] = [row for row in feed.rows[name] if row["trip_id"] not in trips]
+
+
+def splice_routes(
+    base: Feed, donor: Feed, routes: set[str], services: Callable[[str], bool] = lambda _: True
+) -> None:
     """
-    Replace `base`'s trips of `routes` with `donor`'s.
+    Replace `base`'s trips of `routes` with `donor`'s whose service IDs `services` is true of.
 
     The routes, stops, calendars, and shapes those trips use
     come along with them where `base` lacks them.
     """
-    donor_trips = [t for t in donor.rows["trips.txt"] if t["route_id"] in routes]
+    donor_trips = [
+        t for t in donor.rows["trips.txt"] if t["route_id"] in routes and services(t["service_id"])
+    ]
     donor_trip_ids = {t["trip_id"] for t in donor_trips}
     dropped = {t["trip_id"] for t in base.rows["trips.txt"] if t["route_id"] in routes}
 
@@ -92,9 +103,9 @@ def splice_routes(base: Feed, donor: Feed, routes: set[str]) -> None:
     stop_ids |= {donor_stops[i]["parent_station"] for i in stop_ids if i in donor_stops}
     merge("routes.txt", "route_id", routes)
     merge("stops.txt", "stop_id", stop_ids)
-    services = {t["service_id"] for t in donor_trips}
-    merge("calendar.txt", "service_id", services)
-    merge("calendar_dates.txt", "service_id", services)
+    service_ids = {t["service_id"] for t in donor_trips}
+    merge("calendar.txt", "service_id", service_ids)
+    merge("calendar_dates.txt", "service_id", service_ids)
     merge("shapes.txt", "shape_id", {t["shape_id"] for t in donor_trips})
 
 
@@ -231,11 +242,13 @@ def _date(value: str) -> datetime.date:
     return datetime.datetime.strptime(value, "%Y%m%d").date()
 
 
-def weekday_service_date(feed_path: Path) -> datetime.date:
-    """
-    The Wednesday with the most trips scheduled in the feed.
+_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
-    The two feeds cover different months, so each is routed on a date of its own.
+
+def service_date(feed_path: Path, weekday: int) -> datetime.date:
+    """
+    The date on `weekday` (0 for Monday) with the most trips scheduled in the feed.
+
     Going by trips rather than by calendars matters for the QueensLink feed,
     which also carries calendars from older feeds that only a route or two still use.
     """
@@ -252,7 +265,7 @@ def weekday_service_date(feed_path: Path) -> datetime.date:
         services = {
             row["service_id"]
             for row in calendar
-            if row["wednesday"] == "1"
+            if row[_DAYS[weekday]] == "1"
             and _date(row["start_date"]) <= date <= _date(row["end_date"])
         }
         services |= added.get(date, set())
@@ -261,12 +274,10 @@ def weekday_service_date(feed_path: Path) -> datetime.date:
 
     start = min(_date(row["start_date"]) for row in calendar)
     end = max(_date(row["end_date"]) for row in calendar)
-    first = start + datetime.timedelta(days=(2 - start.weekday()) % 7)
-    wednesdays = [
-        first + datetime.timedelta(weeks=week) for week in range((end - first).days // 7 + 1)
-    ]
+    first = start + datetime.timedelta(days=(weekday - start.weekday()) % 7)
+    dates = [first + datetime.timedelta(weeks=week) for week in range((end - first).days // 7 + 1)]
     # `max` keeps the first of equals, so the earliest date with full service.
-    return max(wednesdays, key=trip_count)
+    return max(dates, key=trip_count)
 
 
 def match_frequencies(feed: Feed, route: str, like: Feed, like_route: str, station: str) -> None:

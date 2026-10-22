@@ -72,11 +72,11 @@ def test_zip_feed_is_flat(tmp_path: Path) -> None:
     assert [s.id for s in gtfs.stations(dest)] == ["H04"]
 
 
-def test_weekday_service_date_goes_by_trips(tmp_path: Path) -> None:
+def test_service_date_goes_by_trips(tmp_path: Path) -> None:
     feed = tmp_path / "feed.zip"
     gtfs.zip_feed(_feed_dir(tmp_path / "feed", FILES), feed)
     # 2025-11-05 has the most trips but is removed, so the next Wednesday.
-    assert gtfs.weekday_service_date(feed) == datetime.date(2025, 11, 12)
+    assert gtfs.service_date(feed, 2) == datetime.date(2025, 11, 12)
 
 
 def test_splice_routes(tmp_path: Path) -> None:

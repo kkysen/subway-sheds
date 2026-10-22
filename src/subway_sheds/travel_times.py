@@ -12,11 +12,11 @@ import r5py
 
 from subway_sheds import gtfs, paths
 from subway_sheds.grid import WGS84
-from subway_sheds.scenarios import Scenario
+from subway_sheds.scenarios import Day, Scenario
 
-# The morning peak: R5 departs every minute in the window and reports percentiles across them,
+# From each day's departure time, R5 departs every minute in the window
+# and reports percentiles across them,
 # so waiting for a train counts the way it does for someone who doesn't time their arrival.
-DEPARTURE_TIME = datetime.time(7, 30)
 DEPARTURE_WINDOW = datetime.timedelta(hours=1)
 PERCENTILES = [50]
 MAX_TIME = datetime.timedelta(minutes=90)
@@ -45,12 +45,13 @@ class _ParallelTravelTimeMatrix(r5py.TravelTimeMatrix):
 _travel_time_matrix: Callable[..., pd.DataFrame] = _ParallelTravelTimeMatrix
 
 
-def output_path(scenario: Scenario) -> Path:
-    return paths.TRAVEL_TIMES / f"{scenario}.parquet"
+def output_path(scenario: Scenario, day: Day) -> Path:
+    return paths.TRAVEL_TIMES / f"{scenario}-{day}.parquet"
 
 
 def from_stations(
     scenario: Scenario,
+    day: Day,
     origins: list[gtfs.Station],
     destinations: gpd.GeoDataFrame,
 ) -> pd.DataFrame:
@@ -59,7 +60,7 @@ def from_stations(
 
     Only the pairs reachable within `MAX_TIME`, as `station`, `cell`, and `minutes`.
     """
-    date = gtfs.weekday_service_date(scenario.gtfs)
+    date = gtfs.service_date(scenario.gtfs, day.weekday)
     origin_points = gpd.GeoDataFrame(
         {"id": [s.id for s in origins]},
         geometry=gpd.points_from_xy([s.lon for s in origins], [s.lat for s in origins]),
@@ -69,7 +70,7 @@ def from_stations(
         r5py.TransportNetwork(paths.OSM_PBF, [scenario.gtfs]),
         origins=origin_points,
         destinations=destinations,
-        departure=datetime.datetime.combine(date, DEPARTURE_TIME),
+        departure=datetime.datetime.combine(date, day.departure),
         departure_time_window=DEPARTURE_WINDOW,
         percentiles=PERCENTILES,
         transport_modes=[r5py.TransportMode.TRANSIT, r5py.TransportMode.WALK],

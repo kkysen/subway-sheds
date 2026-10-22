@@ -6,7 +6,8 @@ Inspired by Chris Whong's [`nyc-subway-isochrones`](https://github.com/chriswhon
 but routed with [R5](https://github.com/conveyal/r5) (through [`r5py`](https://r5py.readthedocs.io))
 over the real street network instead of buffering stations by leftover walking time,
 and with waiting for trains counted:
-R5 departs every minute of the weekday morning peak and reports the median trip.
+R5 departs every minute of an hour and reports the median trip:
+the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11 to noon.
 
 ## Data
 
@@ -27,6 +28,7 @@ R5 departs every minute of the weekday morning peak and reports the median trip.
   and running as often as MTA's M, hour by hour, rather than QueensLink's a little more often,
   its G cut back to Court Sq,
   and the Rockaway Park shuttle from MTA's feed.
+  On weekends, it runs MTA's M instead, which runs only between Middle Village and Essex St.
 - **Streets**: what R5 walks on (streets, sidewalks, footpaths, steps, and platforms)
   within NYC and a 2 km margin,
   filtered from Geofabrik's daily New York State OpenStreetMap extract to about 20 MB.
@@ -35,7 +37,7 @@ R5 departs every minute of the weekday morning peak and reports the median trip.
 - **Land**: `nyc-subway-isochrones`' NYC shoreline, which keeps the grid out of the water.
 
 Travel times are routed from every station to a grid of about 22,000 cells over the city's land,
-about 190 m across, each feed on its own Wednesday with the most trips scheduled.
+about 190 m across, on the Wednesday and the Saturday with the most trips scheduled.
 
 ## Usage
 

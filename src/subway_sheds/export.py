@@ -1,5 +1,6 @@
 """Travel times as the web page loads them."""
 
+import itertools
 import json
 import shutil
 
@@ -8,7 +9,7 @@ import pandas as pd
 
 from subway_sheds import gtfs, lines, paths, travel_times
 from subway_sheds.grid import SPACING, Grid
-from subway_sheds.scenarios import Scenario
+from subway_sheds.scenarios import Day, Scenario
 
 # In a station's times, a cell not reached within `travel_times.MAX_TIME`.
 UNREACHED = 255
@@ -24,7 +25,8 @@ def write(grid: Grid) -> None:
     - `lines.json`: GeoJSON of the lines between stations, each with its color
       and which scenarios run on it.
     - `times/{station}.bin`: minutes from the station to each cell, one byte each,
-      every cell's in the baseline and then every cell's with QueensLink.
+      every cell's in each scenario on each day, by day and then by scenario,
+      in the order `Day` and `Scenario` list them.
     """
     shutil.rmtree(paths.WEB_DATA, ignore_errors=True)
     times_dir = paths.WEB_DATA / "times"
@@ -85,11 +87,13 @@ def write(grid: Grid) -> None:
     )
 
     cell_count = len(grid.cols)
-    minutes = np.full((len(stations), len(Scenario), cell_count), UNREACHED, dtype=np.uint8)
+    minutes = np.full(
+        (len(stations), len(Day), len(Scenario), cell_count), UNREACHED, dtype=np.uint8
+    )
     index = {station: i for i, station in enumerate(stations)}
-    for s, scenario in enumerate(Scenario):
-        times = pd.read_parquet(travel_times.output_path(scenario))
+    for (d, day), (s, scenario) in itertools.product(enumerate(Day), enumerate(Scenario)):
+        times = pd.read_parquet(travel_times.output_path(scenario, day))
         rows = times["station"].astype(str).map(index).to_numpy()
-        minutes[rows, s, times["cell"].to_numpy()] = times["minutes"].to_numpy()
+        minutes[rows, d, s, times["cell"].to_numpy()] = times["minutes"].to_numpy()
     for station, i in index.items():
         (times_dir / f"{station}.bin").write_bytes(minutes[i].tobytes())
