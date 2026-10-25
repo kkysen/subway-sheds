@@ -3,6 +3,8 @@ name = "subway-sheds"
 version = "0.1.0"
 description = "NYC subway travel-time sheds, with and without QueensLink"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.15"
 dependencies = [
     "duckdb>=2.0.0",
