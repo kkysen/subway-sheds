@@ -72,6 +72,13 @@ def test_zip_feed_is_flat(tmp_path: Path) -> None:
     assert [s.id for s in gtfs.stations(dest)] == ["H04"]
 
 
+def test_stations_are_only_those_stopped_at(tmp_path: Path) -> None:
+    unserved = "S01,Unserved,40.6,-73.8,1,\nS01N,Unserved,40.6,-73.8,0,S01\n"
+    feed = tmp_path / "feed.zip"
+    gtfs.zip_feed(_feed_dir(tmp_path / "feed", FILES | {"stops.txt": STOPS + unserved}), feed)
+    assert [s.id for s in gtfs.stations(feed)] == ["H04"]
+
+
 def test_service_date_goes_by_trips(tmp_path: Path) -> None:
     feed = tmp_path / "feed.zip"
     gtfs.zip_feed(_feed_dir(tmp_path / "feed", FILES), feed)

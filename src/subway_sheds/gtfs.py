@@ -237,7 +237,20 @@ class Station:
 
 
 def stations(feed_path: Path) -> list[Station]:
+    """
+    The stations some trip stops at.
+
+    Not every station in `stops.txt`, since the baseline keeps QueensLink's stations
+    with no trips stopping at them.
+    """
     with zipfile.ZipFile(feed_path) as feed:
+        stop_ids = {stop_time["stop_id"] for stop_time in _read_csv(feed, "stop_times.txt")}
+        stops = list(_read_csv(feed, "stops.txt"))
+        served = {
+            stop["parent_station"] or stop["stop_id"]
+            for stop in stops
+            if stop["stop_id"] in stop_ids
+        }
         return [
             Station(
                 id=stop["stop_id"],
@@ -245,8 +258,8 @@ def stations(feed_path: Path) -> list[Station]:
                 lat=float(stop["stop_lat"]),
                 lon=float(stop["stop_lon"]),
             )
-            for stop in _read_csv(feed, "stops.txt")
-            if stop["location_type"] == "1"
+            for stop in stops
+            if stop["location_type"] == "1" and stop["stop_id"] in served
         ]
 
 
