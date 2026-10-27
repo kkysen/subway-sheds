@@ -121,9 +121,11 @@ jobs:
         with:
           path: .cache/travel_times
           # With the downloads' version and the streets, since they go into it too.
+          # Only the Python source, not all of `src/`: running `fetch` has just written `__pycache__/` there,
+          # whose `.pyc` files record the checkout's times, so they'd change the key on every run.
           key: >-
             travel-times-downloads-v1-${{
-            hashFiles('gtfs/**', 'src/**', 'uv.lock', '.cache/nyc-streets.osm.pbf') }}
+            hashFiles('gtfs/**', 'src/**/*.py', 'uv.lock', '.cache/nyc-streets.osm.pbf') }}
 
       - name: route
         if: steps.travel-times.outputs.cache-hit != 'true'
