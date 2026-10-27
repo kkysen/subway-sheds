@@ -183,46 +183,66 @@ const UPSAMPLE = 3;
 
 // How much of a cell's class it is, 1 or 0, for each cell, a little blurred into its neighbors,
 // then interpolated between cells' centers at `UPSAMPLE` times the resolution.
+// It's run for every class each time a station is picked, so its loops are kept free of
+// closures and allocations, with indices clamped to the edges ahead of time.
 function membership(classes: Int8Array, which: number, width: number, height: number) {
-  const is = (col: number, row: number): number =>
-    classes[
-      Math.min(Math.max(row, 0), height - 1) * width + Math.min(Math.max(col, 0), width - 1)
-    ] === which
-      ? 1
-      : 0;
+  const is = new Uint8Array(width * height);
+  for (let j = 0; j < is.length; j++) {
+    is[j] = classes[j] === which ? 1 : 0;
+  }
   // Blurred by 1-2-1 across and then up, so that edges round off rather than run cell by cell.
   const across = new Float32Array(width * height);
   for (let row = 0; row < height; row++) {
+    const start = row * width;
     for (let col = 0; col < width; col++) {
-      across[row * width + col] = (is(col - 1, row) + 2 * is(col, row) + is(col + 1, row)) / 4;
+      const left = start + Math.max(col - 1, 0);
+      const right = start + Math.min(col + 1, width - 1);
+      across[start + col] = ((is[left] ?? 0) + 2 * (is[start + col] ?? 0) + (is[right] ?? 0)) / 4;
     }
   }
   const blurred = new Float32Array(width * height);
-  const at = (col: number, row: number): number =>
-    across[Math.min(Math.max(row, 0), height - 1) * width + col] ?? 0;
   for (let row = 0; row < height; row++) {
+    const start = row * width;
+    const below = Math.max(row - 1, 0) * width;
+    const above = Math.min(row + 1, height - 1) * width;
     for (let col = 0; col < width; col++) {
-      blurred[row * width + col] = (at(col, row - 1) + 2 * at(col, row) + at(col, row + 1)) / 4;
+      blurred[start + col] =
+        ((across[below + col] ?? 0) + 2 * (across[start + col] ?? 0) + (across[above + col] ?? 0)) /
+        4;
     }
   }
 
   const fineWidth = width * UPSAMPLE;
   const fineHeight = height * UPSAMPLE;
   const fine = new Float32Array(fineWidth * fineHeight);
-  // A fine pixel's position in cells, and the cells either side of it, with its weight between.
-  const between = (i: number, size: number): [number, number, number] => {
-    const position = Math.min(Math.max((i + 0.5) / UPSAMPLE - 0.5, 0), size - 1);
-    const low = Math.min(Math.floor(position), Math.max(size - 2, 0));
-    return [low, Math.min(low + 1, size - 1), position - low];
+  // Each fine pixel's position in cells, along one axis: the cells either side of it,
+  // and its weight between them.
+  const between = (size: number) => {
+    const low = new Int32Array(size * UPSAMPLE);
+    const high = new Int32Array(size * UPSAMPLE);
+    const weight = new Float64Array(size * UPSAMPLE);
+    for (let i = 0; i < low.length; i++) {
+      const position = Math.min(Math.max((i + 0.5) / UPSAMPLE - 0.5, 0), size - 1);
+      const cell = Math.min(Math.floor(position), Math.max(size - 2, 0));
+      low[i] = cell;
+      high[i] = Math.min(cell + 1, size - 1);
+      weight[i] = position - cell;
+    }
+    return { low, high, weight };
   };
+  const xs = between(width);
+  const ys = between(height);
   for (let y = 0; y < fineHeight; y++) {
-    const [y0, y1, ty] = between(y, height);
+    const south = (ys.low[y] ?? 0) * width;
+    const north = (ys.high[y] ?? 0) * width;
+    const ty = ys.weight[y] ?? 0;
     for (let x = 0; x < fineWidth; x++) {
-      const [x0, x1, tx] = between(x, width);
-      const value = (col: number, row: number): number => blurred[row * width + col] ?? 0;
-      const south = value(x0, y0) * (1 - tx) + value(x1, y0) * tx;
-      const north = value(x0, y1) * (1 - tx) + value(x1, y1) * tx;
-      fine[y * fineWidth + x] = south * (1 - ty) + north * ty;
+      const x0 = xs.low[x] ?? 0;
+      const x1 = xs.high[x] ?? 0;
+      const tx = xs.weight[x] ?? 0;
+      const southValue = (blurred[south + x0] ?? 0) * (1 - tx) + (blurred[south + x1] ?? 0) * tx;
+      const northValue = (blurred[north + x0] ?? 0) * (1 - tx) + (blurred[north + x1] ?? 0) * tx;
+      fine[y * fineWidth + x] = southValue * (1 - ty) + northValue * ty;
     }
   }
   return fine;
