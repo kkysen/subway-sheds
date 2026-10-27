@@ -123,11 +123,17 @@ def route(
         None,
         help="Parent station IDs, e.g. H04, whose times to replace; every station if none.",
     ),
+    scenario_: list[Scenario] | None = typer.Option(
+        None, "--scenario", help="A scenario to route, repeatable; every one if none."
+    ),
+    day_: list[Day] | None = typer.Option(
+        None, "--day", help="A day to route, repeatable; every one if none."
+    ),
 ) -> None:
     """Route from stations to the grid in each scenario, on each day."""
     destinations = land_grid().points()
     typer.echo(f"{len(destinations)} cells")
-    for scenario, day in itertools.product(Scenario, Day):
+    for scenario, day in itertools.product(scenario_ or list(Scenario), day_ or list(Day)):
         stations = gtfs.stations(scenario.gtfs)
         if stop_ids:
             # A station only in one scenario, like QueensLink's new ones, is routed only there.
