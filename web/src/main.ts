@@ -282,16 +282,17 @@ async function selectStation(id: string): Promise<void> {
     return;
   }
   selected = id;
+  // Shown picked straight away, so that the click feels taken while its times load.
+  map.setFilter("selected-station", ["==", ["get", "id"], id]);
+  const only = station.scenarios.length === 1 ? " (QueensLink only)" : "";
+  stationName.textContent = `${station.name}${only}`;
+  history.replaceState(null, "", `#${encodeURIComponent(id)}`);
   const times = await fetchTimes(id);
   if (selected !== id) {
     return;
   }
   selectedTimes = times;
   drawCells();
-  map.setFilter("selected-station", ["==", ["get", "id"], id]);
-  const only = station.scenarios.length === 1 ? " (QueensLink only)" : "";
-  stationName.textContent = `${station.name}${only}`;
-  history.replaceState(null, "", `#${encodeURIComponent(id)}`);
 }
 
 function stationFromHash(): string {
