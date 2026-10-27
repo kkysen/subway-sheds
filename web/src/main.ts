@@ -1,6 +1,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   type ExpressionSpecification,
+  FullscreenControl,
   Map as MapLibreMap,
   type MapMouseEvent,
   type MapTouchEvent,
@@ -345,6 +346,9 @@ const map = new MapLibreMap({
     ],
   },
 });
+
+// The whole page rather than just the map, which would leave the controls out.
+map.addControl(new FullscreenControl({ container: document.body }));
 
 // Listened for before awaiting the data, which the map can finish loading before.
 const loaded = new Promise((resolve) => map.once("load", resolve));
