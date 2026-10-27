@@ -97,3 +97,12 @@ body,
   opacity: 0.6;
   vertical-align: baseline;
 }
+
+#full-map {
+  display: block;
+  margin-top: 6px;
+}
+
+#full-map[hidden] {
+  display: none;
+}

@@ -257,6 +257,10 @@ const controls = element("#controls", HTMLFormElement);
 const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
 const legend = element("#legend", HTMLElement);
+const fullMap = element("#full-map", HTMLAnchorElement);
+
+// Only when embedded, as on thequeenslink.org, since it's already the full map otherwise.
+fullMap.hidden = window.top === window.self;
 
 // The controls kept across reloads and in links, by their inputs' name.
 const savedControls = ["day", "view"] as const;
@@ -420,6 +424,8 @@ function writeHash(): void {
   const data = new FormData(controls);
   const params = new URLSearchParams(savedControls.map((name) => [name, String(data.get(name))]));
   history.replaceState(null, "", `#${encodeURIComponent(selected)}&${params}`);
+  // Opens as it's shown here.
+  fullMap.href = location.href;
 }
 
 function applyControls(): void {
