@@ -33,16 +33,17 @@ const dayNames: Record<Day, string> = {
   saturday: "on Saturday midday",
 };
 
-// Shorter, for the summary shown with the controls collapsed.
-const shortDayNames: Record<Day, string> = {
-  weekday: "weekday AM",
-  saturday: "Saturday midday",
+// Shorter, for the summary shown with the controls collapsed,
+// each shorter than the last for when the one before doesn't fit.
+const shortDayNames: Record<Day, readonly string[]> = {
+  weekday: ["weekday AM", "weekday AM", "wkdy AM"],
+  saturday: ["Saturday midday", "Saturday midday", "Sat midday"],
 };
 
-const shortViewNames: Record<View, string> = {
-  baseline: "without QueensLink",
-  queenslink: "with QueensLink",
-  saved: "minutes saved",
+const shortViewNames: Record<View, readonly string[]> = {
+  baseline: ["without QueensLink", "w/o QL", "w/o QL"],
+  queenslink: ["with QueensLink", "w/ QL", "w/ QL"],
+  saved: ["minutes saved", "min saved", "min saved"],
 };
 
 function isView(value: unknown): value is View {
@@ -286,7 +287,8 @@ const fullMap = element("#full-map", HTMLAnchorElement);
 const small = window.matchMedia("(max-width: 600px), (max-height: 500px)").matches;
 
 // Collapsed to start with on small screens.
-element("#controls details", HTMLDetailsElement).open = !small;
+const details = element("#controls details", HTMLDetailsElement);
+details.open = !small;
 
 // Only when embedded, as on thequeenslink.org, since it's already the full map otherwise.
 fullMap.hidden = window.top === window.self;
@@ -349,16 +351,25 @@ function showControls(): void {
 }
 
 // What the map shows, for when the controls are collapsed and don't say.
+// It can only be measured while shown, so it's shown again on collapsing and resizing.
 function showSummaryStatus(): void {
-  summaryStatus.textContent = [
-    selectedName,
-    shortDayNames[currentDay()],
-    shortViewNames[currentView()],
-  ].join(" · ");
+  const days = shortDayNames[currentDay()];
+  const views = shortViewNames[currentView()];
+  summaryStatus.classList.remove("wraps");
+  for (const [i, day] of days.entries()) {
+    summaryStatus.textContent = [selectedName, day, views[i]].join(" · ");
+    if (summaryStatus.scrollWidth <= summaryStatus.clientWidth) {
+      return;
+    }
+  }
+  // Too narrow for even the shortest, as on the narrowest phones, so wrapped rather than cut off.
+  summaryStatus.classList.add("wraps");
 }
 
 restoreControls();
 showControls();
+details.addEventListener("toggle", showSummaryStatus);
+window.addEventListener("resize", showSummaryStatus);
 
 function currentDay(): Day {
   const value = new FormData(controls).get("day");
