@@ -3,6 +3,8 @@ import {
   type ExpressionSpecification,
   Map as MapLibreMap,
   type MapMouseEvent,
+  type MapTouchEvent,
+  type Point,
   setWorkerUrl,
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
@@ -66,12 +68,47 @@ async function fetchJson<T>(path: string): Promise<T> {
   return json;
 }
 
-async function fetchTimes(station: string): Promise<Uint8Array> {
+async function fetchTimesUncached(station: string): Promise<Uint8Array> {
   const response = await fetch(data(`times/${encodeURIComponent(station)}.bin`));
   if (!response.ok) {
     throw new Error(`${response.status} fetching times from ${station}`);
   }
   return new Uint8Array(await response.arrayBuffer());
+}
+
+// How many stations' times are kept, about 86 KB each,
+// so that pointing across the city doesn't keep all of them.
+const CACHED_STATIONS = 64;
+
+// The times fetched or being fetched, least recently asked for first,
+// so that a click on a station already fetched for being pointed at waits on that fetch.
+const timesCache = new Map<string, Promise<Uint8Array>>();
+
+function fetchTimes(station: string): Promise<Uint8Array> {
+  let times = timesCache.get(station);
+  timesCache.delete(station);
+  if (times === undefined) {
+    times = fetchTimesUncached(station);
+    // Forgotten if it fails, so that it's tried again next time.
+    times.catch(() => {
+      if (timesCache.get(station) === times) {
+        timesCache.delete(station);
+      }
+    });
+  }
+  timesCache.set(station, times);
+  for (const oldest of timesCache.keys()) {
+    if (timesCache.size <= CACHED_STATIONS) {
+      break;
+    }
+    timesCache.delete(oldest);
+  }
+  return times;
+}
+
+// Fetched ahead of being picked, for being pointed at or touched.
+function prefetchTimes(station: string): void {
+  fetchTimes(station).catch(() => {});
 }
 
 // The grid as a raster, `width` cells by `height`, cell (0, 0) at its southwest corner.
@@ -305,7 +342,7 @@ function stationFromHash(): string {
 const HIT_RADIUS = 12;
 
 // The station nearest the point, of those within reach of it.
-function stationAt(event: MapMouseEvent): string | undefined {
+function stationAt(event: { readonly point: Point }): string | undefined {
   const { x, y } = event.point;
   let nearest: string | undefined;
   let nearestDistance = Infinity;
@@ -393,7 +430,18 @@ await loaded;
     }
   });
   map.on("mousemove", (event: MapMouseEvent) => {
-    map.getCanvas().style.cursor = stationAt(event) === undefined ? "" : "pointer";
+    const id = stationAt(event);
+    map.getCanvas().style.cursor = id === undefined ? "" : "pointer";
+    if (id !== undefined) {
+      prefetchTimes(id);
+    }
+  });
+  // On a phone, the touch starts a little before the tap it ends in.
+  map.on("touchstart", (event: MapTouchEvent) => {
+    const id = event.points.length === 1 ? stationAt(event) : undefined;
+    if (id !== undefined) {
+      prefetchTimes(id);
+    }
   });
 
   void selectStation(stationFromHash());
