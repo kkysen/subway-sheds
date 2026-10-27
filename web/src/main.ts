@@ -259,12 +259,13 @@ const dayName = element("#day-name", HTMLElement);
 const legend = element("#legend", HTMLElement);
 const fullMap = element("#full-map", HTMLAnchorElement);
 
-// Collapsed to start with on narrow screens, as on phones, where open they'd cover much of the map.
+// Narrow screens, as on phones, where the controls and credits open would cover much of the map.
 // The same width as `style.css`'s narrow layout.
-// Or on short ones, as on phones turned sideways, where open they're 300px of under 500.
-element("#controls details", HTMLDetailsElement).open = !window.matchMedia(
-  "(max-width: 600px), (max-height: 500px)",
-).matches;
+// Or short ones, as on phones turned sideways, where the controls open are 300px of under 500.
+const small = window.matchMedia("(max-width: 600px), (max-height: 500px)").matches;
+
+// Collapsed to start with on small screens.
+element("#controls details", HTMLDetailsElement).open = !small;
 
 // Only when embedded, as on thequeenslink.org, since it's already the full map otherwise.
 fullMap.hidden = window.top === window.self;
@@ -349,7 +350,17 @@ const map = new MapLibreMap({
   style: "https://tiles.openfreemap.org/styles/positron",
   center: [-73.87, 40.7],
   zoom: 10.5,
+  // Behind a button on small screens, as MapLibre already does on its own when the map is 640px wide or less.
+  attributionControl: small ? { compact: true } : {},
 });
+
+// Collapsed to start with on small screens too, as MapLibre would only do once the map's dragged.
+// Once loaded, since it opens them once the style's attributions are in.
+if (small) {
+  map.once("load", () => {
+    element(".maplibregl-ctrl-attrib", HTMLElement).classList.remove("maplibregl-compact-show");
+  });
+}
 
 // Our credits, in this order, before the map data's.
 // They're not given to MapLibre as custom attributions, since it sorts those in with the rest by length,
