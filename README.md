@@ -11,7 +11,7 @@ the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11 to noon.
 
 ## Data
 
-- **QueensLink**: the QueensLink scenario feed, in [`gtfs/queenslink/`](gtfs/queenslink).
+- **QueensLink**: the QueensLink scenario feed, made by Franklin Tang, in [`gtfs/queenslink/`](gtfs/queenslink).
   It's MTA's subway feed for 2025-11-02 to 2025-12-07
   (the Mobility Database's [`mdb-516-202511010043`](https://mobilitydatabase.org/feeds/gtfs/mdb-516))
   with QueensLink's M replacing the M and the Rockaway Park shuttle,
