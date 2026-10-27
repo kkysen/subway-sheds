@@ -288,6 +288,7 @@ const map = new MapLibreMap({
     customAttribution: [
       '<a href="https://github.com/kkysen/subway-sheds">Map by Khyber Sen</a>',
       "QueensLink GTFS by Franklin Tang",
+      'Inspiration and shoreline from Chris Whong\'s <a href="https://github.com/chriswhong/nyc-subway-isochrones">nyc-subway-isochrones</a>',
     ],
   },
 });
