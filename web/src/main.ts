@@ -162,6 +162,9 @@ const savedBands: readonly Band[] = [
 // Places only QueensLink reaches within `ROUTED_MINUTES`, which there's no saying how much it saves.
 const QUEENSLINK_ONLY_COLOR = "#6a3d9a";
 
+// Stations new with QueensLink, among the others in white.
+const NEW_STATION_COLOR = "#ff8319";
+
 const bands = (view: View): readonly Band[] => (view === "saved" ? savedBands : travelTimeBands);
 
 // The colors the view's cells are drawn in, the class of cell each is for being its index.
@@ -236,7 +239,14 @@ function legendItems(view: View): HTMLElement[] {
   } else {
     note.textContent = "Minutes from the station, walking at the end.";
   }
-  return [bar, labels, note];
+  const stationKey = document.createElement("p");
+  const station = document.createElement("span");
+  station.className = "legend-station";
+  const newStation = document.createElement("span");
+  newStation.className = "legend-station";
+  newStation.style.background = NEW_STATION_COLOR;
+  stationKey.append(station, " Station ", newStation, " New with QueensLink");
+  return [bar, labels, note, stationKey];
 }
 
 // The lines of the scenario the view shows, with QueensLink's for what it saves.
@@ -520,7 +530,7 @@ await loaded;
     source: "stations",
     paint: {
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 14, 6],
-      "circle-color": ["case", ["get", "new"], "#ff8319", "#ffffff"],
+      "circle-color": ["case", ["get", "new"], NEW_STATION_COLOR, "#ffffff"],
       "circle-stroke-color": "#333333",
       "circle-stroke-width": 1,
     },
