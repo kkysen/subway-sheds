@@ -162,9 +162,6 @@ const savedBands: readonly Band[] = [
 // Places only QueensLink reaches within `ROUTED_MINUTES`, which there's no saying how much it saves.
 const QUEENSLINK_ONLY_COLOR = "#6a3d9a";
 
-// Stations new with QueensLink, among the others in white.
-const NEW_STATION_COLOR = "#ff8319";
-
 const bands = (view: View): readonly Band[] => (view === "saved" ? savedBands : travelTimeBands);
 
 // The colors the view's cells are drawn in, the class of cell each is for being its index.
@@ -243,8 +240,7 @@ function legendItems(view: View): HTMLElement[] {
   const station = document.createElement("span");
   station.className = "legend-station";
   const newStation = document.createElement("span");
-  newStation.className = "legend-station";
-  newStation.style.background = NEW_STATION_COLOR;
+  newStation.className = "legend-station legend-station-new";
   stationKey.append(station, " Station ", newStation, " New with QueensLink");
   return [bar, labels, note, stationKey];
 }
@@ -529,10 +525,20 @@ await loaded;
     type: "circle",
     source: "stations",
     paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 14, 6],
-      "circle-color": ["case", ["get", "new"], NEW_STATION_COLOR, "#ffffff"],
-      "circle-stroke-color": "#333333",
-      "circle-stroke-width": 1,
+      // Stations new with QueensLink bigger and in black, apart by more than a color,
+      // since every bright one is already some line's or some band's.
+      "circle-radius": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10,
+        ["case", ["get", "new"], 4, 2.5],
+        14,
+        ["case", ["get", "new"], 8, 6],
+      ],
+      "circle-color": ["case", ["get", "new"], "#000000", "#ffffff"],
+      "circle-stroke-color": ["case", ["get", "new"], "#ffffff", "#333333"],
+      "circle-stroke-width": ["case", ["get", "new"], 2, 1],
     },
   });
   map.addLayer({

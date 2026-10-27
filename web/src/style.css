@@ -111,6 +111,14 @@ body,
   vertical-align: baseline;
 }
 
+.legend-station-new {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
+  outline: 1px solid #333333;
+  background: #000000;
+}
+
 #full-map {
   display: block;
   margin-top: 6px;
