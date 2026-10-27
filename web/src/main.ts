@@ -1,13 +1,12 @@
 import "maplibre-gl/dist/maplibre-gl.css";
-import { contours } from "d3-contour";
 import {
   type ExpressionSpecification,
-  type GeoJSONSource,
   Map as MapLibreMap,
   type MapMouseEvent,
   setWorkerUrl,
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
+import { BandsLayer } from "./bands";
 
 // MapLibre loads its worker from a file of its own, which it looks for next to the bundle;
 // importing it with `?url` is what gets Vite to emit it at all.
@@ -73,14 +72,6 @@ async function fetchTimes(station: string): Promise<Uint8Array> {
     throw new Error(`${response.status} fetching times from ${station}`);
   }
   return new Uint8Array(await response.arrayBuffer());
-}
-
-const EARTH_RADIUS = 6378137;
-
-function toLngLat(x: number, y: number): [number, number] {
-  const lng = (x / EARTH_RADIUS) * (180 / Math.PI);
-  const lat = Math.atan(Math.sinh(y / EARTH_RADIUS)) * (180 / Math.PI);
-  return [lng, lat];
 }
 
 // The grid as a raster, `width` cells by `height`, cell (0, 0) at its southwest corner.
@@ -177,144 +168,6 @@ function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8A
   return classes;
 }
 
-// How many times finer than the grid the bands are traced, so that their edges curve
-// rather than turn at each cell.
-const UPSAMPLE = 3;
-
-// How much of a cell's class it is, 1 or 0, for each cell, a little blurred into its neighbors,
-// then interpolated between cells' centers at `UPSAMPLE` times the resolution.
-// It's run for every class each time a station is picked, so its loops are kept free of
-// closures and allocations, with indices clamped to the edges ahead of time.
-function membership(classes: Int8Array, which: number, width: number, height: number) {
-  const is = new Uint8Array(width * height);
-  for (let j = 0; j < is.length; j++) {
-    is[j] = classes[j] === which ? 1 : 0;
-  }
-  // Blurred by 1-2-1 across and then up, so that edges round off rather than run cell by cell.
-  const across = new Float32Array(width * height);
-  for (let row = 0; row < height; row++) {
-    const start = row * width;
-    for (let col = 0; col < width; col++) {
-      const left = start + Math.max(col - 1, 0);
-      const right = start + Math.min(col + 1, width - 1);
-      across[start + col] = ((is[left] ?? 0) + 2 * (is[start + col] ?? 0) + (is[right] ?? 0)) / 4;
-    }
-  }
-  const blurred = new Float32Array(width * height);
-  for (let row = 0; row < height; row++) {
-    const start = row * width;
-    const below = Math.max(row - 1, 0) * width;
-    const above = Math.min(row + 1, height - 1) * width;
-    for (let col = 0; col < width; col++) {
-      blurred[start + col] =
-        ((across[below + col] ?? 0) + 2 * (across[start + col] ?? 0) + (across[above + col] ?? 0)) /
-        4;
-    }
-  }
-
-  const fineWidth = width * UPSAMPLE;
-  const fineHeight = height * UPSAMPLE;
-  const fine = new Float32Array(fineWidth * fineHeight);
-  // Each fine pixel's position in cells, along one axis: the cells either side of it,
-  // and its weight between them.
-  const between = (size: number) => {
-    const low = new Int32Array(size * UPSAMPLE);
-    const high = new Int32Array(size * UPSAMPLE);
-    const weight = new Float64Array(size * UPSAMPLE);
-    for (let i = 0; i < low.length; i++) {
-      const position = Math.min(Math.max((i + 0.5) / UPSAMPLE - 0.5, 0), size - 1);
-      const cell = Math.min(Math.floor(position), Math.max(size - 2, 0));
-      low[i] = cell;
-      high[i] = Math.min(cell + 1, size - 1);
-      weight[i] = position - cell;
-    }
-    return { low, high, weight };
-  };
-  const xs = between(width);
-  const ys = between(height);
-  for (let y = 0; y < fineHeight; y++) {
-    const south = (ys.low[y] ?? 0) * width;
-    const north = (ys.high[y] ?? 0) * width;
-    const ty = ys.weight[y] ?? 0;
-    for (let x = 0; x < fineWidth; x++) {
-      const x0 = xs.low[x] ?? 0;
-      const x1 = xs.high[x] ?? 0;
-      const tx = xs.weight[x] ?? 0;
-      const southValue = (blurred[south + x0] ?? 0) * (1 - tx) + (blurred[south + x1] ?? 0) * tx;
-      const northValue = (blurred[north + x0] ?? 0) * (1 - tx) + (blurred[north + x1] ?? 0) * tx;
-      fine[y * fineWidth + x] = southValue * (1 - ty) + northValue * ty;
-    }
-  }
-  return fine;
-}
-
-// The view's classes as smooth shapes. Each fine pixel goes to the class it's most of,
-// which nothing to show competes for too, so that the shapes meet without gaps or overlaps,
-// and a band is drawn only where some cell is in it.
-function bandFeatures(grid: Grid, classes: Int8Array, view: View): GeoJSON.FeatureCollection {
-  const { width, height } = rasterSize(grid);
-  const fineWidth = width * UPSAMPLE;
-  const fineHeight = height * UPSAMPLE;
-  const colors = classColors(view);
-  const present = [NOTHING, ...colors.keys()].filter((which) => classes.includes(which));
-  // Computed once each, as they're needed both to rank the classes and to trace each one.
-  const memberships = new Map(
-    present.map((which) => [which, membership(classes, which, width, height)]),
-  );
-
-  // Each fine pixel's most and next most class, and how much of each it is.
-  const most = new Int8Array(fineWidth * fineHeight).fill(NOTHING);
-  const mostAmount = new Float32Array(fineWidth * fineHeight).fill(-1);
-  const nextAmount = new Float32Array(fineWidth * fineHeight).fill(-1);
-  for (const [which, amounts] of memberships) {
-    // A plain loop, as `forEach` calls back per pixel.
-    for (let j = 0; j < amounts.length; j++) {
-      const amount = amounts[j] ?? 0;
-      if (amount > (mostAmount[j] ?? -1)) {
-        nextAmount[j] = mostAmount[j] ?? -1;
-        mostAmount[j] = amount;
-        most[j] = which;
-      } else if (amount > (nextAmount[j] ?? -1)) {
-        nextAmount[j] = amount;
-      }
-    }
-  }
-
-  const contour = contours().size([fineWidth, fineHeight]).thresholds([0]);
-  // A fine pixel's amount is at its center, a half pixel in from its corner.
-  const toMap = ([x, y]: number[]): [number, number] =>
-    toLngLat(
-      grid.x0 + ((x ?? 0) / UPSAMPLE - 0.5) * grid.spacing,
-      grid.y0 + ((y ?? 0) / UPSAMPLE - 0.5) * grid.spacing,
-    );
-  const features: GeoJSON.Feature[] = [];
-  for (const [which, amounts] of memberships) {
-    if (which === NOTHING) {
-      continue;
-    }
-    // By how much the pixel is more of this class than any other, or less than the most.
-    // Filled by a plain loop, as `Array.from` and `Float64Array.from` call back per pixel.
-    const ahead = new Float64Array(amounts.length);
-    for (let j = 0; j < ahead.length; j++) {
-      const amount = amounts[j] ?? 0;
-      ahead[j] = most[j] === which ? amount - (nextAmount[j] ?? 0) : amount - (mostAmount[j] ?? 0);
-    }
-    // Its types ask for an array, but it only indexes into the values, as a typed array allows.
-    const [shape] = contour(ahead as unknown as number[]);
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "MultiPolygon",
-        coordinates: (shape?.coordinates ?? []).map((polygon) =>
-          polygon.map((ring) => ring.map(toMap)),
-        ),
-      },
-      properties: { color: colors[which] },
-    });
-  }
-  return { type: "FeatureCollection", features };
-}
-
 function legendItems(view: View): HTMLElement[] {
   const viewBands = bands(view);
   const bar = document.createElement("div");
@@ -404,6 +257,8 @@ const [grid, stations, lines] = await Promise.all([
   fetchJson<Station[]>("stations.json"),
   fetchJson<GeoJSON.FeatureCollection>("lines.json"),
 ]);
+const { width, height } = rasterSize(grid);
+const bandsLayer = new BandsLayer("bands", grid, width, height);
 const stationsById = new Map(stations.map((station) => [station.id, station]));
 
 // Broad Channel, whose trip to most of the city QueensLink shortens.
@@ -416,15 +271,8 @@ let selectedTimes: Uint8Array | undefined;
 
 function drawCells(): void {
   if (selectedTimes !== undefined) {
-    map
-      .getSource<GeoJSONSource>("cells")
-      ?.setData(
-        bandFeatures(
-          grid,
-          cellClasses(grid, selectedTimes, currentDay(), currentView()),
-          currentView(),
-        ),
-      );
+    const view = currentView();
+    bandsLayer.setClasses(cellClasses(grid, selectedTimes, currentDay(), view), classColors(view));
   }
 }
 
@@ -487,26 +335,7 @@ await loaded;
   const view = currentView();
   // Under the labels, so street and place names stay readable.
   const firstLabels = map.getStyle().layers.find((layer) => layer.type === "symbol")?.id;
-  map.addSource("cells", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-  map.addLayer(
-    {
-      id: "cells",
-      type: "fill",
-      source: "cells",
-      paint: { "fill-color": ["get", "color"], "fill-opacity": 0.6 },
-    },
-    firstLabels,
-  );
-  // The edges between bands, so that each stands out from the next.
-  map.addLayer(
-    {
-      id: "band-edges",
-      type: "line",
-      source: "cells",
-      paint: { "line-color": "#000000", "line-opacity": 0.25, "line-width": 0.75 },
-    },
-    firstLabels,
-  );
+  map.addLayer(bandsLayer, firstLabels);
 
   map.addSource("lines", { type: "geojson", data: lines });
   map.addLayer({
