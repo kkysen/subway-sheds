@@ -284,6 +284,9 @@ const map = new MapLibreMap({
   style: "https://tiles.openfreemap.org/styles/positron",
   center: [-73.87, 40.7],
   zoom: 10.5,
+  attributionControl: {
+    customAttribution: '<a href="https://github.com/kkysen/subway-sheds">Map by Khyber Sen</a>',
+  },
 });
 
 // Listened for before awaiting the data, which the map can finish loading before.
