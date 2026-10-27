@@ -24,8 +24,9 @@
     const main = document.querySelector('[role="main"]');
     const map = document.getElementById("subway-sheds");
     const fit = () => {
-      const top = header.offsetHeight;
-      main.style.paddingTop = top + "px";
+      main.style.paddingTop = header.offsetHeight + "px";
+      // Where the map starts on the page, which also counts WordPress's admin bar above everything when logged in.
+      const top = map.getBoundingClientRect().top + scrollY;
       map.style.height = `calc(100dvh - ${top}px)`;
     };
     fit();
