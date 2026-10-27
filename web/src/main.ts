@@ -267,7 +267,9 @@ function bandFeatures(grid: Grid, classes: Int8Array, view: View): GeoJSON.Featu
   const mostAmount = new Float32Array(fineWidth * fineHeight).fill(-1);
   const nextAmount = new Float32Array(fineWidth * fineHeight).fill(-1);
   for (const [which, amounts] of memberships) {
-    amounts.forEach((amount, j) => {
+    // A plain loop, as `forEach` calls back per pixel.
+    for (let j = 0; j < amounts.length; j++) {
+      const amount = amounts[j] ?? 0;
       if (amount > (mostAmount[j] ?? -1)) {
         nextAmount[j] = mostAmount[j] ?? -1;
         mostAmount[j] = amount;
@@ -275,7 +277,7 @@ function bandFeatures(grid: Grid, classes: Int8Array, view: View): GeoJSON.Featu
       } else if (amount > (nextAmount[j] ?? -1)) {
         nextAmount[j] = amount;
       }
-    });
+    }
   }
 
   const contour = contours().size([fineWidth, fineHeight]).thresholds([0]);
