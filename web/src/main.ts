@@ -291,10 +291,14 @@ function bandFeatures(grid: Grid, classes: Int8Array, view: View): GeoJSON.Featu
       continue;
     }
     // By how much the pixel is more of this class than any other, or less than the most.
-    const ahead = Array.from(amounts, (amount, j) =>
-      most[j] === which ? amount - (nextAmount[j] ?? 0) : amount - (mostAmount[j] ?? 0),
-    );
-    const [shape] = contour(ahead);
+    // Filled by a plain loop, as `Array.from` and `Float64Array.from` call back per pixel.
+    const ahead = new Float64Array(amounts.length);
+    for (let j = 0; j < ahead.length; j++) {
+      const amount = amounts[j] ?? 0;
+      ahead[j] = most[j] === which ? amount - (nextAmount[j] ?? 0) : amount - (mostAmount[j] ?? 0);
+    }
+    // Its types ask for an array, but it only indexes into the values, as a typed array allows.
+    const [shape] = contour(ahead as unknown as number[]);
     features.push({
       type: "Feature",
       geometry: {
