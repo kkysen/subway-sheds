@@ -33,6 +33,18 @@ const dayNames: Record<Day, string> = {
   saturday: "on Saturday midday",
 };
 
+// Shorter, for the summary shown with the controls collapsed.
+const shortDayNames: Record<Day, string> = {
+  weekday: "weekday AM",
+  saturday: "Saturday midday",
+};
+
+const shortViewNames: Record<View, string> = {
+  baseline: "without QueensLink",
+  queenslink: "with QueensLink",
+  saved: "minutes saved",
+};
+
 function isView(value: unknown): value is View {
   return views.some((view) => view === value);
 }
@@ -262,6 +274,9 @@ function element<T extends Element>(selector: string, type: new () => T): T {
 const controls = element("#controls", HTMLFormElement);
 const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
+const summaryStatus = element("#summary-status", HTMLElement);
+// Kept apart from the stations, which load after the controls are first shown.
+let selectedName = "…";
 const legend = element("#legend", HTMLElement);
 const fullMap = element("#full-map", HTMLAnchorElement);
 
@@ -330,6 +345,16 @@ function showView(view: View): void {
 function showControls(): void {
   dayName.textContent = dayNames[currentDay()];
   showView(currentView());
+  showSummaryStatus();
+}
+
+// What the map shows, for when the controls are collapsed and don't say.
+function showSummaryStatus(): void {
+  summaryStatus.textContent = [
+    selectedName,
+    shortDayNames[currentDay()],
+    shortViewNames[currentView()],
+  ].join(" · ");
 }
 
 restoreControls();
@@ -429,6 +454,8 @@ async function selectStation(id: string): Promise<void> {
   map.setFilter("selected-station", ["==", ["get", "id"], id]);
   const only = station.scenarios.length === 1 ? " (QueensLink only)" : "";
   stationName.textContent = `${station.name}${only}`;
+  selectedName = station.name;
+  showSummaryStatus();
   writeHash();
   const times = await fetchTimes(id);
   if (selected !== id) {

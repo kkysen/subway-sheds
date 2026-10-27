@@ -48,6 +48,18 @@ body,
   display: inline;
 }
 
+/* On its own line under the heading, only while the controls are collapsed. */
+#summary-status {
+  display: block;
+  margin-left: 1em;
+  font-size: 12px;
+  color: #555555;
+}
+
+#controls details[open] #summary-status {
+  display: none;
+}
+
 @media (max-width: 600px) {
   #controls {
     /* Clear of the fullscreen button on the right: its 29px, and 10px either side of it. */
