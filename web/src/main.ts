@@ -257,10 +257,46 @@ const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
 const legend = element("#legend", HTMLElement);
 
+// The controls kept across reloads, by their inputs' name.
+const savedControls = ["day", "view"] as const;
+
+// Prefixed, since every page on kkysen.github.io shares the same storage.
+const storageKey = (name: string): string => `subway-sheds:${name}`;
+
+// Storage can be unavailable, as in some private windows, when the controls just start as they are.
+function restoreControls(): void {
+  for (const name of savedControls) {
+    let value: string | null = null;
+    try {
+      value = localStorage.getItem(storageKey(name));
+    } catch {
+      return;
+    }
+    const inputs = controls.elements.namedItem(name);
+    // Checks the radio with that value, if there still is one.
+    if (value !== null && inputs instanceof RadioNodeList) {
+      inputs.value = value;
+    }
+  }
+}
+
+function saveControls(): void {
+  const data = new FormData(controls);
+  try {
+    for (const name of savedControls) {
+      localStorage.setItem(storageKey(name), String(data.get(name)));
+    }
+  } catch {
+    // Not saved, as when storage is unavailable.
+  }
+}
+
 function showView(view: View): void {
   legend.replaceChildren(...legendItems(view));
 }
 
+restoreControls();
+dayName.textContent = dayNames[currentDay()];
 showView(currentView());
 
 function currentDay(): Day {
@@ -459,6 +495,7 @@ addEventListener("hashchange", () => {
 });
 
 controls.addEventListener("change", () => {
+  saveControls();
   const view = currentView();
   dayName.textContent = dayNames[currentDay()];
   map.setFilter("lines", linesFilter(view));
