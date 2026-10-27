@@ -338,14 +338,28 @@ const map = new MapLibreMap({
   style: "https://tiles.openfreemap.org/styles/positron",
   center: [-73.87, 40.7],
   zoom: 10.5,
-  attributionControl: {
-    customAttribution: [
-      '<a href="https://github.com/kkysen/subway-sheds">Map by Khyber Sen</a>',
-      "QueensLink GTFS by Franklin Tang",
-      'Inspiration and shoreline from Chris Whong’s <a href="https://github.com/chriswhong/nyc-subway-isochrones">nyc-subway-isochrones</a>',
-    ],
-  },
 });
+
+// Our credits, in this order, before the map data's.
+// They're not given to MapLibre as custom attributions, since it sorts those in with the rest by length,
+// so they're put first here instead, and again each time it redraws its attributions over them.
+const credits = document.createElement("span");
+credits.innerHTML = [
+  '<a href="https://github.com/kkysen/subway-sheds">Map and code by Khyber Sen</a>',
+  "QueensLink GTFS by Franklin Tang",
+  'Inspiration and shoreline from Chris Whong’s <a href="https://github.com/chriswhong/nyc-subway-isochrones">nyc-subway-isochrones</a>',
+].join(" | ");
+const attribution = element(".maplibregl-ctrl-attrib-inner", HTMLElement);
+function prependCredits(): void {
+  if (attribution.firstChild !== credits) {
+    attribution.prepend(credits);
+    if (credits.nextSibling !== null) {
+      credits.after(" | ");
+    }
+  }
+}
+prependCredits();
+new MutationObserver(prependCredits).observe(attribution, { childList: true });
 
 // The whole page rather than just the map, which would leave the controls out.
 map.addControl(new FullscreenControl({ container: document.body }));
