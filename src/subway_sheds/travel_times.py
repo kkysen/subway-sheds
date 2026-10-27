@@ -1,6 +1,7 @@
 """Travel times from subway stations to the grid over the city, routed with R5."""
 
 import datetime
+import os
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -31,7 +32,12 @@ class _ParallelTravelTimeMatrix(r5py.TravelTimeMatrix):
     `r5py` routes them one at a time, keeping only a few cores busy,
     though it defines how many threads to use (`NUM_THREADS`, half the cores).
     Each origin is routed in Java, which `jpype` runs without holding the GIL.
+    One thread per core rather than half as many routes about 1.7 times as fast
+    (11 s rather than 19 s for 150 stations on 4 cores, like a GitHub runner's),
+    and twice as many again is no faster.
     """
+
+    NUM_THREADS = os.process_cpu_count() or 1
 
     @override
     def _compute(self) -> pd.DataFrame:
