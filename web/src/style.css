@@ -106,3 +106,10 @@ body,
 #full-map[hidden] {
   display: none;
 }
+
+/* MapLibre only underlines these on hover, and draws them lighter than the plain text around them.
+   Under `#map` to outrank MapLibre's own rule, whose stylesheet loads after this one. */
+#map .maplibregl-ctrl-attrib a {
+  color: inherit;
+  text-decoration: underline;
+}
