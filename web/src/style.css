@@ -50,7 +50,9 @@ body,
 
 @media (max-width: 600px) {
   #controls {
-    max-width: calc(100% - 44px);
+    /* Clear of the fullscreen button on the right: its 29px, and 10px either side of it. */
+    box-sizing: border-box;
+    max-width: calc(100% - 59px);
     padding: 6px 8px;
     font-size: 12px;
   }
