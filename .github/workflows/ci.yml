@@ -115,17 +115,25 @@ jobs:
             .cache/nyc-streets.source-state.txt
           key: streets-${{ hashFiles('.cache/nyc-streets.source-state.txt') }}
 
+      # Everything tracked that goes into routing: the QueensLink feed, the code, and the versions it runs on
+      # (Python, its packages, R5 among them, and Java), each by its blob in git,
+      # so that nothing written during the run, like `src/`'s `__pycache__/`, can change it.
+      # The downloads' URLs are in the code, so they're covered too.
+      - name: travel times' inputs
+        id: inputs
+        run: |
+          tracked=$(git ls-files -s -- gtfs src pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
+          echo "tracked=$tracked" >> "$GITHUB_OUTPUT"
+
       # Routing takes a while, and only what goes into it changes its output.
       - uses: actions/cache@v6.1.0
         id: travel-times
         with:
           path: .cache/travel_times
-          # With the downloads' version and the streets, since they go into it too.
-          # Only the Python source, not all of `src/`: running `fetch` has just written `__pycache__/` there,
-          # whose `.pyc` files record the checkout's times, so they'd change the key on every run.
+          # With the streets, which aren't tracked, since `fetch` keeps them up to date with OSM.
           key: >-
-            travel-times-downloads-v1-${{
-            hashFiles('gtfs/**', 'src/**/*.py', 'uv.lock', '.cache/nyc-streets.osm.pbf') }}
+            travel-times-${{ steps.inputs.outputs.tracked }}-${{
+            hashFiles('.cache/nyc-streets.osm.pbf') }}
 
       - name: route
         if: steps.travel-times.outputs.cache-hit != 'true'
