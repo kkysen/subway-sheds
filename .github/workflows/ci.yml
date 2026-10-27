@@ -132,10 +132,13 @@ jobs:
           echo "tracked=$tracked" >> "$GITHUB_OUTPUT"
 
       # Routing takes a while, and only what goes into it changes its output.
+      # The export too, whose inputs are among routing's: the travel times, grid, and feeds.
       - uses: actions/cache@v6.1.0
         id: travel-times
         with:
-          path: .cache/travel_times
+          path: |
+            .cache/travel_times
+            web/public/data
           # With the streets, which aren't tracked, since `fetch` keeps them up to date with OSM.
           key: >-
             travel-times-${{ steps.inputs.outputs.tracked }}-${{
@@ -146,6 +149,7 @@ jobs:
         run: uv run subway-sheds route
 
       - name: export
+        if: steps.travel-times.outputs.cache-hit != 'true'
         run: uv run subway-sheds export
 
       - name: build
