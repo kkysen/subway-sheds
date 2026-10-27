@@ -237,13 +237,17 @@ function bandFeatures(grid: Grid, classes: Int8Array, view: View): GeoJSON.Featu
   const fineHeight = height * UPSAMPLE;
   const colors = classColors(view);
   const present = [NOTHING, ...colors.keys()].filter((which) => classes.includes(which));
+  // Computed once each, as they're needed both to rank the classes and to trace each one.
+  const memberships = new Map(
+    present.map((which) => [which, membership(classes, which, width, height)]),
+  );
 
   // Each fine pixel's most and next most class, and how much of each it is.
   const most = new Int8Array(fineWidth * fineHeight).fill(NOTHING);
   const mostAmount = new Float32Array(fineWidth * fineHeight).fill(-1);
   const nextAmount = new Float32Array(fineWidth * fineHeight).fill(-1);
-  for (const which of present) {
-    membership(classes, which, width, height).forEach((amount, j) => {
+  for (const [which, amounts] of memberships) {
+    amounts.forEach((amount, j) => {
       if (amount > (mostAmount[j] ?? -1)) {
         nextAmount[j] = mostAmount[j] ?? -1;
         mostAmount[j] = amount;
@@ -262,12 +266,12 @@ function bandFeatures(grid: Grid, classes: Int8Array, view: View): GeoJSON.Featu
       grid.y0 + ((y ?? 0) / UPSAMPLE - 0.5) * grid.spacing,
     );
   const features: GeoJSON.Feature[] = [];
-  for (const which of present) {
+  for (const [which, amounts] of memberships) {
     if (which === NOTHING) {
       continue;
     }
     // By how much the pixel is more of this class than any other, or less than the most.
-    const ahead = Array.from(membership(classes, which, width, height), (amount, j) =>
+    const ahead = Array.from(amounts, (amount, j) =>
       most[j] === which ? amount - (nextAmount[j] ?? 0) : amount - (mostAmount[j] ?? 0),
     );
     const [shape] = contour(ahead);
