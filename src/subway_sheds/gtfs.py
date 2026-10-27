@@ -15,12 +15,23 @@ def _read_csv(feed: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
         yield from csv.DictReader(io.TextIOWrapper(f, encoding="utf-8-sig"))
 
 
+def _write_entry(out: zipfile.ZipFile, name: str, data: str | bytes) -> None:
+    """
+    Write a file into a zip with a fixed time rather than its own or the current one,
+    so that the same feed always zips to the same bytes,
+    since `r5py` caches the network it builds by its files' hashes.
+    """
+    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    out.writestr(info, data)
+
+
 def zip_feed(directory: Path, dest: Path) -> None:
     """Zip a feed committed as a directory of `.txt` files, as R5 reads it."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as out:
+    with zipfile.ZipFile(dest, "w") as out:
         for path in sorted(directory.glob("*.txt")):
-            out.write(path, path.name)
+            _write_entry(out, path.name, path.read_bytes())
 
 
 @dataclass
@@ -57,9 +68,9 @@ def _write_csv(fieldnames: list[str], rows: list[dict[str, str]]) -> str:
 
 def write_feed(feed: Feed, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as out:
+    with zipfile.ZipFile(dest, "w") as out:
         for name, rows in feed.rows.items():
-            out.writestr(name, _write_csv(feed.headers[name], rows))
+            _write_entry(out, name, _write_csv(feed.headers[name], rows))
 
 
 def drop_trips(feed: Feed, trips: set[str]) -> None:
