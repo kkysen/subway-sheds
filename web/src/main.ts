@@ -257,21 +257,33 @@ const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
 const legend = element("#legend", HTMLElement);
 
-// The controls kept across reloads, by their inputs' name.
+// The controls kept across reloads and in links, by their inputs' name.
 const savedControls = ["day", "view"] as const;
 
 // Prefixed, since every page on kkysen.github.io shares the same storage.
 const storageKey = (name: string): string => `subway-sheds:${name}`;
 
-// Storage can be unavailable, as in some private windows, when the controls just start as they are.
+// The URL's hash: the station, then the controls, as in `#H04&day=saturday&view=saved`,
+// so that links from before the controls were in it, just `#H04`, still work.
+function parseHash(): { readonly station: string; readonly params: URLSearchParams } {
+  const [station = "", ...params] = location.hash.slice(1).split("&");
+  return { station: decodeURIComponent(station), params: new URLSearchParams(params.join("&")) };
+}
+
+function savedValue(name: string): string | null {
+  try {
+    return localStorage.getItem(storageKey(name));
+  } catch {
+    // Storage can be unavailable, as in some private windows.
+    return null;
+  }
+}
+
+// From the link if it says, else as they were last left, else as they start.
 function restoreControls(): void {
+  const { params } = parseHash();
   for (const name of savedControls) {
-    let value: string | null = null;
-    try {
-      value = localStorage.getItem(storageKey(name));
-    } catch {
-      return;
-    }
+    const value = params.get(name) ?? savedValue(name);
     const inputs = controls.elements.namedItem(name);
     // Checks the radio with that value, if there still is one.
     if (value !== null && inputs instanceof RadioNodeList) {
@@ -295,9 +307,14 @@ function showView(view: View): void {
   legend.replaceChildren(...legendItems(view));
 }
 
+// Shows what's outside the map for the controls as they are.
+function showControls(): void {
+  dayName.textContent = dayNames[currentDay()];
+  showView(currentView());
+}
+
 restoreControls();
-dayName.textContent = dayNames[currentDay()];
-showView(currentView());
+showControls();
 
 function currentDay(): Day {
   const value = new FormData(controls).get("day");
@@ -366,7 +383,7 @@ async function selectStation(id: string): Promise<void> {
   map.setFilter("selected-station", ["==", ["get", "id"], id]);
   const only = station.scenarios.length === 1 ? " (QueensLink only)" : "";
   stationName.textContent = `${station.name}${only}`;
-  history.replaceState(null, "", `#${encodeURIComponent(id)}`);
+  writeHash();
   const times = await fetchTimes(id);
   if (selected !== id) {
     return;
@@ -376,8 +393,21 @@ async function selectStation(id: string): Promise<void> {
 }
 
 function stationFromHash(): string {
-  const id = decodeURIComponent(location.hash.slice(1));
-  return stationsById.has(id) ? id : DEFAULT_STATION;
+  const { station } = parseHash();
+  return stationsById.has(station) ? station : DEFAULT_STATION;
+}
+
+// Replaced rather than pushed, so that every click doesn't add to the history.
+function writeHash(): void {
+  const data = new FormData(controls);
+  const params = new URLSearchParams(savedControls.map((name) => [name, String(data.get(name))]));
+  history.replaceState(null, "", `#${encodeURIComponent(selected)}&${params}`);
+}
+
+function applyControls(): void {
+  showControls();
+  map.setFilter("lines", linesFilter(currentView()));
+  drawCells();
 }
 
 // How far from a station, in pixels, a click or tap still picks it,
@@ -490,15 +520,15 @@ await loaded;
   void selectStation(stationFromHash());
 }
 
+// As when a link to another station or view is followed from the page itself.
 addEventListener("hashchange", () => {
+  restoreControls();
+  applyControls();
   void selectStation(stationFromHash());
 });
 
 controls.addEventListener("change", () => {
   saveControls();
-  const view = currentView();
-  dayName.textContent = dayNames[currentDay()];
-  map.setFilter("lines", linesFilter(view));
-  showView(view);
-  drawCells();
+  writeHash();
+  applyControls();
 });
