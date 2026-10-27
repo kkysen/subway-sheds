@@ -14,12 +14,12 @@ jobs:
 
       # `uv` from `setup-uv` rather than `mise.toml`, since it also caches `uv`'s downloads
       # and builds between runs, mostly `jpype1`, which is built from source for Python 3.15.
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
 
       # Java, `ant`, and Node, as `mise.toml` pins them, but not `uv`, which `setup-uv` installed.
-      - uses: jdx/mise-action@v5.2.2
+      - uses: jdx/mise-action@v5.2.3
         env:
           MISE_DISABLE_TOOLS: uv
 
@@ -65,11 +65,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
 
-      - uses: jdx/mise-action@v5.2.2
+      - uses: jdx/mise-action@v5.2.3
         env:
           MISE_DISABLE_TOOLS: uv
 
