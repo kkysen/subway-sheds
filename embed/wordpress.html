@@ -1,0 +1,32 @@
+<!--
+  The map's embed on https://thequeenslink.org/map/,
+  pasted into a WPBakery raw HTML block on WordPress page 3504.
+  The theme's header is fixed, so it covers the top of the page,
+  and its height changes with the screen's width,
+  so the script measures it rather than hard-coding it.
+-->
+<style>
+  /* WPBakery's 35px under every content element, which would leave a gap above the footer. */
+  .page-id-3504 .wpb_raw_html { margin-bottom: 0 !important; }
+  /* Full width: as wide as the window, shifted left to its edge out of the theme's column. */
+  #subway-sheds { display: block; width: 100vw; margin-left: calc(50% - 50vw); height: 100dvh; border: 0; }
+  /* `100vw` includes the vertical scrollbar, which would otherwise scroll the page sideways a little. */
+  .page-id-3504 { overflow-x: clip; }
+</style>
+<iframe id="subway-sheds" src="https://kkysen.github.io/subway-sheds/" title="Time Saved with QueensLink"
+  loading="lazy" allowfullscreen></iframe>
+<script>
+  // Start below the theme's fixed header and fill the rest of the window, whatever the header's height on this screen.
+  (() => {
+    const header = document.querySelector("#header, header");
+    const main = document.querySelector('[role="main"]');
+    const map = document.getElementById("subway-sheds");
+    const fit = () => {
+      const top = header.offsetHeight;
+      main.style.paddingTop = top + "px";
+      map.style.height = `calc(100dvh - ${top}px)`;
+    };
+    fit();
+    addEventListener("resize", fit);
+  })();
+</script>
