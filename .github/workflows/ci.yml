@@ -56,18 +56,14 @@ jobs:
           npm ci
           npm run check
 
-  # Route every station in both scenarios and publish the page.
-  pages:
+  # Fetch what routing needs, once for every job after it, and see whether it's routed already.
+  prepare:
     needs: check
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      key: ${{ steps.inputs.outputs.key }}
+      routed: ${{ steps.routed.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -78,12 +74,6 @@ jobs:
       - uses: jdx/mise-action@v5.2.3
         env:
           MISE_DISABLE_TOOLS: uv
-
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.npm
-          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
-          restore-keys: npm-${{ runner.os }}-
 
       # The MTA feed and shoreline, which never change.
       - uses: actions/cache@v6.1.0
@@ -125,32 +115,148 @@ jobs:
       # (Python, its packages, R5 among them, and Java), each by its blob in git,
       # so that nothing written during the run, like `src/`'s `__pycache__/`, can change it.
       # The downloads' URLs are in the code, so they're covered too.
+      # With the streets, which aren't tracked, since `fetch` keeps them up to date with OSM.
       - name: travel times' inputs
         id: inputs
         run: |
           tracked=$(git ls-files -s -- gtfs src pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
-          echo "tracked=$tracked" >> "$GITHUB_OUTPUT"
+          streets=$(sha256sum .cache/nyc-streets.osm.pbf | cut -d' ' -f1)
+          echo "key=travel-times-$tracked-$streets" >> "$GITHUB_OUTPUT"
 
       # Routing takes a while, and only what goes into it changes its output.
       # The export too, whose inputs are among routing's: the travel times, grid, and feeds.
-      - uses: actions/cache@v6.1.0
-        id: travel-times
+      # Only looked up here; `pages` restores it.
+      - uses: actions/cache/restore@v6.1.0
+        id: routed
         with:
           path: |
             .cache/travel_times
             web/public/data
-          # With the streets, which aren't tracked, since `fetch` keeps them up to date with OSM.
+          key: ${{ steps.inputs.outputs.key }}
+          lookup-only: true
+
+      # The same inputs for every job, even if Geofabrik has newer streets by the time one starts.
+      - uses: actions/upload-artifact@v7.0.2
+        if: steps.routed.outputs.cache-hit != 'true'
+        with:
+          name: inputs
+          path: |
+            .cache/gtfs
+            .cache/nyc-streets.osm.pbf
+            .cache/nyc-shoreline.json
+          include-hidden-files: true
+          retention-days: 1
+
+  # Each scenario on each day in a job of its own, at once rather than one after another.
+  route:
+    needs: prepare
+    if: needs.prepare.outputs.routed != 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        scenario: [baseline, queenslink]
+        day: [weekday, saturday]
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+
+      - uses: jdx/mise-action@v5.2.3
+        env:
+          MISE_DISABLE_TOOLS: uv
+
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: inputs
+          path: .cache
+
+      # The network R5 builds from the streets and the scenario's feed, which takes half a minute,
+      # by the hashes `r5py` caches it by, and R5's version.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/r5py
           key: >-
-            travel-times-${{ steps.inputs.outputs.tracked }}-${{
-            hashFiles('.cache/nyc-streets.osm.pbf') }}
+            r5py-${{ matrix.scenario }}-${{
+            hashFiles(format('.cache/gtfs/{0}.zip', matrix.scenario), '.cache/nyc-streets.osm.pbf', 'uv.lock') }}
 
       - name: route
-        if: steps.travel-times.outputs.cache-hit != 'true'
-        run: uv run subway-sheds route
+        run: uv run subway-sheds route --scenario ${{ matrix.scenario }} --day ${{ matrix.day }}
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: travel-times-${{ matrix.scenario }}-${{ matrix.day }}
+          path: .cache/travel_times/${{ matrix.scenario }}-${{ matrix.day }}.parquet
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # Export the travel times, whether just routed or cached, and publish the page.
+  pages:
+    needs: [prepare, route]
+    # Also when `route` was skipped, since everything was routed already.
+    if: >-
+      !cancelled() && needs.prepare.result == 'success'
+      && (needs.route.result == 'success' || needs.route.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+
+      - uses: jdx/mise-action@v5.2.3
+        env:
+          MISE_DISABLE_TOOLS: uv
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      - uses: actions/cache/restore@v6.1.0
+        if: needs.prepare.outputs.routed == 'true'
+        with:
+          path: |
+            .cache/travel_times
+            web/public/data
+          key: ${{ needs.prepare.outputs.key }}
+          fail-on-cache-miss: true
+
+      - uses: actions/download-artifact@v8.0.2
+        if: needs.prepare.outputs.routed != 'true'
+        with:
+          name: inputs
+          path: .cache
+
+      - uses: actions/download-artifact@v8.0.2
+        if: needs.prepare.outputs.routed != 'true'
+        with:
+          pattern: travel-times-*
+          path: .cache/travel_times
+          merge-multiple: true
 
       - name: export
-        if: steps.travel-times.outputs.cache-hit != 'true'
+        if: needs.prepare.outputs.routed != 'true'
         run: uv run subway-sheds export
+
+      - uses: actions/cache/save@v6.1.0
+        if: needs.prepare.outputs.routed != 'true'
+        with:
+          path: |
+            .cache/travel_times
+            web/public/data
+          key: ${{ needs.prepare.outputs.key }}
 
       - name: build
         working-directory: web
