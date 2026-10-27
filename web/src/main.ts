@@ -259,6 +259,13 @@ const dayName = element("#day-name", HTMLElement);
 const legend = element("#legend", HTMLElement);
 const fullMap = element("#full-map", HTMLAnchorElement);
 
+// Collapsed to start with on narrow screens, as on phones, where open they'd cover much of the map.
+// The same width as `style.css`'s narrow layout.
+// Or on short ones, as on phones turned sideways, where open they're 300px of under 500.
+element("#controls details", HTMLDetailsElement).open = !window.matchMedia(
+  "(max-width: 600px), (max-height: 500px)",
+).matches;
+
 // Only when embedded, as on thequeenslink.org, since it's already the full map otherwise.
 fullMap.hidden = window.top === window.self;
 
