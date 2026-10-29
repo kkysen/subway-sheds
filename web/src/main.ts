@@ -135,7 +135,8 @@ type Band = readonly [number, string];
 
 // Where bands of minutes, traveled or saved, start, the same for both,
 // so that, e.g., 15 minutes there and 15 minutes saved fall on the same edge.
-const BAND_STARTS = [5, 10, 15, 20, 30, 45, 60, 75] as const;
+// Few of them, so that each band is easy to tell from the next.
+const BAND_STARTS = [15, 30, 45, 60, 75] as const;
 
 // The minutes travel times are drawn out to.
 const MAX_MINUTES = 90;
@@ -144,36 +145,31 @@ const MAX_MINUTES = 90;
 // so that there's saying how much QueensLink saves places that take longer than that without it.
 const ROUTED_MINUTES = 120;
 
-// Travel time in minutes, from green to red.
+// Travel time in minutes, from light to dark through QueensLink's orange, `#f48335`,
+// lighter to darker all the way, so that the order reads without telling hues apart.
 const travelTimeBands: readonly Band[] = [
-  [0, "#1a9850"],
-  [BAND_STARTS[0], "#66bd63"],
-  [BAND_STARTS[1], "#a6d96a"],
-  [BAND_STARTS[2], "#d9ef8b"],
-  // Deeper than the palette's `#ffffbf`, which over the map at 60% is all but white.
-  [BAND_STARTS[3], "#fdf28d"],
-  [BAND_STARTS[4], "#fee08b"],
-  [BAND_STARTS[5], "#fdae61"],
-  [BAND_STARTS[6], "#f46d43"],
-  [BAND_STARTS[7], "#d73027"],
+  [0, "#fde3d3"],
+  [BAND_STARTS[0], "#fbb58a"],
+  [BAND_STARTS[1], "#f48335"],
+  [BAND_STARTS[2], "#c45a22"],
+  [BAND_STARTS[3], "#8f3a14"],
+  [BAND_STARTS[4], "#5e220a"],
 ];
 
-// Minutes saved, from a minute, from light to dark blue.
+// Minutes saved, from a minute, from light to dark through QueensLink's green, `#24685b`.
 const savedBands: readonly Band[] = [
-  [1, "#deebf7"],
-  [BAND_STARTS[0], "#c6dbef"],
-  [BAND_STARTS[1], "#9ecae1"],
-  [BAND_STARTS[2], "#6baed6"],
-  [BAND_STARTS[3], "#4292c6"],
-  [BAND_STARTS[4], "#2171b5"],
-  [BAND_STARTS[5], "#08519c"],
-  [BAND_STARTS[6], "#08458a"],
-  [BAND_STARTS[7], "#08306b"],
-  [MAX_MINUTES, "#041f47"],
+  [1, "#d3ebe4"],
+  [BAND_STARTS[0], "#99beb4"],
+  [BAND_STARTS[1], "#609286"],
+  [BAND_STARTS[2], "#24685b"],
+  [BAND_STARTS[3], "#1c5147"],
+  [BAND_STARTS[4], "#143b33"],
+  [MAX_MINUTES, "#0c2621"],
 ];
 
 // Places only QueensLink reaches within `ROUTED_MINUTES`, which there's no saying how much it saves.
-const QUEENSLINK_ONLY_COLOR = "#6a3d9a";
+// QueensLink's orange, apart from the greens by more than red and green, which some can't tell apart.
+const QUEENSLINK_ONLY_COLOR = "#f48335";
 
 const bands = (view: View): readonly Band[] => (view === "saved" ? savedBands : travelTimeBands);
 
