@@ -3,6 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import {
   type ExpressionSpecification,
   FullscreenControl,
+  type LngLat,
   Map as MapLibreMap,
   type MapMouseEvent,
   type MapTouchEvent,
@@ -240,12 +241,13 @@ function legendBand(band: number, color: string, view: View): HTMLElement {
   key.title = describeBand(band, view);
   key.dataset["band"] = String(band);
   key.addEventListener("pointerenter", () => highlightBand(band));
-  key.addEventListener("pointerleave", () => highlightBand(NOTHING));
+  key.addEventListener("pointerleave", () => restorePinnedBand());
   return key;
 }
 
 // Set once the map's layer is made, after the legend is first shown.
 let highlightBand = (_band: number): void => {};
+let restorePinnedBand = (): void => {};
 
 function legendItems(view: View): HTMLElement[] {
   const viewBands = bands(view);
@@ -557,21 +559,53 @@ function stationAt(event: { readonly point: Point }): string | undefined {
 }
 
 // The class of the cell nearest a point on the map, or `NOTHING`.
-function bandAt(event: MapMouseEvent): number {
+// 1-2-1 weights, for a point `t` of the way from the second cell to the third of four.
+const blurWeights = (t: number): readonly number[] => [
+  (1 - t) / 4,
+  (2 * (1 - t) + t) / 4,
+  (1 - t + 2 * t) / 4,
+  t / 4,
+];
+
+// The class drawn at a point on the map, or `NOTHING`,
+// weighing the cells around it as the bands' shader does, so that it's the band seen there.
+function bandAt(lngLat: LngLat): number {
   if (selectedClasses === undefined) {
     return NOTHING;
   }
-  const { lng, lat } = event.lngLat;
-  // In Web Mercator meters, as the grid is.
-  const x = (lng / 360) * EARTH_CIRCUMFERENCE;
+  // In Web Mercator meters, as the grid is, then in cells.
+  const x = (lngLat.lng / 360) * EARTH_CIRCUMFERENCE;
   const y =
-    (Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI)) * EARTH_CIRCUMFERENCE;
-  const col = Math.round((x - grid.x0) / grid.spacing);
-  const row = Math.round((y - grid.y0) / grid.spacing);
-  if (col < 0 || col >= width || row < 0 || row >= height) {
+    (Math.log(Math.tan(Math.PI / 4 + (lngLat.lat * Math.PI) / 360)) / (2 * Math.PI)) *
+    EARTH_CIRCUMFERENCE;
+  const col = (x - grid.x0) / grid.spacing;
+  const row = (y - grid.y0) / grid.spacing;
+  if (col < -0.5 || col > width - 0.5 || row < -0.5 || row > height - 0.5) {
     return NOTHING;
   }
-  return selectedClasses[row * width + col] ?? NOTHING;
+  const clamp = (value: number, max: number): number => Math.min(Math.max(value, 0), max);
+  const lowCol = Math.min(Math.floor(clamp(col, width - 1)), Math.max(width - 2, 0));
+  const lowRow = Math.min(Math.floor(clamp(row, height - 1)), Math.max(height - 2, 0));
+  const across = blurWeights(clamp(col, width - 1) - lowCol);
+  const up = blurWeights(clamp(row, height - 1) - lowRow);
+  const amounts = new Map<number, number>();
+  for (let dy = 0; dy < 4; dy++) {
+    for (let dx = 0; dx < 4; dx++) {
+      const atCol = clamp(lowCol + dx - 1, width - 1);
+      const atRow = clamp(lowRow + dy - 1, height - 1);
+      const band = selectedClasses[atRow * width + atCol] ?? NOTHING;
+      amounts.set(band, (amounts.get(band) ?? 0) + (across[dx] ?? 0) * (up[dy] ?? 0));
+    }
+  }
+  let most = NOTHING;
+  let mostAmount = -1;
+  for (const [band, amount] of amounts) {
+    if (amount > mostAmount) {
+      most = band;
+      mostAmount = amount;
+    }
+  }
+  return most;
 }
 
 const bandPopup = new Popup({ closeButton: false, closeOnClick: false, className: "band-popup" });
@@ -583,20 +617,39 @@ highlightBand = (band: number): void => {
   }
 };
 
-// Highlights the band at a point and says what it is, or clears it if there's none there.
-function showBand(event: MapMouseEvent): void {
-  const band = bandAt(event);
+// The band clicked or tapped, kept highlighted and said until clicked again or another is,
+// and where, for its popup.
+let pinned: { readonly band: number; readonly lngLat: LngLat } | undefined;
+
+// Highlights a band and says what it is at a point, or shows the pinned one if there's none.
+function showBand(band: number, lngLat: LngLat): void {
   if (band === NOTHING) {
-    clearBand();
+    restorePinnedBand();
     return;
   }
   highlightBand(band);
-  bandPopup.setLngLat(event.lngLat).setText(describeBand(band, currentView())).addTo(map);
+  bandPopup.setLngLat(lngLat).setText(describeBand(band, currentView())).addTo(map);
+}
+
+restorePinnedBand = (): void => {
+  if (pinned === undefined) {
+    highlightBand(NOTHING);
+    bandPopup.remove();
+  } else {
+    showBand(pinned.band, pinned.lngLat);
+  }
+};
+
+// Pins the band at a point, or unpins it if it's the one pinned or there's none there.
+function pinBand(lngLat: LngLat): void {
+  const band = bandAt(lngLat);
+  pinned = band === NOTHING || band === pinned?.band ? undefined : { band, lngLat };
+  restorePinnedBand();
 }
 
 function clearBand(): void {
-  highlightBand(NOTHING);
-  bandPopup.remove();
+  pinned = undefined;
+  restorePinnedBand();
 }
 
 await loaded;
@@ -669,8 +722,8 @@ await loaded;
     if (id !== undefined) {
       void selectStation(id);
     } else {
-      // As on a phone, which has no pointing without tapping.
-      showBand(event);
+      // On a phone, which has no pointing, this is the only way to see what a band is.
+      pinBand(event.lngLat);
     }
   });
   map.on("mousemove", (event: MapMouseEvent) => {
@@ -678,10 +731,9 @@ await loaded;
     map.getCanvas().style.cursor = id === undefined ? "" : "pointer";
     if (id !== undefined) {
       prefetchTimes(id);
-      clearBand();
-    } else {
-      showBand(event);
     }
+    // Still shown near stations, which are close together in much of the city.
+    showBand(bandAt(event.lngLat), event.lngLat);
   });
   // On a phone, the touch starts a little before the tap it ends in.
   map.on("touchstart", (event: MapTouchEvent) => {
@@ -690,7 +742,7 @@ await loaded;
       prefetchTimes(id);
     }
   });
-  map.getCanvas().addEventListener("mouseleave", clearBand);
+  map.getCanvas().addEventListener("mouseleave", restorePinnedBand);
 
   void selectStation(stationFromHash());
 }
