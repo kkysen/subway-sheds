@@ -16,11 +16,11 @@ body,
   box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
 }
 
-/* QueensLink's font, on the devices that have it, as Apple's do.
+/* Like QueensLink's font, Avenir, which only Apple's devices have, the same on every device.
    On `#map` too, to outrank MapLibre's own for its popups and credits. */
 body,
 #map {
-  font-family: Avenir, "Avenir Next", "Nunito Sans", system-ui, sans-serif;
+  font-family: "Nunito Sans Variable", sans-serif;
 }
 
 #controls fieldset {

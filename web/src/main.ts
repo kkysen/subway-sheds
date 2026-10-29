@@ -1,3 +1,4 @@
+import "@fontsource-variable/nunito-sans";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   type ExpressionSpecification,
