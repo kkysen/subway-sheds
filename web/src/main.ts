@@ -675,17 +675,18 @@ const STATION_RADII = [2.5, 6] as const;
 const NEW_STATION_OUTLINE = 2;
 const STATION_OUTLINE = 1;
 
-// The selected station's ring, the same gap out from its circle, outline and all,
-// and the same width, whichever kind it is.
+// The selected station's ring, the same width whichever kind it is,
+// a gap out from the other stations' gray outline,
+// but right on QueensLink's new ones' white outline, which already sets it apart.
 const RING_GAP = 1.5;
 const RING_WIDTH = 2;
 
-// A selected station's ring's `circle-radius`, `RING_GAP` out from its circle at each zoom.
+// A selected station's ring's `circle-radius` at each zoom.
 function ringRadius(): ExpressionSpecification {
   const outer = (zoom: 0 | 1): ExpressionSpecification => [
     "case",
     ["get", "new"],
-    NEW_STATION_RADII[zoom] + NEW_STATION_OUTLINE + RING_GAP,
+    NEW_STATION_RADII[zoom] + NEW_STATION_OUTLINE,
     STATION_RADII[zoom] + STATION_OUTLINE + RING_GAP,
   ];
   return ["interpolate", ["linear"], ["zoom"], 10, outer(0), 14, outer(1)];
