@@ -669,19 +669,18 @@ const STATION_RADII = [2.5, 6] as const;
 const NEW_STATION_OUTLINE = 2;
 const STATION_OUTLINE = 1;
 
-// The selected station's ring, in proportion to the station's circle, outline and all,
-// so that selecting one changes it alike whichever kind it is.
-const RING_RADIUS = 1.4;
-const RING_WIDTH = 0.25;
+// The selected station's ring, the same gap out from its circle, outline and all,
+// and the same width, whichever kind it is.
+const RING_GAP = 1.5;
+const RING_WIDTH = 2;
 
-// A selected station's ring's `circle-radius` or `circle-stroke-width`,
-// as `scale` times its circle's radius, outline and all, at each zoom.
-function ringSize(scale: number): ExpressionSpecification {
+// A selected station's ring's `circle-radius`, `RING_GAP` out from its circle at each zoom.
+function ringRadius(): ExpressionSpecification {
   const outer = (zoom: 0 | 1): ExpressionSpecification => [
     "case",
     ["get", "new"],
-    scale * (NEW_STATION_RADII[zoom] + NEW_STATION_OUTLINE),
-    scale * (STATION_RADII[zoom] + STATION_OUTLINE),
+    NEW_STATION_RADII[zoom] + NEW_STATION_OUTLINE + RING_GAP,
+    STATION_RADII[zoom] + STATION_OUTLINE + RING_GAP,
   ];
   return ["interpolate", ["linear"], ["zoom"], 10, outer(0), 14, outer(1)];
 }
@@ -798,10 +797,10 @@ await loaded;
     source: "stations",
     filter: ["==", ["get", "id"], ""],
     paint: {
-      "circle-radius": ringSize(RING_RADIUS),
+      "circle-radius": ringRadius(),
       "circle-color": "rgba(0, 0, 0, 0)",
       "circle-stroke-color": "#000000",
-      "circle-stroke-width": ringSize(RING_WIDTH),
+      "circle-stroke-width": RING_WIDTH,
     },
   });
 
