@@ -172,7 +172,8 @@ const savedBands: readonly Band[] = [
 
 // Places only QueensLink reaches within `ROUTED_MINUTES`, which there's no saying how much it saves.
 // QueensLink's orange, apart from the greens by more than red and green, which some can't tell apart.
-const QUEENSLINK_ONLY_COLOR = "#f48335";
+const QUEENSLINK_ORANGE = "#f48335";
+const QUEENSLINK_ONLY_COLOR = QUEENSLINK_ORANGE;
 
 const bands = (view: View): readonly Band[] => (view === "saved" ? savedBands : travelTimeBands);
 
@@ -658,6 +659,29 @@ function clearBand(): void {
   restorePinnedBand();
 }
 
+// The radii of QueensLink's new stations at zooms 10 and 14.
+const NEW_STATION_RADII = [6, 11] as const;
+
+// The M drawn in each new station, filling it at its biggest.
+function queenslinkM(): ImageData {
+  const size = 2 * NEW_STATION_RADII[1] * devicePixelRatio;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (context === null) {
+    throw new Error("no 2D canvas context");
+  }
+  context.fillStyle = QUEENSLINK_ORANGE;
+  context.font = `bold ${0.8 * size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+  context.textAlign = "center";
+  // Centered by the M's own height, not the font's, which leaves room for descenders.
+  const { actualBoundingBoxAscent: ascent, actualBoundingBoxDescent: descent } =
+    context.measureText("M");
+  context.fillText("M", size / 2, size / 2 + (ascent - descent) / 2);
+  return context.getImageData(0, 0, size, size);
+}
+
 await loaded;
 {
   const view = currentView();
@@ -695,19 +719,43 @@ await loaded;
     source: "stations",
     paint: {
       // Stations new with QueensLink bigger and in black, apart by more than a color,
-      // since every bright one is already some line's or some band's.
+      // since every bright one is already some line's or some band's,
+      // and big enough for the M in them.
       "circle-radius": [
         "interpolate",
         ["linear"],
         ["zoom"],
         10,
-        ["case", ["get", "new"], 4, 2.5],
+        ["case", ["get", "new"], NEW_STATION_RADII[0], 2.5],
         14,
-        ["case", ["get", "new"], 8, 6],
+        ["case", ["get", "new"], NEW_STATION_RADII[1], 6],
       ],
       "circle-color": ["case", ["get", "new"], "#000000", "#ffffff"],
       "circle-stroke-color": ["case", ["get", "new"], "#ffffff", "#333333"],
       "circle-stroke-width": ["case", ["get", "new"], 2, 1],
+    },
+  });
+  // An M in QueensLink's orange in each new station, for the M trains QueensLink would run,
+  // in bold Helvetica as the MTA's route bullets are, but not their bullet itself.
+  map.addImage("queenslink-m", queenslinkM(), { pixelRatio: devicePixelRatio });
+  map.addLayer({
+    id: "new-stations-m",
+    type: "symbol",
+    source: "stations",
+    filter: ["get", "new"],
+    layout: {
+      "icon-image": "queenslink-m",
+      "icon-size": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10,
+        NEW_STATION_RADII[0] / NEW_STATION_RADII[1],
+        14,
+        1,
+      ],
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
     },
   });
   map.addLayer({
