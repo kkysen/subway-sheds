@@ -698,7 +698,7 @@ function ringRadius(): ExpressionSpecification {
 const M_HEIGHT = 0.504;
 const M_WIDTH = 0.472;
 
-function queenslinkM(): ImageData {
+function queenslinkM(): HTMLCanvasElement {
   const size = 2 * NEW_STATION_RADII[1] * devicePixelRatio;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -721,8 +721,20 @@ function queenslinkM(): ImageData {
     (m.actualBoundingBoxLeft - m.actualBoundingBoxRight) / 2,
     (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2,
   );
-  return context.getImageData(0, 0, size, size);
+  return canvas;
 }
+
+function imageData(canvas: HTMLCanvasElement): ImageData {
+  const context = canvas.getContext("2d");
+  if (context === null) {
+    throw new Error("no 2D canvas context");
+  }
+  return context.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+// The legend's new station, the same bullet as on the map.
+const legendM = queenslinkM();
+element(".legend-station-new", HTMLElement).style.backgroundImage = `url(${legendM.toDataURL()})`;
 
 await loaded;
 {
@@ -773,7 +785,7 @@ await loaded;
   };
   map.addLayer({ id: "stations", type: "circle", source: "stations", paint: stationPaint });
   // The white M in each new station's bullet, in bold Helvetica as the MTA's is.
-  map.addImage("queenslink-m", queenslinkM(), { pixelRatio: devicePixelRatio });
+  map.addImage("queenslink-m", imageData(legendM), { pixelRatio: devicePixelRatio });
   const mLayout: SymbolLayerSpecification["layout"] = {
     "icon-image": "queenslink-m",
     "icon-size": [

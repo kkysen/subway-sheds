@@ -242,12 +242,14 @@ body,
 }
 
 /* As the stations are drawn on the map. */
+/* As the map draws stations, in proportion to each other,
+   each centered in the same width, so that the names line up. */
 .legend-station {
   display: inline-block;
   box-sizing: border-box;
-  width: 14px;
-  height: 14px;
-  margin: 0 4px 0 2px;
+  width: 12px;
+  height: 12px;
+  margin: 0 9px 0 7px;
   border: 1px solid #333333;
   border-radius: 50%;
   background: #ffffff;
@@ -258,10 +260,14 @@ body,
   margin-top: 4px;
 }
 
+/* The MTA's M bullet, its white M put in by `main.ts`. */
 .legend-station-new {
+  width: 22px;
+  height: 22px;
+  margin: 0 4px 0 2px;
   border: 2px solid #ffffff;
-  outline: 1px solid #333333;
-  background: #000000;
+  background: #ff6319 center / 100% no-repeat;
+  vertical-align: -6px;
 }
 
 #full-map {
