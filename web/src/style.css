@@ -115,6 +115,47 @@ body,
   margin: 0;
 }
 
+/* A choice of one, as a row of joined buttons, the chosen one filled in,
+   rather than radio buttons, whose circles look like the stations'. */
+.segmented {
+  display: flex;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented label {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 4px;
+  text-align: center;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.segmented label + label {
+  border-left: 1px solid #333333;
+}
+
+.segmented label:has(:checked) {
+  background: #333333;
+  color: #ffffff;
+}
+
+.segmented label:has(:focus-visible) {
+  outline: 2px solid #1a73e8;
+  outline-offset: -3px;
+}
+
+/* Still there for the keyboard and screen readers, just not seen. */
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* A circled "i", as for information. */
 .info-button {
   width: 16px;

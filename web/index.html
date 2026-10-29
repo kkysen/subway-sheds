@@ -22,16 +22,20 @@
           <legend>When
             <button type="button" id="time-info-button" class="info-button" aria-controls="time-info" aria-expanded="false"
               aria-label="About these times">i</button></legend>
-          <label><input type="radio" name="day" value="weekday" checked /> Weekday @ 8 am</label>
-          <label><input type="radio" name="day" value="saturday" /> Saturday @ 12 pm</label>
+          <div class="segmented">
+            <label><input type="radio" name="day" value="weekday" checked /> Weekday @ 8 am</label>
+            <label><input type="radio" name="day" value="saturday" /> Saturday @ 12 pm</label>
+          </div>
           <p id="time-info" class="info">Each is the median trip, leaving every minute of the hour around it:
             7:30 to 8:30 am, or 11:30 am to 12:30 pm, so that waiting for trains counts as it does for someone who doesn't time it.</p>
         </fieldset>
         <fieldset class="section">
-          <legend>Show</legend>
-          <label><input type="radio" name="view" value="baseline" /> Minutes without QueensLink</label>
-          <label><input type="radio" name="view" value="queenslink" checked /> Minutes with QueensLink</label>
-          <label><input type="radio" name="view" value="saved" /> Minutes saved by QueensLink</label>
+          <legend>Minutes</legend>
+          <div class="segmented">
+            <label><input type="radio" name="view" value="baseline" /> Without QueensLink</label>
+            <label><input type="radio" name="view" value="queenslink" checked /> With QueensLink</label>
+            <label><input type="radio" name="view" value="saved" /> Saved by QueensLink</label>
+          </div>
         </fieldset>
         <div class="section station-key">
           <p><span class="legend-station"></span> Existing subway station</p>
