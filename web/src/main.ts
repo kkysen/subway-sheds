@@ -663,6 +663,28 @@ const M_BULLET_ORANGE = "#ff6319";
 
 // The radii of QueensLink's new stations at zooms 10 and 14.
 const NEW_STATION_RADII = [6, 11] as const;
+// And of the other stations.
+const STATION_RADII = [2.5, 6] as const;
+// Their outlines' widths.
+const NEW_STATION_OUTLINE = 2;
+const STATION_OUTLINE = 1;
+
+// The selected station's ring, in proportion to the station's circle, outline and all,
+// so that selecting one changes it alike whichever kind it is.
+const RING_RADIUS = 1.4;
+const RING_WIDTH = 0.25;
+
+// A selected station's ring's `circle-radius` or `circle-stroke-width`,
+// as `scale` times its circle's radius, outline and all, at each zoom.
+function ringSize(scale: number): ExpressionSpecification {
+  const outer = (zoom: 0 | 1): ExpressionSpecification => [
+    "case",
+    ["get", "new"],
+    scale * (NEW_STATION_RADII[zoom] + NEW_STATION_OUTLINE),
+    scale * (STATION_RADII[zoom] + STATION_OUTLINE),
+  ];
+  return ["interpolate", ["linear"], ["zoom"], 10, outer(0), 14, outer(1)];
+}
 
 // The white M drawn in each new station, filling it at its biggest,
 // as tall and as wide for the circle as the MTA's own M bullet's is,
@@ -739,13 +761,13 @@ await loaded;
         ["linear"],
         ["zoom"],
         10,
-        ["case", ["get", "new"], NEW_STATION_RADII[0], 2.5],
+        ["case", ["get", "new"], NEW_STATION_RADII[0], STATION_RADII[0]],
         14,
-        ["case", ["get", "new"], NEW_STATION_RADII[1], 6],
+        ["case", ["get", "new"], NEW_STATION_RADII[1], STATION_RADII[1]],
       ],
       "circle-color": ["case", ["get", "new"], M_BULLET_ORANGE, "#ffffff"],
       "circle-stroke-color": ["case", ["get", "new"], "#ffffff", "#333333"],
-      "circle-stroke-width": ["case", ["get", "new"], 2, 1],
+      "circle-stroke-width": ["case", ["get", "new"], NEW_STATION_OUTLINE, STATION_OUTLINE],
     },
   });
   // The white M in each new station's bullet, in bold Helvetica as the MTA's is.
@@ -776,19 +798,10 @@ await loaded;
     source: "stations",
     filter: ["==", ["get", "id"], ""],
     paint: {
-      // Clear of the station's own circle, the new ones' bigger, so that it rings it rather than thickening its edge.
-      "circle-radius": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        10,
-        ["case", ["get", "new"], NEW_STATION_RADII[0] + 4, 6],
-        14,
-        ["case", ["get", "new"], NEW_STATION_RADII[1] + 4, 10],
-      ],
+      "circle-radius": ringSize(RING_RADIUS),
       "circle-color": "rgba(0, 0, 0, 0)",
       "circle-stroke-color": "#000000",
-      "circle-stroke-width": 3,
+      "circle-stroke-width": ringSize(RING_WIDTH),
     },
   });
 
