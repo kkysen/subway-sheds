@@ -11,9 +11,14 @@ export interface BandsGrid {
 // The most there can be, counting nothing.
 const SLOTS = 16;
 
-const EARTH_CIRCUMFERENCE = 2 * Math.PI * 6378137;
+export const EARTH_CIRCUMFERENCE = 2 * Math.PI * 6378137;
 
 const FILL_OPACITY = 0.6;
+
+// With a class highlighted, it's drawn stronger and the rest fainter,
+// so that it stands out by more than its color.
+const HIGHLIGHTED_OPACITY = 0.85;
+const UNHIGHLIGHTED_OPACITY = 0.2;
 
 // Projected with MapLibre's own `projectTile`, which its prelude for the map's projection defines.
 const vertexSource = (shaderData: CustomRenderMethodInput["shaderData"]): string => `#version 300 es
@@ -40,8 +45,17 @@ precision highp int;
 precision highp usampler2D;
 uniform usampler2D u_classes;
 uniform vec3 u_colors[${SLOTS}];
+// The slot highlighted, or 0 for none.
+uniform int u_highlight;
 in vec2 v_cell;
 out vec4 fragColor;
+
+float opacity(int slot) {
+  if (u_highlight == 0) {
+    return ${FILL_OPACITY};
+  }
+  return slot == u_highlight ? ${HIGHLIGHTED_OPACITY} : ${UNHIGHLIGHTED_OPACITY};
+}
 
 void main() {
   ivec2 size = textureSize(u_classes, 0);
@@ -84,14 +98,17 @@ void main() {
   float pixels = ahead / max(length(vec2(dFdx(ahead), dFdy(ahead))), 1e-6);
 
   // Each side of an edge blends into the other over a pixel, so that it's smooth.
-  vec4 mostColor = most == 0 ? vec4(0.0) : vec4(u_colors[most], 1.0) * ${FILL_OPACITY};
-  vec4 nextColor = next == 0 ? vec4(0.0) : vec4(u_colors[next], 1.0) * ${FILL_OPACITY};
+  vec4 mostColor = most == 0 ? vec4(0.0) : vec4(u_colors[most], 1.0) * opacity(most);
+  vec4 nextColor = next == 0 ? vec4(0.0) : vec4(u_colors[next], 1.0) * opacity(next);
   vec4 fill = mix(nextColor, mostColor, clamp(0.5 + pixels, 0.5, 1.0));
 
   // The edges, 0.75 pixels across, so that each band stands out from the next.
   // Where two bands meet, each one's outline was drawn, so they're darker there.
-  float edgeOpacity = most != 0 && next != 0 ? 1.0 - 0.75 * 0.75 : 0.25;
-  float edge = edgeOpacity * clamp(0.375 + 0.5 - pixels, 0.0, 1.0);
+  // The highlighted band's are 3 pixels across and opaque, so that it's clear which it is.
+  bool highlighted = u_highlight != 0 && (most == u_highlight) != (next == u_highlight);
+  float edgeOpacity = highlighted ? 1.0 : most != 0 && next != 0 ? 1.0 - 0.75 * 0.75 : 0.25;
+  float edgeWidth = highlighted ? 3.0 : 0.75;
+  float edge = edgeOpacity * clamp(edgeWidth / 2.0 + 0.5 - pixels, 0.0, 1.0);
   fragColor = vec4(0.0, 0.0, 0.0, edge) + fill * (1.0 - edge);
 }
 `;
@@ -139,6 +156,7 @@ export class BandsLayer implements CustomLayerInterface {
   private vertexArray: WebGLVertexArrayObject | undefined;
   private texture: WebGLTexture | undefined;
   private colors = new Float32Array(SLOTS * 3);
+  private highlight = 0;
   private triggerRepaint = (): void => {};
 
   readonly id: string;
@@ -228,6 +246,14 @@ export class BandsLayer implements CustomLayerInterface {
     this.triggerRepaint();
   }
 
+  // The class to highlight, as in `setClasses`, or -1 for none.
+  setHighlight(highlight: number): void {
+    if (highlight + 1 !== this.highlight) {
+      this.highlight = highlight + 1;
+      this.triggerRepaint();
+    }
+  }
+
   render(gl: WebGL2RenderingContext, options: CustomRenderMethodInput): void {
     const { shaderData, defaultProjectionData: projection } = options;
     let program = this.programs.get(shaderData.variantName);
@@ -244,6 +270,7 @@ export class BandsLayer implements CustomLayerInterface {
     gl.uniform1f(uniform("u_projection_transition"), projection.projectionTransition);
     gl.uniform1i(uniform("u_projection_clip_antimeridian"), projection.clipAntimeridian ? 1 : 0);
     gl.uniform3fv(uniform("u_colors"), this.colors);
+    gl.uniform1i(uniform("u_highlight"), this.highlight);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture ?? null);
     gl.uniform1i(uniform("u_classes"), 0);

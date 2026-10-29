@@ -113,6 +113,29 @@ body,
   opacity: 0.6;
 }
 
+/* As highlighted on the map, stronger and outlined. */
+.legend-bands span.highlighted,
+.legend-swatch.highlighted {
+  opacity: 0.85;
+  outline: 2px solid #000000;
+  outline-offset: -1px;
+}
+
+.legend-bands span,
+.legend-swatch {
+  cursor: default;
+}
+
+.band-popup .maplibregl-popup-content {
+  padding: 4px 8px;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.band-popup {
+  pointer-events: none;
+}
+
 .legend-bar {
   height: 10px;
   opacity: 0.6;

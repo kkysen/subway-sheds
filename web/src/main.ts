@@ -6,10 +6,11 @@ import {
   type MapMouseEvent,
   type MapTouchEvent,
   type Point,
+  Popup,
   setWorkerUrl,
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
-import { BandsLayer } from "./bands";
+import { BandsLayer, EARTH_CIRCUMFERENCE } from "./bands";
 
 // MapLibre loads its worker from a file of its own, which it looks for next to the bundle;
 // importing it with `?url` is what gets Vite to emit it at all.
@@ -215,16 +216,44 @@ function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8A
   return classes;
 }
 
+// What the cells of class `band` are, as said when they're pointed at or tapped.
+function describeBand(band: number, view: View): string {
+  if (view === "saved" && band === savedBands.length) {
+    return `Reached only with QueensLink, within ${ROUTED_MINUTES} minutes`;
+  }
+  const viewBands = bands(view);
+  const [start = 0] = viewBands[band] ?? [];
+  const end = viewBands[band + 1]?.[0] ?? (view === "saved" ? undefined : MAX_MINUTES);
+  const minutes = end === undefined ? `${start}+ minutes` : `${start} to ${end} minutes`;
+  if (view === "saved") {
+    return `${minutes} saved by QueensLink`;
+  }
+  const scenario = view === "baseline" ? "without QueensLink" : "with QueensLink";
+  return `${minutes} from ${selectedName} ${scenario}`;
+}
+
+// A band's key in the legend, highlighting it on the map when pointed at.
+function legendBand(band: number, color: string, view: View): HTMLElement {
+  const key = document.createElement("span");
+  key.style.background = color;
+  key.title = describeBand(band, view);
+  key.dataset["band"] = String(band);
+  key.addEventListener("pointerenter", () => highlightBand(band));
+  key.addEventListener("pointerleave", () => highlightBand(NOTHING));
+  return key;
+}
+
+// Set once the map's layer is made, after the legend is first shown.
+let highlightBand = (_band: number): void => {};
+
 function legendItems(view: View): HTMLElement[] {
   const viewBands = bands(view);
   const bar = document.createElement("div");
   bar.className = "legend-bands";
   const labels = document.createElement("div");
   labels.className = "legend-labels";
-  for (const [minutes, color] of viewBands) {
-    const band = document.createElement("span");
-    band.style.background = color;
-    bar.append(band);
+  for (const [i, [minutes, color]] of viewBands.entries()) {
+    bar.append(legendBand(i, color, view));
     const label = document.createElement("span");
     label.textContent = String(minutes);
     labels.append(label);
@@ -234,9 +263,8 @@ function legendItems(view: View): HTMLElement[] {
   labels.append(last);
   const note = document.createElement("p");
   if (view === "saved") {
-    const swatch = document.createElement("span");
+    const swatch = legendBand(savedBands.length, QUEENSLINK_ONLY_COLOR, view);
     swatch.className = "legend-swatch";
-    swatch.style.background = QUEENSLINK_ONLY_COLOR;
     note.append(
       "Minutes saved. ",
       swatch,
@@ -443,11 +471,15 @@ const DEFAULT_STATION = "H04";
 let selected = "";
 // The times from the station shown.
 let selectedTimes: Uint8Array | undefined;
+// Each cell's class, as drawn.
+let selectedClasses: Int8Array | undefined;
 
 function drawCells(): void {
   if (selectedTimes !== undefined) {
     const view = currentView();
-    bandsLayer.setClasses(cellClasses(grid, selectedTimes, currentDay(), view), classColors(view));
+    selectedClasses = cellClasses(grid, selectedTimes, currentDay(), view);
+    bandsLayer.setClasses(selectedClasses, classColors(view));
+    clearBand();
   }
 }
 
@@ -523,6 +555,49 @@ function stationAt(event: { readonly point: Point }): string | undefined {
   return nearest;
 }
 
+// The class of the cell nearest a point on the map, or `NOTHING`.
+function bandAt(event: MapMouseEvent): number {
+  if (selectedClasses === undefined) {
+    return NOTHING;
+  }
+  const { lng, lat } = event.lngLat;
+  // In Web Mercator meters, as the grid is.
+  const x = (lng / 360) * EARTH_CIRCUMFERENCE;
+  const y =
+    (Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI)) * EARTH_CIRCUMFERENCE;
+  const col = Math.round((x - grid.x0) / grid.spacing);
+  const row = Math.round((y - grid.y0) / grid.spacing);
+  if (col < 0 || col >= width || row < 0 || row >= height) {
+    return NOTHING;
+  }
+  return selectedClasses[row * width + col] ?? NOTHING;
+}
+
+const bandPopup = new Popup({ closeButton: false, closeOnClick: false, className: "band-popup" });
+
+highlightBand = (band: number): void => {
+  bandsLayer.setHighlight(band);
+  for (const key of legend.querySelectorAll<HTMLElement>("[data-band]")) {
+    key.classList.toggle("highlighted", key.dataset["band"] === String(band));
+  }
+};
+
+// Highlights the band at a point and says what it is, or clears it if there's none there.
+function showBand(event: MapMouseEvent): void {
+  const band = bandAt(event);
+  if (band === NOTHING) {
+    clearBand();
+    return;
+  }
+  highlightBand(band);
+  bandPopup.setLngLat(event.lngLat).setText(describeBand(band, currentView())).addTo(map);
+}
+
+function clearBand(): void {
+  highlightBand(NOTHING);
+  bandPopup.remove();
+}
+
 await loaded;
 {
   const view = currentView();
@@ -592,6 +667,9 @@ await loaded;
     const id = stationAt(event);
     if (id !== undefined) {
       void selectStation(id);
+    } else {
+      // As on a phone, which has no pointing without tapping.
+      showBand(event);
     }
   });
   map.on("mousemove", (event: MapMouseEvent) => {
@@ -599,6 +677,9 @@ await loaded;
     map.getCanvas().style.cursor = id === undefined ? "" : "pointer";
     if (id !== undefined) {
       prefetchTimes(id);
+      clearBand();
+    } else {
+      showBand(event);
     }
   });
   // On a phone, the touch starts a little before the tap it ends in.
@@ -608,6 +689,7 @@ await loaded;
       prefetchTimes(id);
     }
   });
+  map.getCanvas().addEventListener("mouseleave", clearBand);
 
   void selectStation(stationFromHash());
 }
