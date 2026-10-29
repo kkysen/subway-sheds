@@ -315,6 +315,14 @@ const small = window.matchMedia("(max-width: 600px), (max-height: 500px)").match
 const details = element("#controls details", HTMLDetailsElement);
 details.open = !small;
 
+// Shown by clicking or tapping, as well as by pointing on devices that can.
+const timeInfoButton = element("#time-info-button", HTMLButtonElement);
+const timeInfo = element("#time-info", HTMLElement);
+timeInfoButton.addEventListener("click", () => {
+  const open = timeInfo.classList.toggle("open");
+  timeInfoButton.setAttribute("aria-expanded", String(open));
+});
+
 // Only when embedded, as on thequeenslink.org, since it's already the full map otherwise.
 fullMap.hidden = window.top === window.self;
 
