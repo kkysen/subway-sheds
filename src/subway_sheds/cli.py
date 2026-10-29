@@ -140,10 +140,13 @@ def route(
     """Route from stations to the grid in each scenario, on each day."""
     destinations = land_grid().points()
     echo(f"{len(destinations)} cells")
+    # Every scenario's stations, each routed in every scenario,
+    # so that from QueensLink's new ones, the baseline is walking from where they'd be,
+    # and there's saying how much they save.
+    every_station = {s.id: s for scenario in Scenario for s in gtfs.stations(scenario.gtfs)}
     for scenario, day in itertools.product(scenario_ or list(Scenario), day_ or list(Day)):
-        stations = gtfs.stations(scenario.gtfs)
+        stations = list(every_station.values())
         if stop_ids:
-            # A station only in one scenario, like QueensLink's new ones, is routed only there.
             stations = [s for s in stations if s.id in stop_ids]
         times = travel_times.from_stations(scenario, day, stations, destinations)
         dest = travel_times.output_path(scenario, day)
