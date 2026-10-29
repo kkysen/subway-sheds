@@ -9,7 +9,10 @@ body,
   position: absolute;
   top: 10px;
   left: 10px;
-  max-width: 300px;
+  /* As wide open as collapsed, so that the marker stays put as it turns.
+     Short of the fullscreen button on narrow screens: its 29px, and 10px either side of it. */
+  box-sizing: border-box;
+  width: min(300px, calc(100% - 59px));
   overflow: hidden;
   background: white;
   border-radius: 4px;
@@ -27,7 +30,8 @@ body,
 /* A gray bar, with the heading on the left and the marker on the right, as in QueensLink's mockup. */
 #controls summary {
   display: grid;
-  grid-template-columns: 1fr auto;
+  /* The heading's column no wider than what's left, so that the line under it is shortened to fit, not the marker pushed out. */
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 12px;
   padding: 8px 12px;
@@ -43,7 +47,8 @@ body,
 #controls summary::after {
   content: "▼";
   grid-column: 2;
-  grid-row: 1 / span 2;
+  /* By the heading, whether or not the line under it is shown. */
+  grid-row: 1;
   font-size: 12px;
   transition: transform 0.15s;
 }
@@ -62,15 +67,10 @@ body,
 /* Under the heading, only while the controls are collapsed. */
 #summary-status {
   grid-column: 1;
-  /* On one line, the controls widening for it rather than it wrapping. */
+  /* On one line, its words shortened to fit rather than it wrapping. */
   white-space: nowrap;
   font-size: 12px;
   color: #555555;
-}
-
-/* Collapsed, as wide as its line under the heading needs, short of the fullscreen button on narrow screens. */
-#controls:has(details:not([open])) {
-  max-width: none;
 }
 
 #summary-status.wraps {
@@ -157,14 +157,7 @@ body,
 
 @media (max-width: 600px) {
   #controls {
-    /* Clear of the fullscreen button on the right: its 29px, and 10px either side of it. */
-    box-sizing: border-box;
-    max-width: calc(100% - 59px);
     font-size: 12px;
-  }
-
-  #controls:has(details:not([open])) {
-    max-width: calc(100% - 59px);
   }
 
   #controls summary {
