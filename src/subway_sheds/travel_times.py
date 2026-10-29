@@ -23,6 +23,8 @@ PERCENTILES = [50]
 # Past the 90 minutes the page draws travel times out to,
 # so that it can tell how much QueensLink saves places that take longer than that without it.
 MAX_TIME = datetime.timedelta(minutes=120)
+# 3 mph, a typical adult's pace, rather than R5's default, 3.6 km/h, which is slower.
+WALKING_SPEED_KM_PER_H = 3 * 1.609344
 
 
 class _ParallelTravelTimeMatrix(r5py.TravelTimeMatrix):
@@ -83,6 +85,7 @@ def from_stations(
         percentiles=PERCENTILES,
         transport_modes=[r5py.TransportMode.TRANSIT, r5py.TransportMode.WALK],
         max_time=MAX_TIME,
+        speed_walking=WALKING_SPEED_KM_PER_H,
     )
     times = pd.DataFrame(matrix).rename(
         columns={"from_id": "station", "to_id": "cell", "travel_time": "minutes"}
