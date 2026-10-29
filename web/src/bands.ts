@@ -104,11 +104,23 @@ void main() {
 
   // The edges, 0.75 pixels across, so that each band stands out from the next.
   // Where two bands meet, each one's outline was drawn, so they're darker there.
-  // The highlighted band's are 3 pixels across and opaque, so that it's clear which it is.
-  bool highlighted = u_highlight != 0 && (most == u_highlight) != (next == u_highlight);
-  float edgeOpacity = highlighted ? 1.0 : most != 0 && next != 0 ? 1.0 - 0.75 * 0.75 : 0.25;
-  float edgeWidth = highlighted ? 3.0 : 0.75;
-  float edge = edgeOpacity * clamp(edgeWidth / 2.0 + 0.5 - pixels, 0.0, 1.0);
+  float edgeOpacity = most != 0 && next != 0 ? 1.0 - 0.75 * 0.75 : 0.25;
+  float edge = edgeOpacity * clamp(0.375 + 0.5 - pixels, 0.0, 1.0);
+
+  // The highlighted band's edge, 3 pixels across and opaque, so that it's clear which it is,
+  // from how far the point is from it, measured from that band alone,
+  // so that it's unbroken where other bands meet it too.
+  if (u_highlight != 0) {
+    float rest = -1.0;
+    for (int i = 0; i < ${SLOTS}; i++) {
+      if (i != u_highlight) {
+        rest = max(rest, amounts[i]);
+      }
+    }
+    float inside = amounts[u_highlight] - rest;
+    float fromEdge = abs(inside) / max(length(vec2(dFdx(inside), dFdy(inside))), 1e-6);
+    edge = max(edge, clamp(1.5 + 0.5 - fromEdge, 0.0, 1.0));
+  }
   fragColor = vec4(0.0, 0.0, 0.0, edge) + fill * (1.0 - edge);
 }
 `;
