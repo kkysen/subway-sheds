@@ -662,7 +662,12 @@ function clearBand(): void {
 // The radii of QueensLink's new stations at zooms 10 and 14.
 const NEW_STATION_RADII = [6, 11] as const;
 
-// The M drawn in each new station, filling it at its biggest.
+// The M drawn in each new station, filling it at its biggest,
+// as tall and as wide for the circle as the MTA's own M bullet's is,
+// measured from its SVG: 50.4% of the circle's diameter tall, 47.2% wide.
+const M_HEIGHT = 0.504;
+const M_WIDTH = 0.472;
+
 function queenslinkM(): ImageData {
   const size = 2 * NEW_STATION_RADII[1] * devicePixelRatio;
   const canvas = document.createElement("canvas");
@@ -673,12 +678,19 @@ function queenslinkM(): ImageData {
     throw new Error("no 2D canvas context");
   }
   context.fillStyle = QUEENSLINK_ORANGE;
-  context.font = `bold ${0.8 * size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
-  context.textAlign = "center";
-  // Centered by the M's own height, not the font's, which leaves room for descenders.
-  const { actualBoundingBoxAscent: ascent, actualBoundingBoxDescent: descent } =
-    context.measureText("M");
-  context.fillText("M", size / 2, size / 2 + (ascent - descent) / 2);
+  context.font = `bold ${size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+  // The M's own bounds, not the font's, which leave room for accents and descenders,
+  // scaled to the bullet's, Helvetica's M being wider for its height than the bullet's.
+  const m = context.measureText("M");
+  const width = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+  const height = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+  context.translate(size / 2, size / 2);
+  context.scale((M_WIDTH * size) / width, (M_HEIGHT * size) / height);
+  context.fillText(
+    "M",
+    (m.actualBoundingBoxLeft - m.actualBoundingBoxRight) / 2,
+    (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2,
+  );
   return context.getImageData(0, 0, size, size);
 }
 
