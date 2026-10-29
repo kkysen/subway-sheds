@@ -157,6 +157,8 @@ body,
 
 @media (max-width: 600px) {
   #controls {
+    /* Right up to the fullscreen button, open or collapsed, so that the line under the heading has room for long names. */
+    width: calc(100% - 59px);
     font-size: 12px;
   }
 
