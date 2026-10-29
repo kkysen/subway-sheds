@@ -1,6 +1,7 @@
 import "@fontsource-variable/nunito-sans";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
+  type CircleLayerSpecification,
   type ExpressionSpecification,
   FullscreenControl,
   type LngLat,
@@ -9,6 +10,7 @@ import {
   type MapTouchEvent,
   type Point,
   Popup,
+  type SymbolLayerSpecification,
   setWorkerUrl,
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
@@ -499,7 +501,11 @@ async function selectStation(id: string): Promise<void> {
   }
   selected = id;
   // Shown picked straight away, so that the click feels taken while its times load.
-  map.setFilter("selected-station", ["==", ["get", "id"], id]);
+  for (const layer of ["selected-station", "selected-station-circle"]) {
+    map.setFilter(layer, ["==", ["get", "id"], id]);
+  }
+  // Only a new station has an M, which would otherwise be drawn over the others' white too.
+  map.setFilter("selected-station-m", ["all", ["get", "new"], ["==", ["get", "id"], id]]);
   const only = station.scenarios.length === 1 ? " (QueensLink only)" : "";
   stationName.textContent = `${station.name}${only}`;
   selectedName = station.name;
@@ -748,48 +754,45 @@ await loaded;
       })),
     },
   });
-  map.addLayer({
-    id: "stations",
-    type: "circle",
-    source: "stations",
-    paint: {
-      // Stations new with QueensLink as the MTA's M bullet, an orange circle with a white M,
-      // for the M trains QueensLink would run, bigger, so that the M is legible.
-      "circle-radius": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        10,
-        ["case", ["get", "new"], NEW_STATION_RADII[0], STATION_RADII[0]],
-        14,
-        ["case", ["get", "new"], NEW_STATION_RADII[1], STATION_RADII[1]],
-      ],
-      "circle-color": ["case", ["get", "new"], M_BULLET_ORANGE, "#ffffff"],
-      "circle-stroke-color": ["case", ["get", "new"], "#ffffff", "#333333"],
-      "circle-stroke-width": ["case", ["get", "new"], NEW_STATION_OUTLINE, STATION_OUTLINE],
-    },
-  });
+  const stationPaint: CircleLayerSpecification["paint"] = {
+    // Stations new with QueensLink as the MTA's M bullet, an orange circle with a white M,
+    // for the M trains QueensLink would run, bigger, so that the M is legible.
+    "circle-radius": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      10,
+      ["case", ["get", "new"], NEW_STATION_RADII[0], STATION_RADII[0]],
+      14,
+      ["case", ["get", "new"], NEW_STATION_RADII[1], STATION_RADII[1]],
+    ],
+    "circle-color": ["case", ["get", "new"], M_BULLET_ORANGE, "#ffffff"],
+    "circle-stroke-color": ["case", ["get", "new"], "#ffffff", "#333333"],
+    "circle-stroke-width": ["case", ["get", "new"], NEW_STATION_OUTLINE, STATION_OUTLINE],
+  };
+  map.addLayer({ id: "stations", type: "circle", source: "stations", paint: stationPaint });
   // The white M in each new station's bullet, in bold Helvetica as the MTA's is.
   map.addImage("queenslink-m", queenslinkM(), { pixelRatio: devicePixelRatio });
+  const mLayout: SymbolLayerSpecification["layout"] = {
+    "icon-image": "queenslink-m",
+    "icon-size": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      10,
+      NEW_STATION_RADII[0] / NEW_STATION_RADII[1],
+      14,
+      1,
+    ],
+    "icon-allow-overlap": true,
+    "icon-ignore-placement": true,
+  };
   map.addLayer({
     id: "new-stations-m",
     type: "symbol",
     source: "stations",
     filter: ["get", "new"],
-    layout: {
-      "icon-image": "queenslink-m",
-      "icon-size": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        10,
-        NEW_STATION_RADII[0] / NEW_STATION_RADII[1],
-        14,
-        1,
-      ],
-      "icon-allow-overlap": true,
-      "icon-ignore-placement": true,
-    },
+    layout: mLayout,
   });
   map.addLayer({
     id: "selected-station",
@@ -802,6 +805,22 @@ await loaded;
       "circle-stroke-color": "#000000",
       "circle-stroke-width": RING_WIDTH,
     },
+  });
+  // The selected station again, over the ring and every other station,
+  // so that it's in front of any it overlaps.
+  map.addLayer({
+    id: "selected-station-circle",
+    type: "circle",
+    source: "stations",
+    filter: ["==", ["get", "id"], ""],
+    paint: stationPaint,
+  });
+  map.addLayer({
+    id: "selected-station-m",
+    type: "symbol",
+    source: "stations",
+    filter: ["==", ["get", "id"], ""],
+    layout: mLayout,
   });
 
   map.on("click", (event: MapMouseEvent) => {
