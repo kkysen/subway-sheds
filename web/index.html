@@ -14,20 +14,26 @@
           <h1>Subway sheds with QueensLink</h1>
           <span id="summary-status"></span>
         </summary>
-        <p>From <strong id="station-name">…</strong> <span id="day-name">in the weekday morning peak</span>.
-          Click a station to change it.</p>
-        <fieldset>
-          <legend>When</legend>
+        <div class="section">
+          <p>From <strong id="station-name">…</strong> <span id="day-name">in the weekday morning peak</span>.
+            Click a station to change it.</p>
+        </div>
+        <fieldset class="section">
+          <legend>Time</legend>
           <label><input type="radio" name="day" value="weekday" checked /> Weekday, 7:30 to 8:30</label>
           <label><input type="radio" name="day" value="saturday" /> Saturday, 11 to noon</label>
         </fieldset>
-        <fieldset>
+        <fieldset class="section">
           <legend>Show</legend>
           <label><input type="radio" name="view" value="baseline" /> Minutes without QueensLink</label>
           <label><input type="radio" name="view" value="queenslink" checked /> Minutes with QueensLink</label>
           <label><input type="radio" name="view" value="saved" /> Minutes saved by QueensLink</label>
         </fieldset>
-        <div id="legend"></div>
+        <div class="section station-key">
+          <p><span class="legend-station"></span> Existing subway station</p>
+          <p><span class="legend-station legend-station-new"></span> New QueensLink station</p>
+        </div>
+        <div class="section" id="legend"></div>
         <a id="full-map" href="./" target="_blank" hidden>Open in a new tab ↗</a>
       </details>
     </form>

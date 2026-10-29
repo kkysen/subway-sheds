@@ -251,38 +251,36 @@ let restorePinnedBand = (): void => {};
 
 function legendItems(view: View): HTMLElement[] {
   const viewBands = bands(view);
+  const heading = document.createElement("h2");
+  heading.textContent = view === "saved" ? "Minutes saved" : "Minutes from station";
   const bar = document.createElement("div");
   bar.className = "legend-bands";
   const labels = document.createElement("div");
   labels.className = "legend-labels";
+  // Each at the edge its band starts at, as in QueensLink's mockup.
+  const label = (text: string, edge: number): void => {
+    const span = document.createElement("span");
+    span.textContent = text;
+    span.style.left = `${(edge / viewBands.length) * 100}%`;
+    labels.append(span);
+  };
   for (const [i, [minutes, color]] of viewBands.entries()) {
     bar.append(legendBand(i, color, view));
-    const label = document.createElement("span");
-    label.textContent = String(minutes);
-    labels.append(label);
+    // The last band of minutes saved goes on without end, so it's marked as starting with no end.
+    label(view === "saved" && i === viewBands.length - 1 ? `${minutes}+` : String(minutes), i);
   }
-  const last = document.createElement("span");
-  last.textContent = view === "saved" ? "+" : String(MAX_MINUTES);
-  labels.append(last);
+  if (view !== "saved") {
+    label(String(MAX_MINUTES), viewBands.length);
+  }
   const note = document.createElement("p");
   if (view === "saved") {
     const swatch = legendBand(savedBands.length, QUEENSLINK_ONLY_COLOR, view);
     swatch.className = "legend-swatch";
-    note.append(
-      "Minutes saved. ",
-      swatch,
-      ` Reached only with QueensLink, within ${ROUTED_MINUTES} minutes.`,
-    );
+    note.append(swatch, ` Reached only with QueensLink, within ${ROUTED_MINUTES} minutes`);
   } else {
-    note.textContent = "Minutes from the station, walking at the end.";
+    note.textContent = "Walking at the end";
   }
-  const stationKey = document.createElement("p");
-  const station = document.createElement("span");
-  station.className = "legend-station";
-  const newStation = document.createElement("span");
-  newStation.className = "legend-station legend-station-new";
-  stationKey.append(station, " Station ", newStation, " New with QueensLink");
-  return [bar, labels, note, stationKey];
+  return [heading, bar, labels, note];
 }
 
 // The lines of the scenario the view shows, with QueensLink's for what it saves.
