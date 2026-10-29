@@ -12,10 +12,15 @@ body,
   padding: 8px 12px;
   background: white;
   border-radius: 4px;
-  font:
-    14px system-ui,
-    sans-serif;
+  font-size: 14px;
   box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+}
+
+/* QueensLink's font, on the devices that have it, as Apple's do.
+   On `#map` too, to outrank MapLibre's own for its popups and credits. */
+body,
+#map {
+  font-family: Avenir, "Avenir Next", "Nunito Sans", system-ui, sans-serif;
 }
 
 #controls fieldset {
