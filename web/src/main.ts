@@ -764,7 +764,16 @@ await loaded;
     source: "stations",
     filter: ["==", ["get", "id"], ""],
     paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 6, 14, 10],
+      // Clear of the station's own circle, the new ones' bigger, so that it rings it rather than thickening its edge.
+      "circle-radius": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10,
+        ["case", ["get", "new"], NEW_STATION_RADII[0] + 4, 6],
+        14,
+        ["case", ["get", "new"], NEW_STATION_RADII[1] + 4, 10],
+      ],
       "circle-color": "rgba(0, 0, 0, 0)",
       "circle-stroke-color": "#000000",
       "circle-stroke-width": 3,
