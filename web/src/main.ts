@@ -32,15 +32,15 @@ function isDay(value: unknown): value is Day {
 }
 
 const dayNames: Record<Day, string> = {
-  weekday: "in the weekday morning peak",
-  saturday: "on Saturday midday",
+  weekday: "around 8 am on a weekday",
+  saturday: "around 12 pm on a Saturday",
 };
 
 // Shorter, for the summary shown with the controls collapsed,
 // each shorter than the last for when the one before doesn't fit.
 const shortDayNames: Record<Day, readonly string[]> = {
-  weekday: ["weekday AM", "weekday AM", "wkdy AM"],
-  saturday: ["Saturday midday", "Saturday midday", "Sat midday"],
+  weekday: ["weekday @ 8 am", "wkdy @ 8 am", "wkdy 8 am"],
+  saturday: ["Saturday @ 12 pm", "Sat @ 12 pm", "Sat 12 pm"],
 };
 
 const shortViewNames: Record<View, readonly string[]> = {

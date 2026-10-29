@@ -33,9 +33,9 @@ G = "G"
 
 
 class Day(StrEnum):
-    # The morning peak of the weekday with the most trips.
+    # The morning peak of the weekday with the most trips, around 8 am.
     WEEKDAY = "weekday"
-    # Midday of the Saturday with the most trips, since weekends have no peak.
+    # Midday of the Saturday with the most trips, around noon, since weekends have no peak.
     SATURDAY = "saturday"
 
     @property
@@ -44,7 +44,11 @@ class Day(StrEnum):
 
     @property
     def departure(self) -> datetime.time:
-        return datetime.time(7, 30) if self is Day.WEEKDAY else datetime.time(11)
+        """
+        When the hour of departures starts, half an hour before the whole hour it's around,
+        so that the page can call it by that hour.
+        """
+        return datetime.time(7, 30) if self is Day.WEEKDAY else datetime.time(11, 30)
 
 
 class Scenario(StrEnum):

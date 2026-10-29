@@ -7,7 +7,7 @@ but routed with [R5](https://github.com/conveyal/r5) (through [`r5py`](https://r
 over the real street network instead of buffering stations by leftover walking time,
 and with waiting for trains counted:
 R5 departs every minute of an hour and reports the median trip:
-the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11 to noon.
+the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11:30 to 12:30.
 
 ## Data
 
