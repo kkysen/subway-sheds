@@ -31,5 +31,8 @@
     };
     fit();
     addEventListener("resize", fit);
+    // The header can also grow after this first runs, as when its logo or fonts load,
+    // which would otherwise leave it covering the top of the map.
+    new ResizeObserver(fit).observe(header);
   })();
 </script>
