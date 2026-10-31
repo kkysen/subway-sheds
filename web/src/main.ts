@@ -174,8 +174,7 @@ function rasterSize(grid: Grid): { width: number; height: number } {
 // Each band the view is drawn in, from its minutes up to the next band's, and its color.
 type Band = readonly [number, string];
 
-// Where bands of minutes, traveled or saved, start, the same for both,
-// so that, e.g., 15 minutes there and 15 minutes saved fall on the same edge.
+// Where bands of minutes traveled start.
 // Few of them, so that each band is easy to tell from the next.
 const BAND_STARTS = [15, 30, 45, 60, 75, 90, 105] as const;
 
@@ -198,14 +197,17 @@ const travelTimeBands: readonly Band[] = [
 ];
 
 // Minutes saved, from a minute, from light teal to QueensLink's green, `#24685b`, as QueensLink's own maps are.
-// Only out to an hour, since QueensLink saves at most 81 minutes from any station to anywhere,
+// Every 10 minutes out to an hour, finer than travel times' bands,
+// since QueensLink saves at most 81 minutes from any station to anywhere,
 // and an hour or more for at most a tenth of a percent of them.
 const savedBands: readonly Band[] = [
   [1, "#8cd1c6"],
-  [BAND_STARTS[0], "#55aa9a"],
-  [BAND_STARTS[1], "#449586"],
-  [BAND_STARTS[2], "#31796c"],
-  [BAND_STARTS[3], "#24685b"],
+  [10, "#6ebfb0"],
+  [20, "#55aa9a"],
+  [30, "#449586"],
+  [40, "#3a8578"],
+  [50, "#31796c"],
+  [60, "#24685b"],
 ];
 
 // Places only QueensLink reaches within `ROUTED_MINUTES`, which there's no saying how much it saves.
