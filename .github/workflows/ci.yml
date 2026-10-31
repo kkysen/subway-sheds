@@ -23,6 +23,14 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
+          # With the `route` crate, whose wheel `uv sync` builds and the cache keeps,
+          # as `tool.uv.cache-keys` has `uv` rebuild it.
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+            route/Cargo.lock
+            route/Cargo.toml
+            route/src/**/*.rs
 
       # Node, as `mise.toml` pins it, but not `uv`, which `setup-uv` installed.
       - uses: jdx/mise-action@v5.2.3
@@ -39,6 +47,11 @@ jobs:
             route/target
           key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
+
+      # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
+      # and failing if `uv.lock` is out of date, which `uv run` would quietly update.
+      - name: uv sync
+        run: uv sync --locked
 
       - uses: actions/cache@v6.1.0
         with:
@@ -81,6 +94,14 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
+          # With the `route` crate, whose wheel `uv sync` builds and the cache keeps,
+          # as `tool.uv.cache-keys` has `uv` rebuild it.
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+            route/Cargo.lock
+            route/Cargo.toml
+            route/src/**/*.rs
 
       - uses: jdx/mise-action@v5.2.3
         env:
@@ -96,6 +117,11 @@ jobs:
             route/target
           key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
+
+      # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
+      # and failing if `uv.lock` is out of date, which `uv run` would quietly update.
+      - name: uv sync
+        run: uv sync --locked
 
       # The MTA feed and shoreline, which never change.
       - uses: actions/cache@v6.1.0
@@ -183,6 +209,14 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
+          # With the `route` crate, whose wheel `uv sync` builds and the cache keeps,
+          # as `tool.uv.cache-keys` has `uv` rebuild it.
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+            route/Cargo.lock
+            route/Cargo.toml
+            route/src/**/*.rs
 
       - uses: jdx/mise-action@v5.2.3
         env:
@@ -198,6 +232,11 @@ jobs:
             route/target
           key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
+
+      # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
+      # and failing if `uv.lock` is out of date, which `uv run` would quietly update.
+      - name: uv sync
+        run: uv sync --locked
 
       - uses: actions/download-artifact@v8.0.2
         with:
@@ -236,6 +275,14 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
+          # With the `route` crate, whose wheel `uv sync` builds and the cache keeps,
+          # as `tool.uv.cache-keys` has `uv` rebuild it.
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+            route/Cargo.lock
+            route/Cargo.toml
+            route/src/**/*.rs
 
       - uses: jdx/mise-action@v5.2.3
         env:
@@ -251,6 +298,11 @@ jobs:
             route/target
           key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
+
+      # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
+      # and failing if `uv.lock` is out of date, which `uv run` would quietly update.
+      - name: uv sync
+        run: uv sync --locked
 
       - uses: actions/cache@v6.1.0
         with:
