@@ -37,3 +37,16 @@ repos:
         language: system
         files: ^web/
         pass_filenames: false
+      - id: route
+        name: route (rustfmt, clippy, tests)
+        entry: bash -c 'cd route && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test'
+        language: system
+        files: ^route/
+        pass_filenames: false
+      # Built for WebAssembly, so its `cargo test` can't run here, and it has no tests.
+      - id: web-times
+        name: web/times (rustfmt, clippy)
+        entry: bash -c 'cd web/times && cargo fmt --check && cargo clippy --all-targets -- -D warnings'
+        language: system
+        files: ^web/times/
+        pass_filenames: false
