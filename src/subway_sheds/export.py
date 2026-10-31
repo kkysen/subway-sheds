@@ -3,7 +3,6 @@
 import datetime
 import itertools
 import json
-import shutil
 import zipfile
 
 import numpy as np
@@ -52,9 +51,13 @@ def write(grid: Grid) -> None:
       then each change's time, a little-endian `uint16`, all in that order.
       The page adds each departure's walk out to each cell and takes the median, as routing does.
     """
-    shutil.rmtree(paths.WEB_DATA, ignore_errors=True)
+    # Only the files, keeping the directories, which a running `vite` watches:
+    # replacing them, it serves the page itself for every file in them until restarted.
+    for old in paths.WEB_DATA.rglob("*"):
+        if not old.is_dir():
+            old.unlink()
     arrivals_dir = paths.WEB_DATA / "arrivals"
-    arrivals_dir.mkdir(parents=True)
+    arrivals_dir.mkdir(parents=True, exist_ok=True)
 
     (paths.WEB_DATA / "grid.json").write_text(
         json.dumps(
@@ -171,7 +174,7 @@ def write(grid: Grid) -> None:
         )
     (paths.WEB_DATA / "patterns.json").write_text(json.dumps(patterns, separators=(",", ":")))
     routes_dir = paths.WEB_DATA / "routes"
-    routes_dir.mkdir()
+    routes_dir.mkdir(exist_ok=True)
     counts = np.zeros((len(stations), len(runs), len(stations)), dtype=np.uint8)
     legs_of: list[list[pd.DataFrame]] = []
     for r, (day, scenario) in enumerate(runs):
