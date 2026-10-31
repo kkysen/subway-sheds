@@ -123,8 +123,10 @@ def write(grid: Grid) -> None:
       the station, as `stations.json` lists them, the cell, as `grid.json` lists them,
       the seconds out through the entrance, and the meters on the streets after it,
       by station.
-    - `exits-far.bin`: the rest, as `exits.bin` has them, which the page loads after,
-      as there are about as many again, but few are any cell's quickest way.
+    - `exits-far.bin`: the rest within `travel_times.DEFAULT_EXIT_WALK_M`, as `exits.bin` has them,
+      which the page loads after, as few are any cell's quickest way.
+    - `exits-fast.bin`: the rest, which the page loads only once its slider is faster
+      than it starts, as most of the walks are these, but only walking faster reaches them.
 
     The `.bin` files are each compressed with Brotli (see `_BrotliFiles`).
     """
@@ -220,7 +222,12 @@ def write(grid: Grid) -> None:
     exits = pd.read_parquet(travel_times.EXITS)
     exits = exits.assign(station=rows_of(exits["station"])).sort_values(["station", "cell"])
     near = exits["meters"] <= travel_times.NEAR_EXIT_WALK_M
-    for name, part in [("exits.bin", exits[near]), ("exits-far.bin", exits[~near])]:
+    default = exits["meters"] <= travel_times.DEFAULT_EXIT_WALK_M
+    for name, part in [
+        ("exits.bin", exits[near]),
+        ("exits-far.bin", exits[~near & default]),
+        ("exits-fast.bin", exits[~default]),
+    ]:
         columns = [
             part[c].to_numpy(dtype="<u2") for c in ["station", "cell", "exit_seconds", "meters"]
         ]

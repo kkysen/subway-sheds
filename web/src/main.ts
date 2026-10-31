@@ -446,6 +446,7 @@ const controls = element("#controls", HTMLFormElement);
 const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
 const speedValue = element("#speed-value", HTMLOutputElement);
+const speedSlider = element("input[name=speed]", HTMLInputElement);
 const summaryStatus = element("#summary-status", HTMLElement);
 // Kept apart from the stations, which load after the controls are first shown.
 let selectedName = "…";
@@ -734,7 +735,8 @@ let selectedExitMinute: Uint8Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
 
-// The walks out of stations: the near ones first, then all of them once the far ones are in.
+// The walks out of stations: the near ones first, then the rest of each part as it's in.
+const exitParts = [nearExits];
 let exits = nearExits;
 
 // Computes the times off the page's thread; see `times.worker.ts`.
@@ -751,10 +753,24 @@ function sendExits(): void {
 sendExits();
 // The far walks, after the page has drawn with the near ones, as they're most of the download.
 void fetchBinary("exits-far.bin").then((far) => {
-  exits = mergeExits(nearExits, parseExits(far, stations.length), stations.length);
+  addExits(far);
+});
+// The walks only walking faster than the slider starts at reaches, once it is,
+// as they're most of the walks.
+let fastExits: Promise<void> | undefined;
+function loadFastExits(): void {
+  if (fastExits === undefined && currentSpeed() > Number(speedSlider.defaultValue)) {
+    fastExits = fetchBinary("exits-fast.bin").then(addExits, () => {
+      fastExits = undefined;
+    });
+  }
+}
+function addExits(part: ArrayBuffer): void {
+  exitParts.push(parseExits(part, stations.length));
+  exits = mergeExits(exitParts, stations.length);
   sendExits();
   recompute();
-});
+}
 // The last request sent, and whether the controls or station have changed since,
 // so that while one's computing, any number of changes ask for one more, not one each.
 let timesAsked = 0;
@@ -763,6 +779,7 @@ let timesStale = false;
 
 // Recomputes the times for the station and controls as they are, then redraws.
 function recompute(): void {
+  loadFastExits();
   if (selectedArrivals === undefined) {
     return;
   }

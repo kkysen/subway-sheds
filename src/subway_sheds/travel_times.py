@@ -34,6 +34,13 @@ EXIT_WALK = datetime.timedelta(minutes=60)
 NEAR_EXIT_WALK = datetime.timedelta(minutes=30)
 EXIT_WALK_MM = int(SLIDER_MPH[1] * 1609.344 / 3600 * 1000 * EXIT_WALK.total_seconds())
 NEAR_EXIT_WALK_M = int(SLIDER_MPH[1] * 1609.344 / 3600 * NEAR_EXIT_WALK.total_seconds())
+# The speed the slider starts at, as `web/index.html` has it,
+# and the farthest `EXIT_WALK` walks at it, as the page rounds its seconds down,
+# beyond which the page loads the walks only once the slider's faster.
+SLIDER_DEFAULT_MPH = 3.0
+DEFAULT_EXIT_WALK_M = (
+    int(SLIDER_DEFAULT_MPH * 1609.344 / 3600 * (EXIT_WALK.total_seconds() + 1)) + 1
+)
 # Every station's walks out to the cells, for walking at any of the slider's speeds.
 EXITS = paths.TRAVEL_TIMES / "exits.parquet"
 # The street walks between stations that changing trains walks, to draw.

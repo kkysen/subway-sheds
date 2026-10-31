@@ -51,9 +51,9 @@ export function parseExits(buffer: ArrayBuffer, stations: number): Exits {
   return { cell: column(1), exitSeconds: column(2), meters: column(3), starts };
 }
 
-// `near`'s walks out of stations and `far`'s, by station.
-export function mergeExits(near: Exits, far: Exits, stations: number): Exits {
-  const n = near.cell.length + far.cell.length;
+// Every one of `parts`' walks out of stations, by station.
+export function mergeExits(parts: readonly Exits[], stations: number): Exits {
+  const n = parts.reduce((sum, part) => sum + part.cell.length, 0);
   const cell = new Uint16Array(n);
   const exitSeconds = new Uint16Array(n);
   const meters = new Uint16Array(n);
@@ -61,7 +61,7 @@ export function mergeExits(near: Exits, far: Exits, stations: number): Exits {
   let at = 0;
   for (let s = 0; s < stations; s++) {
     starts[s] = at;
-    for (const part of [near, far]) {
+    for (const part of parts) {
       const from = part.starts[s] ?? 0;
       const to = part.starts[s + 1] ?? 0;
       cell.set(part.cell.subarray(from, to), at);
