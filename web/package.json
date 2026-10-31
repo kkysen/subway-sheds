@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsrs --noEmit && vite build",
+    "wasm": "cd times && cargo build --release",
+    "dev": "npm run wasm && vite",
+    "build": "npm run wasm && tsrs --noEmit && vite build",
     "check": "tsrs --noEmit && biome check"
   },
   "devDependencies": {

@@ -25,11 +25,11 @@ import {
   type RouteLeg,
   type Routes,
   routeTo,
-  travelTimes,
   UNREACHED,
   WALK_LEG,
   walkOutSeconds,
 } from "./times";
+import type { Request as TimesRequest, Response as TimesResponse } from "./times.worker";
 
 // MapLibre loads its worker from a file of its own, which it looks for next to the bundle;
 // importing it with `?url` is what gets Vite to emit it at all.
@@ -720,36 +720,66 @@ let selectedExitMinute: Uint8Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
 
-function computeTimes(): void {
-  if (selectedArrivals !== undefined) {
-    const origin = stations.findIndex((station) => station.id === selected);
-    ({
-      times: selectedTimes,
-      exitFrom: selectedExitFrom,
-      exitMinute: selectedExitMinute,
-    } = travelTimes(
-      selectedArrivals,
-      exits,
-      origin,
-      grid.cols.length,
-      stations.length,
-      currentSpeed(),
-      // Only the day shown, both scenarios, as the minutes saved need both.
-      [baselineRun(), baselineRun() + 1],
-    ));
+// Computes the times off the page's thread; see `times.worker.ts`.
+const timesWorker = new Worker(new URL("./times.worker.ts", import.meta.url), { type: "module" });
+{
+  const request: TimesRequest = {
+    kind: "exits",
+    exits,
+    cells: grid.cols.length,
+    stations: stations.length,
+  };
+  timesWorker.postMessage(request);
+}
+// The last request sent, and whether the controls or station have changed since,
+// so that while one's computing, any number of changes ask for one more, not one each.
+let timesAsked = 0;
+let timesComputing = false;
+let timesStale = false;
+
+// Recomputes the times for the station and controls as they are, then redraws.
+function recompute(): void {
+  if (selectedArrivals === undefined) {
+    return;
   }
+  if (timesComputing) {
+    timesStale = true;
+    return;
+  }
+  timesComputing = true;
+  timesStale = false;
+  timesAsked += 1;
+  const request: TimesRequest = {
+    kind: "times",
+    id: timesAsked,
+    arrivals: selectedArrivals,
+    origin: stations.findIndex((station) => station.id === selected),
+    mph: currentSpeed(),
+    // Only the day and fare shown, both scenarios, as the minutes saved need both.
+    runs: [baselineRun(), baselineRun() + 1],
+  };
+  timesWorker.postMessage(request);
 }
 
-// Recomputed as the speed slides, at most once a frame.
-let speedFrame = 0;
+timesWorker.addEventListener("message", (event: MessageEvent<TimesResponse>) => {
+  timesComputing = false;
+  if (timesStale) {
+    recompute();
+    return;
+  }
+  ({
+    times: selectedTimes,
+    exitFrom: selectedExitFrom,
+    exitMinute: selectedExitMinute,
+  } = event.data.times);
+  drawCells();
+});
+
+// Recomputed as the speed slides.
 controls.addEventListener("input", (event) => {
   if (event.target instanceof HTMLInputElement && event.target.name === "speed") {
     showSpeed();
-    cancelAnimationFrame(speedFrame);
-    speedFrame = requestAnimationFrame(() => {
-      computeTimes();
-      drawCells();
-    });
+    recompute();
   }
 });
 
@@ -794,8 +824,7 @@ async function selectStation(id: string): Promise<void> {
   }
   selectedArrivals = arrivals;
   selectedRoutes = routes;
-  computeTimes();
-  drawCells();
+  recompute();
 }
 
 function stationFromHash(): string {
@@ -815,8 +844,7 @@ function writeHash(): void {
 function applyControls(): void {
   showControls();
   map.setFilter("lines", linesFilter(currentView()));
-  computeTimes();
-  drawCells();
+  recompute();
 }
 
 // How far from a station, in pixels, a click or tap still picks it,

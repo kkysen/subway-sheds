@@ -61,7 +61,9 @@ rather than its cell's time, which counts walking to the cell's middle.
 ## Usage
 
 `mise install` sets up everything else (Node and `uv`) but Rust,
-whose `cargo` `uv` runs through `maturin` to build the `route` crate.
+whose `cargo` `uv` runs through `maturin` to build the `route` crate,
+and the page builds its travel times in WebAssembly with, from `web/times/`,
+which needs `rustup target add wasm32-unknown-unknown`.
 `raptor` and `streets` come from `mta-od-data` at the commit `route/Cargo.toml` pins.
 To build against a local checkout of it beside this one instead,
 patch them in a gitignored `.cargo/config.toml`:
@@ -89,10 +91,12 @@ Downloads go in `.cache/`, and what the pipeline computes, like the travel times
 Neither they nor the export are committed:
 CI routes, exports, and publishes the page to GitHub Pages on every push to `main`.
 
-The page times walking out of stations itself, at the speed its slider is set to, 2 to 4 mph:
+The page times walking out of stations itself, at the speed its slider is set to, 1 to 5 mph:
 `export` gives it when each station's trains reach every station each minute of the window,
 and every station's walks out to the cells,
-and it takes each cell's median over the minutes, as routing does.
+and it takes each cell's median over the minutes, as routing does,
+in a worker, in WebAssembly with SIMD (`web/times/`),
+or in TypeScript (`web/src/times.ts`) where that can't run.
 Walking to the first station and between stations stays at 3 mph.
 
 ## Development

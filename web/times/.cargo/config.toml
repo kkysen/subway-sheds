@@ -1,0 +1,6 @@
+# Built for the page, with WebAssembly SIMD, which every browser since 2023 has.
+[build]
+target = "wasm32-unknown-unknown"
+
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

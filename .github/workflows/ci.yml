@@ -45,7 +45,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             route/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
+            web/times/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock', 'web/times/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
       # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
@@ -79,6 +80,14 @@ jobs:
         run: |
           npm ci
           npm run check
+
+      # The page's travel times in WebAssembly, which `npm run build` builds.
+      - name: web/times
+        working-directory: web/times
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo fmt --check
+          cargo clippy -- -D warnings
 
   # Fetch what routing needs, once for every job after it, and see whether it's routed already.
   prepare:
@@ -115,7 +124,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             route/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
+            web/times/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock', 'web/times/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
       # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
@@ -230,7 +240,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             route/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
+            web/times/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock', 'web/times/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
       # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
@@ -297,7 +308,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             route/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
+            web/times/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock', 'web/times/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
       # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
@@ -348,6 +360,7 @@ jobs:
       - name: build
         working-directory: web
         run: |
+          rustup target add wasm32-unknown-unknown
           npm ci
           npm run build -- --base=/${{ github.event.repository.name }}/
 

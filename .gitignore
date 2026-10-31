@@ -20,10 +20,11 @@ web/public/data/
 
 # Rust
 route/target/
+web/times/target/
 # The `route` extension module, built by `maturin`.
 src/subway_sheds/_route.*.so
 # Points `raptor` at a local `mta-od-data` checkout, if there is one.
-.cargo/config.toml
+/.cargo/config.toml
 
 # IDEs
 .idea/
