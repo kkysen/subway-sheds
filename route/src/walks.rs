@@ -1,157 +1,158 @@
 //! Walks at either end of a journey and between stops, in seconds,
-//! read from Parquet files in one directory:
-//!
-//! - `access.parquet`: `origin`, `stop`, `secs`, from each origin to the stops it walks to.
-//! - `direct.parquet`: `origin`, `destination`, `secs`, from each origin straight to destinations.
-//! - `egress.parquet`: `stop`, `destination`, `secs`, from each stop to destinations.
-//! - `transfers.parquet`: `from_stop`, `to_stop`, `secs`, between stops.
-//!
-//! Origins and stops are strings, as their GTFS IDs; destinations and seconds are `int32`.
-//! Stops the timetable doesn't serve are dropped.
+//! on OpenStreetMap's streets with `mta-od-data`'s `streets` crate,
+//! with R5 7.5.1's limits and transfers, as `travel_times` used to have R5 route them.
 
-use std::fs::File;
-use std::path::Path;
-
-use anyhow::{Context, Result, bail};
-use arrow_array::{Array, Int32Array, RecordBatch, StringArray};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use raptor::gtfs::Secs;
 use raptor::timetable::{StopIdx, Timetable};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::FxHashMap as HashMap;
+use streets::{Graph, Mm, Search, Split};
 
+/// How far R5 walks between stops (`TransitLayer.TRANSFER_DISTANCE_LIMIT_METERS`).
+const TRANSFER_LIMIT: Mm = 1_000_000;
+
+/// How far R5 walks from stops (`TransitLayer.WALK_DISTANCE_LIMIT_METERS`).
+const EGRESS_LIMIT: Mm = 2_000_000;
+
+#[derive(Debug, Default)]
 pub struct Walks {
+    /// From each origin to the stops it walks to.
     pub access: HashMap<String, Vec<(StopIdx, Secs)>>,
+    /// From each origin straight to destinations.
     pub direct: HashMap<String, Vec<(u32, Secs)>>,
-    /// By stop.
+    /// From each stop to destinations, by stop.
     pub egress: Vec<Vec<(u32, Secs)>>,
+    /// `(from, to, walk)` between stops.
+    pub transfers: Vec<(StopIdx, StopIdx, Secs)>,
 }
 
-impl Walks {
-    /// The walks in `dir` from `origins` and to destinations `0..destinations`.
-    pub fn read(
-        dir: &Path,
-        tt: &Timetable,
-        origins: &[String],
-        destinations: usize,
-    ) -> Result<Self> {
-        let stops = stop_indices(tt);
-        let mut access: HashMap<String, Vec<(StopIdx, Secs)>> = HashMap::default();
-        let mut direct: HashMap<String, Vec<(u32, Secs)>> = HashMap::default();
-        let mut egress = vec![Vec::new(); tt.stops.len()];
-        let wanted = |o: &str| origins.iter().any(|w| w == o);
-        for batch in batches(&dir.join("access.parquet"))? {
-            let (origin, stop, secs) = (
-                strings(&batch, "origin")?,
-                strings(&batch, "stop")?,
-                ints(&batch, "secs")?,
-            );
-            for i in 0..batch.num_rows() {
-                if let Some(&s) = stops.get(stop.value(i))
-                    && wanted(origin.value(i))
-                {
-                    access
-                        .entry(origin.value(i).to_owned())
-                        .or_default()
-                        .push((s, secs.value(i)));
-                }
-            }
-        }
-        for batch in batches(&dir.join("direct.parquet"))? {
-            let (origin, dest, secs) = (
-                strings(&batch, "origin")?,
-                ints(&batch, "destination")?,
-                ints(&batch, "secs")?,
-            );
-            for i in 0..batch.num_rows() {
-                if wanted(origin.value(i)) {
-                    let d = destination(dest.value(i), destinations)?;
-                    direct
-                        .entry(origin.value(i).to_owned())
-                        .or_default()
-                        .push((d, secs.value(i)));
-                }
-            }
-        }
-        for batch in batches(&dir.join("egress.parquet"))? {
-            let (stop, dest, secs) = (
-                strings(&batch, "stop")?,
-                ints(&batch, "destination")?,
-                ints(&batch, "secs")?,
-            );
-            for i in 0..batch.num_rows() {
-                if let Some(&s) = stops.get(stop.value(i)) {
-                    let d = destination(dest.value(i), destinations)?;
-                    egress[s as usize].push((d, secs.value(i)));
-                }
-            }
-        }
-        Ok(Self {
-            access,
-            direct,
-            egress,
-        })
-    }
-}
-
-/// A walk between stops, `(from_stop, to_stop, secs)`.
-pub type Transfer = (String, String, Secs);
-
-/// The transfers in `path`.
-pub fn read_transfers(path: &Path) -> Result<Vec<Transfer>> {
-    let mut transfers = Vec::new();
-    for batch in batches(path)? {
-        let (from, to, secs) = (
-            strings(&batch, "from_stop")?,
-            strings(&batch, "to_stop")?,
-            ints(&batch, "secs")?,
-        );
-        for i in 0..batch.num_rows() {
-            transfers.push((
-                from.value(i).to_owned(),
-                to.value(i).to_owned(),
-                secs.value(i),
-            ));
-        }
-    }
-    Ok(transfers)
-}
-
-fn stop_indices(tt: &Timetable) -> HashMap<&str, StopIdx> {
+/// Where each of `tt`'s stops with coordinates links to the streets.
+fn stop_splits(graph: &Graph, tt: &Timetable) -> Vec<(StopIdx, Split)> {
     tt.stops
         .iter()
         .enumerate()
-        .map(|(i, s)| (s.id.as_str(), i as StopIdx))
+        .filter_map(|(s, stop)| {
+            let (lat, lon) = stop.coords?;
+            Some((s as StopIdx, graph.snap(lat, lon)?))
+        })
         .collect()
 }
 
-fn destination(d: i32, destinations: usize) -> Result<u32> {
-    match usize::try_from(d) {
-        Ok(d) if d < destinations => Ok(d as u32),
-        _ => bail!("destination {d} outside 0..{destinations}"),
+/// Of `reached` stops, only the closest on each pattern, as R5 keeps
+/// (`TransferFinder.retainClosestStopsOnPatterns`), the first stop of any tie.
+fn closest_on_patterns(tt: &Timetable, reached: &[(StopIdx, Mm)]) -> Vec<(StopIdx, Mm)> {
+    let at: HashMap<StopIdx, Mm> = reached.iter().copied().collect();
+    let mut kept: Vec<(StopIdx, Mm)> = tt
+        .patterns
+        .iter()
+        .filter_map(|p| {
+            p.stops
+                .iter()
+                .filter_map(|s| at.get(s).map(|&d| (d, *s)))
+                .min()
+                .map(|(d, s)| (s, d))
+        })
+        .collect();
+    kept.sort_unstable();
+    kept.dedup();
+    kept
+}
+
+/// The splits in `to` the latest search reached within `limit`, and how far.
+fn reach<'a>(
+    search: &Search,
+    to: impl Iterator<Item = (u32, &'a Split)>,
+    limit: Mm,
+) -> Vec<(u32, Mm)> {
+    to.filter_map(|(i, split)| search.to(split).filter(|&d| d <= limit).map(|d| (i, d)))
+        .collect()
+}
+
+impl Walks {
+    /// The walks from `origins`, as `(id, latitude, longitude)`, and `tt`'s stops
+    /// to `destinations`, as `(latitude, longitude)`, and between stops,
+    /// at `speed` millimeters a second, rounded down to whole seconds,
+    /// walking from origins for at most `max_secs`.
+    pub fn compute(
+        graph: &Graph,
+        tt: &Timetable,
+        origins: &[(String, f64, f64)],
+        destinations: &[(f64, f64)],
+        speed: Mm,
+        max_secs: Secs,
+    ) -> Self {
+        let secs = |d: Mm| (d / speed) as Secs;
+        let stops = stop_splits(graph, tt);
+        let destinations: Vec<(u32, Split)> = destinations
+            .iter()
+            .enumerate()
+            .filter_map(|(d, &(lat, lon))| Some((d as u32, graph.snap(lat, lon)?)))
+            .collect();
+        let to_destinations = || destinations.iter().map(|(d, s)| (*d, s));
+
+        let mut walks = Self {
+            egress: vec![Vec::new(); tt.stops.len()],
+            ..Self::default()
+        };
+        let from_stops: Vec<_> = stops
+            .par_iter()
+            .map_init(
+                || Search::new(graph),
+                |search, &(s, ref split)| {
+                    search.run(split, TRANSFER_LIMIT);
+                    let others = stops
+                        .iter()
+                        .filter(|(o, _)| *o != s)
+                        .map(|(o, sp)| (*o, sp));
+                    let transfers: Vec<(StopIdx, Secs)> =
+                        closest_on_patterns(tt, &reach(search, others, TRANSFER_LIMIT))
+                            .into_iter()
+                            .map(|(to, d)| (to, secs(d)))
+                            .collect();
+                    search.run(split, EGRESS_LIMIT);
+                    let egress: Vec<(u32, Secs)> = reach(search, to_destinations(), Mm::MAX)
+                        .into_iter()
+                        .map(|(d, mm)| (d, secs(mm)))
+                        .filter(|&(_, t)| t < max_secs)
+                        .collect();
+                    (s, transfers, egress)
+                },
+            )
+            .collect();
+        for (s, transfers, egress) in from_stops {
+            walks
+                .transfers
+                .extend(transfers.into_iter().map(|(to, t)| (s, to, t)));
+            walks.egress[s as usize] = egress;
+        }
+
+        let walk_limit = speed.saturating_mul(max_secs as Mm);
+        let from_origins: Vec<_> = origins
+            .par_iter()
+            .map_init(
+                || Search::new(graph),
+                |search, (origin, lat, lon)| {
+                    let Some(split) = graph.snap(*lat, *lon) else {
+                        return (origin.clone(), Vec::new(), Vec::new());
+                    };
+                    search.run(&split, walk_limit);
+                    let stops = stops.iter().map(|(s, sp)| (*s, sp));
+                    let access = reach(search, stops, walk_limit)
+                        .into_iter()
+                        .map(|(s, d)| (s, secs(d)))
+                        .collect();
+                    let direct = reach(search, to_destinations(), Mm::MAX)
+                        .into_iter()
+                        .map(|(d, mm)| (d, secs(mm)))
+                        .collect();
+                    (origin.clone(), access, direct)
+                },
+            )
+            .collect();
+        for (origin, access, direct) in from_origins {
+            walks.access.insert(origin.clone(), access);
+            walks.direct.insert(origin, direct);
+        }
+        walks
     }
-}
-
-fn batches(path: &Path) -> Result<Vec<RecordBatch>> {
-    let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    ParquetRecordBatchReaderBuilder::try_new(file)?
-        .build()?
-        .collect::<Result<_, _>>()
-        .with_context(|| format!("reading {}", path.display()))
-}
-
-fn column<'a, T: Array + 'static>(batch: &'a RecordBatch, name: &str, kind: &str) -> Result<&'a T> {
-    batch
-        .column_by_name(name)
-        .with_context(|| format!("no column `{name}`"))?
-        .as_any()
-        .downcast_ref::<T>()
-        .with_context(|| format!("column `{name}` isn't {kind}"))
-}
-
-fn strings<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a StringArray> {
-    column(batch, name, "a string")
-}
-
-fn ints<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Int32Array> {
-    column(batch, name, "an int32")
 }

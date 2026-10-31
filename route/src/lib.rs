@@ -1,9 +1,9 @@
 //! Travel times from subway stations to places around the city,
 //! routed with `mta-od-data`'s RAPTOR between stops,
-//! walking at either end and between stops as the walks given say.
+//! walking at either end and between stops on OpenStreetMap's streets
+//! with `mta-od-data`'s `streets` (see `walks.rs`), as R5 did.
 //! Python drives it through the `subway_sheds._route` module.
 
-mod street_walks;
 mod walks;
 
 use std::path::{Path, PathBuf};
@@ -23,7 +23,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use streets::osm::Osm;
 use streets::{Graph, Mm};
 
-use crate::walks::{Transfer, Walks};
+use crate::walks::Walks;
 
 /// R5's RAPTOR boards only a train leaving more than 60 s
 /// after the rider reaches its stop, whether on foot or by train
@@ -103,25 +103,16 @@ fn percentile_index(n: usize, percentile: f64) -> usize {
     ((percentile / 100.0 * n as f64).ceil() as usize).saturating_sub(1)
 }
 
-/// `feed`'s timetable for `date`,
-/// changing trains as R5 does: walking between stops by `walks`' transfers, not `transfers.txt`'s,
-/// and with no time to change trains at a stop but `BOARD_SLACK`.
-fn timetable(feed: &Path, date: Date, transfers: &Path) -> Result<(Timetable, Vec<Transfer>)> {
-    let mut tt = Timetable::build(&Feed::open(feed)?, date)?;
-    let transfers = walks::read_transfers(transfers)?;
+/// `tt`, changing trains as R5 does: walking between stops by `walks`' transfers,
+/// not `transfers.txt`'s, and with no time to change trains at a stop but `BOARD_SLACK`.
+fn change_as_r5(tt: &mut Timetable, walks: &Walks) {
     tt.min_change.fill(0);
     for paths in &mut tt.footpaths {
         paths.clear();
     }
-    let mut unknown = Vec::new();
-    for (from, to, walk) in transfers {
-        match (tt.stop(&from), tt.stop(&to)) {
-            (Some(a), Some(b)) if a != b => tt.footpaths[a as usize].push((b, walk)),
-            (Some(_), Some(_)) => {}
-            _ => unknown.push((from, to, walk)),
-        }
+    for &(from, to, walk) in &walks.transfers {
+        tt.footpaths[from as usize].push((to, walk));
     }
-    Ok((tt, unknown))
 }
 
 /// Writes each origin's travel times as `origin`, `destination`, and `minutes`.
@@ -150,66 +141,49 @@ fn write_times(out: &Path, origins: &[String], times: &[Vec<(u32, u8)>]) -> Resu
     Ok(rows)
 }
 
-/// Median minutes from each of `origins` to each of `destinations` destinations,
+/// Median minutes from each of `origins`, as `(id, latitude, longitude)`,
+/// to each of `destinations`, as `(latitude, longitude)`,
 /// over a departure each minute of `minutes` from `depart`,
-/// walking by the tables in `walks` (see `walks.rs`), written to `out`.
-/// Returns how many rows were written and the transfers between stops the timetable lacks.
+/// walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second
+/// (see `walks.rs`), written to `out`. Returns how many rows were written.
 #[pyfunction(name = "travel_times")]
 #[allow(clippy::too_many_arguments)]
 fn py_travel_times(
     py: Python<'_>,
+    osm: PathBuf,
     feed: PathBuf,
     date: Date,
     depart: &str,
     minutes: u32,
     max_rides: usize,
     max_minutes: u32,
-    walks: PathBuf,
-    origins: Vec<String>,
-    destinations: usize,
+    origins: Vec<(String, f64, f64)>,
+    destinations: Vec<(f64, f64)>,
+    speed: Mm,
     out: PathBuf,
-) -> Result<(usize, Vec<Transfer>)> {
+) -> Result<usize> {
     let Some(depart) = parse_time(depart) else {
         bail!("not a time: {depart}");
     };
+    let max_secs = max_minutes as Secs * 60;
     py.detach(|| {
-        let (tt, unknown) = timetable(&feed, date, &walks.join("transfers.parquet"))?;
-        let walks = Walks::read(&walks, &tt, &origins, destinations)?;
+        let graph = Graph::build(&Osm::read(&osm)?);
+        let mut tt = Timetable::build(&Feed::open(&feed)?, date)?;
+        let walks = Walks::compute(&graph, &tt, &origins, &destinations, speed, max_secs);
+        drop(graph);
+        change_as_r5(&mut tt, &walks);
         let req = Request {
             tt: &tt,
             walks: &walks,
             depart,
             minutes,
             max_rides,
-            max_secs: max_minutes as Secs * 60,
-            destinations,
+            max_secs,
+            destinations: destinations.len(),
         };
-        let times = travel_times(&req, &origins);
-        Ok((write_times(&out, &origins, &times)?, unknown))
-    })
-}
-
-/// Writes the walks `travel_times` takes to `out`,
-/// computed on the streets in `osm`, an `.osm.pbf`, as R5 computes them (see `street_walks.rs`),
-/// from `origins`, as `(id, latitude, longitude)`, to `destinations`, as `(latitude, longitude)`,
-/// at `speed` millimeters a second, walking from origins for at most `max_secs`.
-#[pyfunction(name = "street_walks")]
-#[allow(clippy::too_many_arguments)]
-fn py_street_walks(
-    py: Python<'_>,
-    osm: PathBuf,
-    feed: PathBuf,
-    date: Date,
-    origins: Vec<(String, f64, f64)>,
-    destinations: Vec<(f64, f64)>,
-    speed: Mm,
-    max_secs: Secs,
-    out: PathBuf,
-) -> Result<()> {
-    py.detach(|| {
-        let graph = Graph::build(&Osm::read(&osm)?);
-        let tt = Timetable::build(&Feed::open(&feed)?, date)?;
-        street_walks::compute(&graph, &tt, &origins, &destinations, speed, max_secs).write(&out)
+        let ids: Vec<String> = origins.into_iter().map(|(id, ..)| id).collect();
+        let times = travel_times(&req, &ids);
+        write_times(&out, &ids, &times)
     })
 }
 
@@ -217,7 +191,6 @@ fn py_street_walks(
 #[pyo3(name = "_route")]
 fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_travel_times, m)?)?;
-    m.add_function(wrap_pyfunction!(py_street_walks, m)?)?;
     Ok(())
 }
 
@@ -258,6 +231,7 @@ mod tests {
             access: [("O".to_owned(), vec![(a, 120)])].into_iter().collect(),
             direct: [("O".to_owned(), vec![(1, 300)])].into_iter().collect(),
             egress,
+            transfers: Vec::new(),
         };
         let req = Request {
             tt: &tt,
