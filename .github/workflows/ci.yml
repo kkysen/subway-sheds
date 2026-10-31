@@ -133,7 +133,7 @@ jobs:
             .cache/nyc-streets.source-state.txt
           key: streets-${{ hashFiles('.cache/nyc-streets.source-state.txt') }}
 
-      # Everything tracked that goes into routing: the QueensLink feed, the code, and the versions it runs on
+      # Everything tracked that goes into routing: the QueensLink feed, stations' entrances, the code, and the versions it runs on
       # (Python, its packages, and the Rust crates, `mta-od-data`'s by the commit pinned),
       # each by its blob in git,
       # so that nothing written during the run, like `src/`'s `__pycache__/`, can change it.
@@ -142,7 +142,7 @@ jobs:
       - name: travel times' inputs
         id: inputs
         run: |
-          tracked=$(git ls-files -s -- gtfs src route pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
+          tracked=$(git ls-files -s -- gtfs data src route pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
           streets=$(sha256sum .cache/nyc-streets.osm.pbf | cut -d' ' -f1)
           echo "key=travel-times-$tracked-$streets" >> "$GITHUB_OUTPUT"
 

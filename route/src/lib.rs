@@ -1,7 +1,7 @@
 //! Travel times from subway stations to places around the city,
 //! routed with `mta-od-data`'s RAPTOR between stops,
-//! walking at either end and between stops on OpenStreetMap's streets
-//! with `mta-od-data`'s `streets` (see `walks.rs`), as R5 did.
+//! walking at either end and between stations on OpenStreetMap's streets
+//! with `mta-od-data`'s `streets`, through stations' entrances (see `walks.rs`).
 //! Python drives it through the `subway_sheds._route` module.
 
 mod feed;
@@ -25,7 +25,7 @@ use rustc_hash::FxHashMap as HashMap;
 use streets::osm::Osm;
 use streets::{Graph, Mm};
 
-use crate::walks::{StreetWalks, Walks};
+use crate::walks::{Station, StreetWalks, Walks};
 
 /// The percentile R5 reports: the median.
 const PERCENTILE: f64 = 50.0;
@@ -99,12 +99,12 @@ fn percentile_index(n: usize, percentile: f64) -> usize {
     ((percentile / 100.0 * n as f64).ceil() as usize).saturating_sub(1)
 }
 
-/// `tt`, changing trains as R5 does: walking between stops by `walks`' transfers,
-/// not `transfers.txt`'s, and with no time to change trains at a stop.
-fn change_as_r5(tt: &mut Timetable, walks: &Walks) {
-    tt.min_change.fill(0);
-    for paths in &mut tt.footpaths {
-        paths.clear();
+/// `tt`, changing trains within a complex by `transfers.txt`,
+/// and between complexes by `walks`' transfers on the streets.
+fn change_trains(tt: &mut Timetable, walks: &Walks) {
+    for (from, paths) in tt.footpaths.iter_mut().enumerate() {
+        let complex = &walks.complexes[from];
+        paths.retain(|&(to, _)| complex.is_some() && walks.complexes[to as usize] == *complex);
     }
     for &(from, to, walk) in &walks.transfers {
         tt.footpaths[from as usize].push((to, walk));
@@ -141,12 +141,12 @@ fn write_times(out: &Path, origins: &[String], times: &[Vec<(u32, u8)>]) -> Resu
 /// written to `out`.
 type Run = (PathBuf, Date, String, u32, PathBuf);
 
-/// Median minutes from each of `origins`, as `(id, latitude, longitude)`,
+/// Median minutes from each of `origins`, by station ID,
 /// to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
-/// walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second
-/// (see `walks.rs`). Returns how many rows each run wrote.
+/// walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second,
+/// through `stations`' entrances (see `walks.rs`). Returns how many rows each run wrote.
 ///
-/// The streets are read and walked once, for every feed's stops (see `walks.rs`).
+/// The streets are read and walked once, for every feed's stations (see `walks.rs`).
 #[pyfunction(name = "travel_times")]
 #[allow(clippy::too_many_arguments)]
 fn py_travel_times(
@@ -154,13 +154,13 @@ fn py_travel_times(
     osm: PathBuf,
     max_rides: usize,
     max_minutes: u32,
-    origins: Vec<(String, f64, f64)>,
+    stations: Vec<Station>,
+    origins: Vec<String>,
     destinations: Vec<(f64, f64)>,
     speed: Mm,
     runs: Vec<Run>,
 ) -> Result<Vec<usize>> {
     let max_secs = max_minutes as Secs * 60;
-    let ids: Vec<String> = origins.iter().map(|(id, ..)| id.clone()).collect();
     py.detach(|| {
         // Each feed once, in the order runs first name them, and each run's timetable.
         let mut feeds: Vec<&PathBuf> = Vec::new();
@@ -179,20 +179,8 @@ fn py_travel_times(
             .map(|(f, date, ..)| Timetable::build(&opened[f], *date))
             .collect::<Result<Vec<_>>>()?;
         drop(opened);
-        // Every feed's stops, once each.
-        let mut stops: Vec<(String, f64, f64)> = Vec::new();
-        let mut seen = rustc_hash::FxHashSet::default();
-        for tt in &tts {
-            for stop in &tt.stops {
-                if let Some((lat, lon)) = stop.coords
-                    && seen.insert(stop.id.clone())
-                {
-                    stops.push((stop.id.clone(), lat, lon));
-                }
-            }
-        }
         let graph = Graph::build(&Osm::read(&osm)?);
-        let all = StreetWalks::compute(&graph, &stops, &origins, &destinations, speed, max_secs);
+        let all = StreetWalks::compute(&graph, &stations, &origins, &destinations, speed, max_secs);
         drop(graph);
 
         let mut rows = vec![0; runs.len()];
@@ -207,7 +195,7 @@ fn py_travel_times(
                     bail!("not a time: {depart}");
                 };
                 let tt = &mut tts[i];
-                change_as_r5(tt, &walks);
+                change_trains(tt, &walks);
                 let req = Request {
                     tt,
                     walks: &walks,
@@ -217,7 +205,7 @@ fn py_travel_times(
                     max_secs,
                     destinations: destinations.len(),
                 };
-                rows[i] = write_times(out, &ids, &travel_times(&req, &ids))?;
+                rows[i] = write_times(out, &origins, &travel_times(&req, &origins))?;
             }
         }
         Ok(rows)
@@ -304,6 +292,7 @@ mod tests {
             direct: [("O".to_owned(), vec![(1, 300)])].into_iter().collect(),
             egress,
             transfers: Vec::new(),
+            complexes: Vec::new(),
         };
         let req = Request {
             tt: &tt,

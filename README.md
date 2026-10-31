@@ -9,7 +9,7 @@ it departs every minute of an hour and takes the median trip:
 the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11:30 to 12:30.
 Trains are routed by the RAPTOR in [`mta-od-data`](https://github.com/kkysen/mta-od-data)'s `raptor` crate,
 and walks on the streets by its `streets` crate,
-as [R5](https://github.com/conveyal/r5) routed them before,
+in and out through stations' entrances,
 in the `route` crate here (`route/`), built into the `subway_sheds._route` extension.
 
 ## Data
@@ -37,6 +37,16 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   filtered from Geofabrik's daily New York State OpenStreetMap extract to about 20 MB.
   `fetch` downloads the 500 MB extract only when Geofabrik's `state.txt` names newer OSM data
   than the streets were filtered from, checks it against its MD5, and deletes it once filtered.
+- **Station entrances**: each entrance's time between the street and the platforms,
+  in [`data/station_access.csv`](data/station_access.csv),
+  from the MTA's [entrances](https://data.ny.gov/d/i9wp-a4ja),
+  the heights of its [elevators and escalators](https://data.ny.gov/d/94fv-bak7),
+  depths published elsewhere where those are blank,
+  and the levels OSM puts platforms on,
+  climbed by stairs, escalator, or elevator at the rates in `src/subway_sheds/access.py`.
+  `subway-sheds access` rebuilds it to review and commit.
+  Changing trains within a station complex takes `transfers.txt`'s times;
+  between complexes, it walks the streets, out one entrance and in another.
 - **Land**: `nyc-subway-isochrones`' NYC shoreline, which keeps the grid out of the water.
 
 Travel times are routed from every station to a grid of about 21,500 cells over the city's land,

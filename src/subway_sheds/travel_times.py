@@ -11,7 +11,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
-from subway_sheds import _route, gtfs, paths
+from subway_sheds import _route, access, gtfs, paths
 from subway_sheds.scenarios import Day, Scenario
 
 # From each day's departure time, departing every minute in the window
@@ -35,6 +35,26 @@ def output_path(scenario: Scenario, day: Day) -> Path:
 
 def stations_output_path(scenario: Scenario, day: Day) -> Path:
     return paths.TRAVEL_TIMES / f"{scenario}-{day}-stations.parquet"
+
+
+def _entrances(
+    stations: list[gtfs.Station],
+) -> list[tuple[str, str, list[tuple[float, float, int]]]]:
+    """
+    Each of `stations`' entrances, from `access.TABLE`,
+    or for stations it doesn't have, like QueensLink's new ones, their own coordinates,
+    as an elevated station's, each its own complex.
+    """
+    table = pd.read_csv(access.TABLE, dtype={"station": str, "complex": str})
+    by_station = {
+        station: (
+            str(group["complex"].iloc[0]),
+            list(zip(group["lat"], group["lon"], group["secs"].astype(int), strict=True)),
+        )
+        for station, group in table.groupby("station")
+    }
+    elevated = round(access.entrance_secs("", access.STRUCTURE_FT["Elevated"], False, None))
+    return [(s.id, *by_station.get(s.id, (s.id, [(s.lat, s.lon, elevated)]))) for s in stations]
 
 
 def from_stations(
@@ -63,7 +83,8 @@ def from_stations(
             paths.OSM_PBF,
             MAX_RIDES,
             MAX_TIME // datetime.timedelta(minutes=1),
-            [(s.id, s.lat, s.lon) for s in origins],
+            _entrances(stations),
+            [s.id for s in origins],
             destinations,
             WALKING_SPEED_MM_PER_S,
             [

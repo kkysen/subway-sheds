@@ -9,20 +9,23 @@ def travel_times(
     osm: StrPath,
     max_rides: int,
     max_minutes: int,
-    origins: list[tuple[str, float, float]],
+    stations: list[tuple[str, str, list[tuple[float, float, int]]]],
+    origins: list[str],
     destinations: list[tuple[float, float]],
     speed: int,
     runs: list[tuple[StrPath, date, str, int, StrPath]],
 ) -> list[int]:
     """
-    Median minutes from each of `origins`, as `(id, latitude, longitude)`,
+    Median minutes from each of `origins`, by station ID, starting on the street at its entrances,
     to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
     as `(feed, date, depart, minutes, out)`: departing each minute of `minutes` from `depart`,
     written to `out`, walking on the streets in `osm`, an `.osm.pbf`,
-    at `speed` millimeters a second (see `route/src/walks.rs`).
+    at `speed` millimeters a second, through `stations`' entrances,
+    as `(id, complex, [(latitude, longitude, seconds to the platforms)])`
+    (see `route/src/walks.rs`).
     Returns how many rows each run wrote.
 
-    The streets are read and walked once, for every feed's stops.
+    The streets are read and walked once, for every feed's stations.
     """
 
 def near_streets(osm: StrPath, points: list[tuple[float, float]], meters: float) -> list[bool]:
