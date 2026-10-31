@@ -1,4 +1,4 @@
-"""The streets R5 walks on, cut from Geofabrik's New York State extract."""
+"""The streets routing walks on, cut from Geofabrik's New York State extract."""
 
 from pathlib import Path
 
@@ -12,7 +12,8 @@ from subway_sheds import paths
 # so that walks near the edges, like across city lines, aren't cut short.
 MARGIN = 0.02
 
-# What R5 builds its walking network from, besides streets, sidewalks, footpaths, and steps,
+# What `mta-od-data`'s `streets` builds its walking network from, as R5 did,
+# besides streets, sidewalks, footpaths, and steps,
 # which are all `highway`.
 PLATFORM_TAGS = {("railway", "platform"), ("public_transport", "platform")}
 
@@ -23,7 +24,7 @@ def _walkable(way: osmium.osm.Way) -> bool:
 
 def filter_streets(extract: Path, dest: Path) -> int:
     """
-    Write the ways in `extract` that R5 walks on within NYC's bounds to `dest`,
+    Write the ways in `extract` that routing walks on within NYC's bounds to `dest`,
     with the nodes they use. Returns how many ways were kept.
     """
     min_lon, min_lat, max_lon, max_lat = gpd.read_file(paths.SHORELINE).total_bounds

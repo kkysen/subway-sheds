@@ -3,11 +3,14 @@
 How far you can get on the NYC subway in a given time, with and without [QueensLink](https://thequeenslink.org).
 
 Inspired by Chris Whong's [`nyc-subway-isochrones`](https://github.com/chriswhong/nyc-subway-isochrones),
-but routed with [R5](https://github.com/conveyal/r5) (through [`r5py`](https://r5py.readthedocs.io))
-over the real street network instead of buffering stations by leftover walking time,
+but routed over the real street network instead of buffering stations by leftover walking time,
 and with waiting for trains counted:
-R5 departs every minute of an hour and reports the median trip:
+it departs every minute of an hour and takes the median trip:
 the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11:30 to 12:30.
+Trains are routed by the RAPTOR in [`mta-od-data`](https://github.com/kkysen/mta-od-data)'s `raptor` crate,
+and walks on the streets by its `streets` crate,
+as [R5](https://github.com/conveyal/r5) routed them before,
+in the `route` crate here (`route/`), built into the `subway_sheds._route` extension.
 
 ## Data
 
@@ -21,7 +24,7 @@ the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11:30 to 12:30.
   It also assumes Second Avenue Subway Phase 2 is open (the Q to 125 St),
   and runs the 7 on its regular schedule from an older feed,
   rather than this one's, with no regular 7 express during construction.
-  It was committed as given, `B1_MVS.zip`, and the repairs R5 needed followed as commits.
+  It was committed as given, `B1_MVS.zip`, and the repairs routing it needed followed as commits.
 - **Baseline**: the QueensLink feed without QueensLink, so that QueensLink is all that differs:
   its M turned at 63 Dr for Forest Hills-71 Av, as the M runs since the swap,
   instead of branching off toward the Rockaways,
@@ -29,7 +32,7 @@ the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11:30 to 12:30.
   its G cut back to Court Sq,
   and the Rockaway Park shuttle from MTA's feed.
   On weekends, it runs MTA's M instead, which runs only between Middle Village and Essex St.
-- **Streets**: what R5 walks on (streets, sidewalks, footpaths, steps, and platforms)
+- **Streets**: what's walked on (streets, sidewalks, footpaths, steps, and platforms)
   within NYC and a 2 km margin,
   filtered from Geofabrik's daily New York State OpenStreetMap extract to about 20 MB.
   `fetch` downloads the 500 MB extract only when Geofabrik's `state.txt` names newer OSM data
@@ -44,10 +47,19 @@ rather than its cell's time, which counts walking to the cell's middle.
 
 ## Usage
 
-`mise install` sets up everything else (Java for R5, Node, `uv`).
-`jpype1`, which `r5py` runs R5 through, has no wheel for Python 3.15 yet,
-so `uv` builds it with the JDK and `ant` from `mise`:
-run `uv` through `mise x --`, or from a shell where `mise` is activated.
+`mise install` sets up everything else (Node and `uv`) but Rust,
+whose `cargo` `uv` runs through `maturin` to build the `route` crate.
+`raptor` and `streets` come from `mta-od-data` at the commit `route/Cargo.toml` pins.
+To build against a local checkout of it beside this one instead,
+patch them in a gitignored `.cargo/config.toml`:
+
+```toml
+[patch."https://github.com/kkysen/mta-od-data"]
+raptor = { path = "../mta-od-data/raptor" }
+streets = { path = "../mta-od-data/streets" }
+```
+
+`uv` doesn't see changes there, so rebuild after them with `uv sync --reinstall-package subway-sheds`.
 
 ```sh
 uv run subway-sheds fetch    # download the MTA feed, land, and streets, and make both feeds

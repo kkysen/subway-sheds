@@ -1,4 +1,4 @@
-"""Reading just enough of a GTFS feed for routing it with R5."""
+"""Reading just enough of a GTFS feed to make the scenarios' feeds from it."""
 
 import csv
 import datetime
@@ -18,8 +18,7 @@ def _read_csv(feed: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
 def _write_entry(out: zipfile.ZipFile, name: str, data: str | bytes) -> None:
     """
     Write a file into a zip with a fixed time rather than its own or the current one,
-    so that the same feed always zips to the same bytes,
-    since `r5py` caches the network it builds by its files' hashes.
+    so that the same feed always zips to the same bytes.
     """
     info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
@@ -27,7 +26,7 @@ def _write_entry(out: zipfile.ZipFile, name: str, data: str | bytes) -> None:
 
 
 def zip_feed(directory: Path, dest: Path) -> None:
-    """Zip a feed committed as a directory of `.txt` files, as R5 reads it."""
+    """Zip a feed committed as a directory of `.txt` files, as routing reads it."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest, "w") as out:
         for path in sorted(directory.glob("*.txt")):

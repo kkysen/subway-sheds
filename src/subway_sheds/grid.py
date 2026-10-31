@@ -21,11 +21,11 @@ WEB_MERCATOR = "EPSG:3857"
 # so cells are about 190 meters across.
 SPACING = 250
 
-# How far, on the ground, a cell's center can be from anywhere R5 walks
+# How far, on the ground, a cell's center can be from anywhere walked on
 # for the cell to count: well past a cell's half-diagonal, about 135 meters,
 # so that parks and the like with paths through them count,
 # but marsh islands in Jamaica Bay, with none, don't.
-# R5 would otherwise link them to a street however far, and give them times.
+# Routing would otherwise link them to a street up to 1600 m away, and give them times.
 MAX_STREET_DISTANCE = 250
 # Web Mercator meters per meter on the ground at NYC's latitude.
 MERCATOR_SCALE = 1 / 0.758
@@ -41,7 +41,7 @@ class Grid:
     rows: npt.NDArray[np.int32]
 
     def points(self) -> gpd.GeoDataFrame:
-        """Each cell's center, with its ID, as `r5py` takes destinations."""
+        """Each cell's center, with its ID."""
         return gpd.GeoDataFrame(
             {"id": np.arange(len(self.cols))},
             geometry=shapely.points(self.x0 + self.cols * SPACING, self.y0 + self.rows * SPACING),
@@ -50,7 +50,7 @@ class Grid:
 
 
 def _streets() -> shapely.STRtree:
-    """What R5 walks on, as lines in Web Mercator."""
+    """What routing walks on, as lines in Web Mercator."""
     to_mercator = Transformer.from_crs(WGS84, WEB_MERCATOR, always_xy=True)
     lines: list[shapely.LineString] = []
     for way in osmium.FileProcessor(

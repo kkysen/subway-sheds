@@ -19,15 +19,26 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       # `uv` from `setup-uv` rather than `mise.toml`, since it also caches `uv`'s downloads
-      # and builds between runs, mostly `jpype1`, which is built from source for Python 3.15.
+      # and builds between runs.
       - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
 
-      # Java, `ant`, and Node, as `mise.toml` pins them, but not `uv`, which `setup-uv` installed.
+      # Node, as `mise.toml` pins it, but not `uv`, which `setup-uv` installed.
       - uses: jdx/mise-action@v5.2.3
         env:
           MISE_DISABLE_TOOLS: uv
+
+      # The `route` crate's dependencies and build, which `uv` compiles through `maturin`,
+      # in every job that runs `uv`, as the runner's Rust has it.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            route/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
 
       - uses: actions/cache@v6.1.0
         with:
@@ -75,6 +86,17 @@ jobs:
         env:
           MISE_DISABLE_TOOLS: uv
 
+      # The `route` crate's dependencies and build, which `uv` compiles through `maturin`,
+      # in every job that runs `uv`, as the runner's Rust has it.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            route/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
       # The MTA feed and shoreline, which never change.
       - uses: actions/cache@v6.1.0
         with:
@@ -112,14 +134,15 @@ jobs:
           key: streets-${{ hashFiles('.cache/nyc-streets.source-state.txt') }}
 
       # Everything tracked that goes into routing: the QueensLink feed, the code, and the versions it runs on
-      # (Python, its packages, R5 among them, and Java), each by its blob in git,
+      # (Python, its packages, and the Rust crates, `mta-od-data`'s by the commit pinned),
+      # each by its blob in git,
       # so that nothing written during the run, like `src/`'s `__pycache__/`, can change it.
       # The downloads' URLs are in the code, so they're covered too.
       # With the streets, which aren't tracked, since `fetch` keeps them up to date with OSM.
       - name: travel times' inputs
         id: inputs
         run: |
-          tracked=$(git ls-files -s -- gtfs src pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
+          tracked=$(git ls-files -s -- gtfs src route pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
           streets=$(sha256sum .cache/nyc-streets.osm.pbf | cut -d' ' -f1)
           echo "key=travel-times-$tracked-$streets" >> "$GITHUB_OUTPUT"
 
@@ -167,19 +190,21 @@ jobs:
         env:
           MISE_DISABLE_TOOLS: uv
 
+      # The `route` crate's dependencies and build, which `uv` compiles through `maturin`,
+      # in every job that runs `uv`, as the runner's Rust has it.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            route/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
       - uses: actions/download-artifact@v8.0.2
         with:
           name: inputs
           path: .cache
-
-      # The network R5 builds from the streets and the scenario's feed, which takes half a minute,
-      # by the hashes `r5py` caches it by, and R5's version.
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/r5py
-          key: >-
-            r5py-${{ matrix.scenario }}-${{
-            hashFiles(format('.cache/gtfs/{0}.zip', matrix.scenario), '.cache/nyc-streets.osm.pbf', 'uv.lock') }}
 
       - name: route
         run: uv run subway-sheds route --scenario ${{ matrix.scenario }} --day ${{ matrix.day }}
@@ -219,6 +244,17 @@ jobs:
       - uses: jdx/mise-action@v5.2.3
         env:
           MISE_DISABLE_TOOLS: uv
+
+      # The `route` crate's dependencies and build, which `uv` compiles through `maturin`,
+      # in every job that runs `uv`, as the runner's Rust has it.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            route/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
 
       - uses: actions/cache@v6.1.0
         with:
