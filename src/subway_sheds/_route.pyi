@@ -12,6 +12,7 @@ def travel_times(
     stations: list[tuple[str, str, list[tuple[float, float, int]]]],
     platforms: StrPath,
     islands: list[str],
+    free: list[tuple[str, str]],
     origins: list[str],
     destinations: list[tuple[float, float]],
     speed: int,
@@ -30,7 +31,8 @@ def travel_times(
     as `(id, complex, [(latitude, longitude, seconds to the platforms)])`
     (see `route/src/walks.rs`),
     changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
-    with `islands`' stations' stops all on one island platform.
+    with `islands`' stations' stops all on one island platform,
+    and changing free out of the system between the complexes of `free`'s pairs of stations.
     Each run also writes its origins' rides to stations' platforms
     each minute to `{out}-arrivals.parquet`, as `origin`, `station`, `minute`, and `seconds`,
     the journeys to them at the median minute to `{out}-routes.parquet`,

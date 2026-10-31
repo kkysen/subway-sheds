@@ -87,6 +87,8 @@ interface Station {
   readonly scenarios: readonly Scenario[];
   // Its complex, the stations changed between without paying again.
   readonly complex: string;
+  // The complexes changed to free from it, though out of the system.
+  readonly free?: readonly string[];
 }
 
 const data = (path: string): string => `${import.meta.env.BASE_URL}data/${path}`;
@@ -1205,13 +1207,13 @@ function journeyStep(
 }
 
 // Whether changing from ride `from` to ride `to` of `legs` pays again:
-// if it walks between stations of different complexes, out of the system.
+// if it walks between stations of different complexes, out of the system, but not free.
 function paysBetween(legs: readonly RouteLeg[], from: RouteLeg, to: RouteLeg): boolean {
-  return legs
-    .slice(legs.indexOf(from) + 1, legs.indexOf(to))
-    .some(
-      (leg) => leg.pattern === WALK_LEG && stations[leg.a]?.complex !== stations[leg.b]?.complex,
-    );
+  return legs.slice(legs.indexOf(from) + 1, legs.indexOf(to)).some((leg) => {
+    const to = stations[leg.b]?.complex ?? "";
+    const from = stations[leg.a];
+    return leg.pattern === WALK_LEG && from?.complex !== to && !(from?.free ?? []).includes(to);
+  });
 }
 
 // A journey's trains, each with its ride's minutes under it, and between them,

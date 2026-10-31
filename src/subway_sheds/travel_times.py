@@ -12,7 +12,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
-from subway_sheds import _route, access, gtfs, paths
+from subway_sheds import _route, access, gtfs, paths, scenarios
 from subway_sheds.scenarios import Day, Fare, Scenario
 
 # From each day's departure time, departing every minute in the window
@@ -121,6 +121,7 @@ def from_stations(
             _entrances(stations),
             paths.PLATFORMS,
             [s.id for s in stations if s.id not in _mta_stations()],
+            scenarios.FREE_TRANSFERS,
             [s.id for s in origins],
             destinations,
             WALKING_SPEED_MM_PER_S,

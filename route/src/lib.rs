@@ -373,17 +373,17 @@ fn use_platforms(
 }
 
 /// `tt`, changing trains within a complex as `use_platforms` times it,
-/// and if `pay_again`, between complexes by `walks`' transfers on the streets,
-/// which go out of the system and pay another fare to go back in.
+/// and between complexes by `walks`' transfers on the streets,
+/// which go out of the system and, but for its free ones, pay another fare to go back in,
+/// so only if `pay_again`.
 fn change_trains(tt: &mut Timetable, walks: &Walks, pay_again: bool) {
     for (from, paths) in tt.footpaths.iter_mut().enumerate() {
         let complex = &walks.complexes[from];
         paths.retain(|&(to, _)| complex.is_some() && walks.complexes[to as usize] == *complex);
     }
-    if pay_again {
-        for &(from, to, walk) in &walks.transfers {
-            tt.footpaths[from as usize].push((to, walk));
-        }
+    let paid = if pay_again { &walks.transfers[..] } else { &[] };
+    for &(from, to, walk) in paid.iter().chain(&walks.free_transfers) {
+        tt.footpaths[from as usize].push((to, walk));
     }
 }
 
@@ -629,7 +629,8 @@ type Run = (PathBuf, Date, String, u32, PathBuf, bool);
 /// walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second,
 /// through `stations`' entrances (see `walks.rs`),
 /// changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
-/// with `islands`' stations' stops all on one island platform (see `use_platforms`).
+/// with `islands`' stations' stops all on one island platform (see `use_platforms`),
+/// and changing free out of the system between the complexes of `free`'s pairs of stations.
 /// Each run also writes its origins' arrivals at stations to `{out}-arrivals.parquet`,
 /// and the walks out of every station to destinations, for walking at any speed,
 /// up to `exits_limit` millimeters, go to `exits_out` (see `walks::exits`).
@@ -646,6 +647,7 @@ fn py_travel_times(
     stations: Vec<Station>,
     platforms: PathBuf,
     islands: Vec<String>,
+    free: Vec<(String, String)>,
     origins: Vec<String>,
     destinations: Vec<(f64, f64)>,
     speed: Mm,
@@ -686,7 +688,7 @@ fn py_travel_times(
                 bail!("not a time: {depart}");
             };
             use_platforms(tt, &platforms, &islands, &all);
-            let walks = Walks::for_feed(&all, &[tt]);
+            let walks = Walks::for_feed(&all, &[tt], &free);
             change_trains(tt, &walks, *pay_again);
             let req = Request {
                 tt,

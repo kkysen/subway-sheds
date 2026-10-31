@@ -51,8 +51,22 @@ class Day(StrEnum):
         return datetime.time(7, 30) if self is Day.WEEKDAY else datetime.time(11, 30)
 
 
+# Stations changed between free on the streets, out of the system,
+# each with any station of the other's complex:
+# the MTA's at Lexington Av/63 St and 59 St, and at Junius St and Livonia Av,
+# and QueensLink's, at Liberty Av to both A stations near it, and Jamaica Ave to the J's 104 St.
+FREE_TRANSFERS = [
+    ("B08", "R11"),  # Lexington Av/63 St, Lexington Av/59 St
+    ("254", "L26"),  # Junius St, Livonia Av
+    ("V04", "A61"),  # Liberty Av, Rockaway Blvd
+    ("V04", "A63"),  # Liberty Av, 104 St
+    ("V02", "J14"),  # Jamaica Ave, 104 St
+]
+
+
 class Fare(StrEnum):
-    # A single fare, so a journey can't leave the system and pay again to change trains.
+    # A single fare, so a journey can't leave the system and pay again to change trains,
+    # but for `FREE_TRANSFERS`.
     SINGLE = "single"
     # An unlimited card, so it can, changing between stations on the streets.
     UNLIMITED = "unlimited"

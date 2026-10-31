@@ -10,7 +10,7 @@
 use raptor::gtfs::Secs;
 use raptor::timetable::{StopIdx, Timetable};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use rustc_hash::FxHashMap as HashMap;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use streets::{Graph, Mm, Search, Split};
 
 /// How far apart stations may be to change between them on the streets:
@@ -54,6 +54,9 @@ pub struct Walks {
     pub egress: Vec<Vec<(u32, Secs)>>,
     /// `(from, to, walk)` between stops of stations in different complexes.
     pub transfers: Vec<(StopIdx, StopIdx, Secs)>,
+    /// Those of them between complexes changed between free though out of the system,
+    /// to every stop, not just the closest on each pattern, which may not be free.
+    pub free_transfers: Vec<(StopIdx, StopIdx, Secs)>,
     /// Each stop's complex, to tell which of `transfers.txt`'s footpaths to keep.
     pub complexes: Vec<Option<String>>,
     /// Each stop's station, by its index in `StreetWalks`' stations.
@@ -298,8 +301,14 @@ impl Walks {
     /// `all`'s walks for `tts`' stops, timetables of one feed on different dates,
     /// which number their stops alike, each stop walking as its station does,
     /// and changing between stations of different complexes
-    /// only to the closest stop on each pattern.
-    pub fn for_feed(all: &StreetWalks, tts: &[&Timetable]) -> Self {
+    /// only to the closest stop on each pattern,
+    /// or free between `free`'s complexes, by a pair of their stations' IDs, to every stop.
+    pub fn for_feed(all: &StreetWalks, tts: &[&Timetable], free: &[(String, String)]) -> Self {
+        let free: HashSet<(&str, &str)> = free
+            .iter()
+            .filter_map(|(a, b)| Some((all.complex(a)?, all.complex(b)?)))
+            .flat_map(|(a, b)| [(a, b), (b, a)])
+            .collect();
         let tt = tts[0];
         let index: HashMap<&str, u32> = all
             .stations
@@ -340,6 +349,13 @@ impl Walks {
                 .collect();
             for (to, walk) in closest_on_patterns(tts, &near) {
                 walks.transfers.push((i as StopIdx, to, walk));
+            }
+            for &(t, walk) in &all.near[s as usize] {
+                if free.contains(&(complex.as_str(), all.complexes[t as usize].as_str())) {
+                    for &b in &stops[t as usize] {
+                        walks.free_transfers.push((i as StopIdx, b, walk));
+                    }
+                }
             }
         }
         for (origin, access) in &all.access {

@@ -10,7 +10,7 @@ import pandas as pd
 
 from subway_sheds import access, gtfs, lines, paths, travel_times
 from subway_sheds.grid import SPACING, Grid
-from subway_sheds.scenarios import Day, Fare, Scenario
+from subway_sheds.scenarios import FREE_TRANSFERS, Day, Fare, Scenario
 
 # In a station's arrivals, a station not reached by train within `travel_times.MAX_TIME`.
 UNREACHED = 0xFFFF
@@ -24,7 +24,8 @@ def write(grid: Grid) -> None:
 
     - `grid.json`: the Web Mercator center of cell (0, 0), the spacing,
       and each cell's column and row.
-    - `stations.json`: each station in either scenario, and which, with its complex.
+    - `stations.json`: each station in either scenario, and which, with its complex,
+      and the complexes changed to free from it out of the system, if any.
     - `lines.json`: GeoJSON of the lines between stations, each with its color
       and which scenarios run on it.
     - `routes.json`: each route's name and colors, by its ID.
@@ -96,6 +97,15 @@ def write(grid: Grid) -> None:
             scenarios = entry["scenarios"]
             assert isinstance(scenarios, list)
             scenarios.append(str(scenario))
+    # Every station of each complex, as routing changes free from any of them.
+    complex_of = {station: str(entry["complex"]) for station, entry in stations.items()}
+    for a, b in FREE_TRANSFERS:
+        for one, other in ((complex_of[a], complex_of[b]), (complex_of[b], complex_of[a])):
+            for entry in stations.values():
+                if entry["complex"] == one:
+                    free = entry.setdefault("free", [])
+                    assert isinstance(free, list)
+                    free.append(other)
     (paths.WEB_DATA / "stations.json").write_text(
         json.dumps(list(stations.values()), separators=(",", ":"))
     )
