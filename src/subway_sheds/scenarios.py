@@ -51,6 +51,17 @@ class Day(StrEnum):
         return datetime.time(7, 30) if self is Day.WEEKDAY else datetime.time(11, 30)
 
 
+class Fare(StrEnum):
+    # A single fare, so a journey can't leave the system and pay again to change trains.
+    SINGLE = "single"
+    # An unlimited card, so it can, changing between stations on the streets.
+    UNLIMITED = "unlimited"
+
+    @property
+    def pays_again(self) -> bool:
+        return self is Fare.UNLIMITED
+
+
 class Scenario(StrEnum):
     # The QueensLink feed without QueensLink's M branch and G extension.
     BASELINE = "baseline"

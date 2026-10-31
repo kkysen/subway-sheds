@@ -373,14 +373,17 @@ fn use_platforms(
 }
 
 /// `tt`, changing trains within a complex as `use_platforms` times it,
-/// and between complexes by `walks`' transfers on the streets.
-fn change_trains(tt: &mut Timetable, walks: &Walks) {
+/// and if `pay_again`, between complexes by `walks`' transfers on the streets,
+/// which go out of the system and pay another fare to go back in.
+fn change_trains(tt: &mut Timetable, walks: &Walks, pay_again: bool) {
     for (from, paths) in tt.footpaths.iter_mut().enumerate() {
         let complex = &walks.complexes[from];
         paths.retain(|&(to, _)| complex.is_some() && walks.complexes[to as usize] == *complex);
     }
-    for &(from, to, walk) in &walks.transfers {
-        tt.footpaths[from as usize].push((to, walk));
+    if pay_again {
+        for &(from, to, walk) in &walks.transfers {
+            tt.footpaths[from as usize].push((to, walk));
+        }
     }
 }
 
@@ -573,9 +576,7 @@ fn write_routes(
             ),
             (
                 "end",
-                Arc::new(UInt16Array::from_iter_values(
-                    rows.iter().map(|r| r.3.end),
-                )),
+                Arc::new(UInt16Array::from_iter_values(rows.iter().map(|r| r.3.end))),
             ),
         ],
     )
@@ -620,8 +621,8 @@ fn write_patterns(out: &Path, tt: &Timetable, walks: &Walks, stations: &[String]
 }
 
 /// One routing: a feed on a date, departing each minute of `minutes` from `depart`,
-/// written to `out`.
-type Run = (PathBuf, Date, String, u32, PathBuf);
+/// written to `out`, and whether a journey may pay again (see `change_trains`).
+type Run = (PathBuf, Date, String, u32, PathBuf, bool);
 
 /// Median minutes from each of `origins`, by station ID,
 /// to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
@@ -678,13 +679,15 @@ fn py_travel_times(
         let islands: HashSet<String> = islands.into_iter().collect();
         let mut rows = vec![0; runs.len()];
         // Each run's own walks, as splitting stops by platform numbers them by its patterns.
-        for (i, (tt, (_, _, depart, minutes, out))) in tts.iter_mut().zip(&runs).enumerate() {
+        for (i, (tt, (_, _, depart, minutes, out, pay_again))) in
+            tts.iter_mut().zip(&runs).enumerate()
+        {
             let Some(depart) = parse_time(depart) else {
                 bail!("not a time: {depart}");
             };
             use_platforms(tt, &platforms, &islands, &all);
             let walks = Walks::for_feed(&all, &[tt]);
-            change_trains(tt, &walks);
+            change_trains(tt, &walks, *pay_again);
             let req = Request {
                 tt,
                 walks: &walks,

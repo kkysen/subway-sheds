@@ -10,7 +10,7 @@ import pandas as pd
 
 from subway_sheds import access, gtfs, lines, paths, travel_times
 from subway_sheds.grid import SPACING, Grid
-from subway_sheds.scenarios import Day, Scenario
+from subway_sheds.scenarios import Day, Fare, Scenario
 
 # In a station's arrivals, a station not reached by train within `travel_times.MAX_TIME`.
 UNREACHED = 0xFFFF
@@ -28,10 +28,10 @@ def write(grid: Grid) -> None:
     - `lines.json`: GeoJSON of the lines between stations, each with its color
       and which scenarios run on it.
     - `routes.json`: each route's name and colors, by its ID.
-    - `patterns.json`: in each run, by day and then scenario,
+    - `patterns.json`: in each run, by day, then fare, then scenario,
       each pattern's route and its stops' stations, as `stations.json` lists them.
     - `routes/{station}.bin`: the journey from the station to each station at the minute
-      its arrival there is the median of, in each run, by day and then scenario,
+      its arrival there is the median of, in each run, by day, then fare, then scenario,
       then station, as `stations.json` lists them:
       a `uint8` count of legs for each, then every leg, as five little-endian `uint16`s,
       a ride's pattern and the positions in it it boards and gets off at,
@@ -43,10 +43,10 @@ def write(grid: Grid) -> None:
       the seconds out through the entrance, and the meters on the streets after it,
       by station.
     - `arrivals/{station}.bin`: when trains from the station reach each station's platforms,
-      for each minute of the departure window, in each scenario on each day,
+      for each minute of the departure window, in each run,
       in seconds from the window's start, `UNREACHED` if not within `travel_times.MAX_TIME`.
       As that only changes when the best train does, only the changes:
-      by day, then scenario, in the order `Day` and `Scenario` list them,
+      by day, then fare, then scenario, in the order `Day`, `Fare`, and `Scenario` list them,
       then station, as `stations.json` lists them,
       a `uint8` count of changes for each, then each change's minute, a `uint8`,
       then each change's time, a little-endian `uint16`, all in that order.
@@ -144,14 +144,16 @@ def write(grid: Grid) -> None:
 
     minutes = travel_times.DEPARTURE_WINDOW // datetime.timedelta(minutes=1)
     seconds = np.full(
-        (len(stations), len(Day), len(Scenario), minutes, len(stations)), UNREACHED, dtype="<u2"
+        (len(stations), len(Day) * len(Fare) * len(Scenario), minutes, len(stations)),
+        UNREACHED,
+        dtype="<u2",
     )
-    for (d, day), (s, scenario) in itertools.product(enumerate(Day), enumerate(Scenario)):
-        arrivals = pd.read_parquet(travel_times.arrivals_path(scenario, day))
+    runs = list(itertools.product(Day, Fare, Scenario))
+    for r, (day, fare, scenario) in enumerate(runs):
+        arrivals = pd.read_parquet(travel_times.arrivals_path(scenario, day, fare))
         seconds[
             rows_of(arrivals["station"]),
-            d,
-            s,
+            r,
             arrivals["minute"].to_numpy(),
             rows_of(arrivals["to_station"]),
         ] = arrivals["seconds"].to_numpy()
@@ -165,10 +167,9 @@ def write(grid: Grid) -> None:
                     "text": f"#{route.get('route_text_color') or 'FFFFFF'}",
                 }
     (paths.WEB_DATA / "routes.json").write_text(json.dumps(routes, separators=(",", ":")))
-    runs = list(itertools.product(Day, Scenario))
     patterns = []
-    for day, scenario in runs:
-        stops = pd.read_parquet(travel_times.patterns_path(scenario, day))
+    for day, fare, scenario in runs:
+        stops = pd.read_parquet(travel_times.patterns_path(scenario, day, fare))
         patterns.append(
             [
                 {
@@ -185,8 +186,8 @@ def write(grid: Grid) -> None:
     routes_dir.mkdir(exist_ok=True)
     counts = np.zeros((len(stations), len(runs), len(stations)), dtype=np.uint8)
     legs_of: list[list[pd.DataFrame]] = []
-    for r, (day, scenario) in enumerate(runs):
-        legs = pd.read_parquet(travel_times.routes_path(scenario, day))
+    for r, (day, fare, scenario) in enumerate(runs):
+        legs = pd.read_parquet(travel_times.routes_path(scenario, day, fare))
         legs = legs.assign(origin=rows_of(legs["station"]), dest=rows_of(legs["to_station"]), run=r)
         walk = legs["pattern"] == travel_times.WALK
         legs["a"] = np.where(walk, [index.get(str(s), 0) for s in legs["from"]], legs["board"])
@@ -216,7 +217,7 @@ def write(grid: Grid) -> None:
     clock = np.where(reached, seconds.astype(np.uint32) + offsets, UNREACHED).astype("<u2")
     del seconds, reached
     # Station-major, so that each station's minutes are together.
-    clock = np.ascontiguousarray(clock.swapaxes(3, 4))
+    clock = np.ascontiguousarray(clock.swapaxes(2, 3))
     changed = np.ones_like(clock, dtype=bool)
     changed[..., 1:] = clock[..., 1:] != clock[..., :-1]
     counts = changed.sum(axis=-1, dtype=np.uint8)

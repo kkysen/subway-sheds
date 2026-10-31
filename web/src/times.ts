@@ -9,8 +9,8 @@ const MAX_SECONDS = 120 * 60;
 const MAX_EXIT_WALK_SECONDS = 30 * 60;
 // The median over the window's departures, as routing picks it.
 const MEDIAN = Math.ceil(0.5 * MINUTES) - 1;
-// The days and scenarios each station's arrivals have, in their order.
-const RUNS = 4;
+// The runs each station's arrivals have, by day, then fare, then scenario.
+const RUNS = 8;
 
 // In arrivals, a station not reached; in times, a cell or station not reached.
 const UNREACHED_SECONDS = 0xffff;

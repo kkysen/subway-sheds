@@ -10,7 +10,7 @@ from typer import Argument, Option, Typer, echo
 
 from subway_sheds import access, export, gtfs, osm, paths, scenarios, travel_times
 from subway_sheds.grid import land_grid
-from subway_sheds.scenarios import Day, Scenario
+from subway_sheds.scenarios import Day, Fare, Scenario
 
 app = Typer(no_args_is_help=True)
 
@@ -169,8 +169,12 @@ def route(
         list[Day] | None,
         Option("--day", help="A day to route, repeatable; every one if none."),
     ] = None,
+    fare_: Annotated[
+        list[Fare] | None,
+        Option("--fare", help="A fare to route with, repeatable; every one if none."),
+    ] = None,
 ) -> None:
-    """Route from stations to the grid in each scenario, on each day."""
+    """Route from stations to the grid in each scenario, on each day, with each fare."""
     destinations = land_grid().points()
     echo(f"{len(destinations)} cells")
     # Every scenario's stations, each routed in every scenario,
@@ -180,17 +184,20 @@ def route(
     stations = list(every_station.values())
     if stop_ids:
         stations = [s for s in stations if s.id in stop_ids]
-    runs = list(itertools.product(scenario_ or list(Scenario), day_ or list(Day)))
-    for scenario, day, times, station_times, arrivals, routes in travel_times.from_stations(
+    runs = list(
+        itertools.product(scenario_ or list(Scenario), day_ or list(Day), fare_ or list(Fare))
+    )
+    for run in travel_times.from_stations(
         runs, stations, destinations, list(every_station.values())
     ):
+        scenario, day, fare, times, station_times, arrivals, routes = run
         routed = {s.id for s in stations} if stop_ids else None
-        _save(times, travel_times.output_path(scenario, day), routed)
-        _save(station_times, travel_times.stations_output_path(scenario, day), routed)
-        _save(arrivals, travel_times.arrivals_path(scenario, day), routed)
-        _save(routes, travel_times.routes_path(scenario, day), routed)
+        _save(times, travel_times.output_path(scenario, day, fare), routed)
+        _save(station_times, travel_times.stations_output_path(scenario, day, fare), routed)
+        _save(arrivals, travel_times.arrivals_path(scenario, day, fare), routed)
+        _save(routes, travel_times.routes_path(scenario, day, fare), routed)
         echo(
-            f"{scenario} {day}: {len(stations)} stations, {len(times)} reachable cells, "
+            f"{scenario} {day} {fare}: {len(stations)} stations, {len(times)} reachable cells, "
             f"{len(station_times)} reachable stations"
         )
 

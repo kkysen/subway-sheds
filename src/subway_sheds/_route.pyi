@@ -15,15 +15,17 @@ def travel_times(
     origins: list[str],
     destinations: list[tuple[float, float]],
     speed: int,
-    runs: list[tuple[StrPath, date, str, int, StrPath]],
+    runs: list[tuple[StrPath, date, str, int, StrPath, bool]],
     exits_out: StrPath,
     exits_limit: int,
 ) -> list[int]:
     """
     Median minutes from each of `origins`, by station ID, starting on the street at its entrances,
     to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
-    as `(feed, date, depart, minutes, out)`: departing each minute of `minutes` from `depart`,
-    written to `out`, walking on the streets in `osm`, an `.osm.pbf`,
+    as `(feed, date, depart, minutes, out, pay_again)`:
+    departing each minute of `minutes` from `depart`, written to `out`,
+    changing between complexes on the streets if `pay_again`,
+    walking on the streets in `osm`, an `.osm.pbf`,
     at `speed` millimeters a second, through `stations`' entrances,
     as `(id, complex, [(latitude, longitude, seconds to the platforms)])`
     (see `route/src/walks.rs`),

@@ -244,8 +244,8 @@ const timesStride = (grid: Grid): number => grid.cols.length + stations.length;
 function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8Array {
   const { width, height } = rasterSize(grid);
   const stride = timesStride(grid);
-  // Each day's times are every cell's and station's in the baseline, then with QueensLink.
-  const start = days.indexOf(day) * 2 * stride;
+  // Each run's times are every cell's and station's, the baseline's, then with QueensLink.
+  const start = baselineRun(day) * stride;
   const classes = new Int8Array(width * height).fill(NOTHING);
   grid.cols.forEach((col, i) => {
     const baseline = times[start + i] ?? UNREACHED;
@@ -272,7 +272,7 @@ function stationMinutes(station: Station): number {
     return NOTHING;
   }
   const stride = timesStride(grid);
-  const at = days.indexOf(currentDay()) * 2 * stride + grid.cols.length + stations.indexOf(station);
+  const at = baselineRun() * stride + grid.cols.length + stations.indexOf(station);
   const baseline = selectedTimes[at] ?? UNREACHED;
   const queenslink = selectedTimes[at + stride] ?? UNREACHED;
   const view = currentView();
@@ -563,8 +563,9 @@ function showSpeed(): void {
   speedValue.textContent = `${currentSpeed()} mph`;
 }
 
-// How a journey's fares are paid: at each entry to the system, or never, with an unlimited card.
-const fares = ["each", "unlimited"] as const;
+// How journeys are routed, in the order `Fare` lists them in `src/subway_sheds/scenarios.py`:
+// paying a single fare, so not changing outside the system, or with an unlimited card, so changing there too.
+const fares = ["single", "unlimited"] as const;
 type Fare = (typeof fares)[number];
 
 function currentFare(): Fare {
@@ -700,7 +701,7 @@ function computeTimes(): void {
       stations.length,
       currentSpeed(),
       // Only the day shown, both scenarios, as the minutes saved need both.
-      [2 * days.indexOf(currentDay()), 2 * days.indexOf(currentDay()) + 1],
+      [baselineRun(), baselineRun() + 1],
     ));
   }
 }
@@ -865,7 +866,7 @@ function describeCell(cell: number): string {
     return "";
   }
   const stride = timesStride(grid);
-  const start = days.indexOf(currentDay()) * 2 * stride + cell;
+  const start = baselineRun() * stride + cell;
   const say = (minutes: number): string =>
     minutes === UNREACHED ? "not reached" : `${minutes} min`;
   const baseline = selectedTimes[start] ?? UNREACHED;
@@ -1081,9 +1082,15 @@ const legendM = queenslinkM();
 // As a variable for `style.css`, for the legend's bullets made since, too.
 document.documentElement.style.setProperty("--queenslink-m", `url(${legendM.toDataURL()})`);
 
-// The run shown: the day's, with QueensLink unless only without it is.
+// The run of `day` and the fare chosen without QueensLink, as the pipeline writes them,
+// by day, then fare, then scenario; the one with it is next.
+function baselineRun(day = currentDay()): number {
+  return (days.indexOf(day) * fares.length + fares.indexOf(currentFare())) * 2;
+}
+
+// The run shown: the day's with the fare chosen, with QueensLink unless only without it is.
 function currentRun(): number {
-  return 2 * days.indexOf(currentDay()) + (currentView() === "baseline" ? 0 : 1);
+  return baselineRun() + (currentView() === "baseline" ? 0 : 1);
 }
 
 // The runs whose journeys are shown: the one shown, or for minutes saved, the day's without QueensLink, then with it.
@@ -1173,7 +1180,7 @@ function diamond(): ImageData {
 // Whole minutes, as said under a journey's trains, rounded up from any part of one.
 const legMinutes = (seconds: number): string => `${Math.max(Math.ceil(seconds / 60), 0)} min`;
 
-// The fare, said over each step a journey pays it at.
+// The fare, said over each step a journey pays it at, entering the system, whatever the card.
 // Neither feed has GTFS fares yet; once one does, it should come from them.
 const FARE = "$3";
 
@@ -1230,11 +1237,9 @@ function journeyLine(
     scenario.textContent = run % 2 === 0 ? "Without" : "With";
     line.append(scenario);
   }
-  // Whether a step that enters the system pays there, as the fare chosen has it.
-  const pays = (enters: boolean): boolean => enters && currentFare() === "each";
   const first = rides[0];
   if (first !== undefined && departs !== undefined) {
-    line.append(journeyStep("→", first.start - departs, "journey-change", pays(true)));
+    line.append(journeyStep("→", first.start - departs, "journey-change", true));
   }
   let last: RouteLeg | undefined;
   for (const leg of legs) {
@@ -1243,12 +1248,7 @@ function journeyLine(
     }
     if (last !== undefined) {
       line.append(
-        journeyStep(
-          "→",
-          leg.start - last.end,
-          "journey-change",
-          pays(paysBetween(legs, last, leg)),
-        ),
+        journeyStep("→", leg.start - last.end, "journey-change", paysBetween(legs, last, leg)),
       );
     }
     line.append(journeyStep(bullet(trainOf(leg, run)), leg.end - leg.start, "journey-ride"));
