@@ -236,20 +236,36 @@ function describeBand(band: number, view: View): string {
   return `${minutes} from ${selectedName} ${scenario}`;
 }
 
-// A band's key in the legend, highlighting it on the map when pointed at.
+// A band's key in the legend, highlighting it on the map when pointed at, and pinning it when clicked or tapped.
 function legendBand(band: number, color: string, view: View): HTMLElement {
   const key = document.createElement("span");
   key.style.background = color;
   key.title = describeBand(band, view);
-  key.dataset["band"] = String(band);
-  key.addEventListener("pointerenter", () => highlightBand(band));
-  key.addEventListener("pointerleave", () => restorePinnedBand());
+  bandKey(key, band);
   return key;
+}
+
+// Makes an element of the legend stand for a band, as its key or a label on it.
+function bandKey(key: HTMLElement, band: number): void {
+  key.dataset["band"] = String(band);
+  // Only from a mouse, since a tap's touch enters and then leaves at once, unhighlighting it as soon as it's tapped.
+  key.addEventListener("pointerenter", (event) => {
+    if (event.pointerType === "mouse") {
+      highlightBand(band);
+    }
+  });
+  key.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "mouse") {
+      restorePinnedBand();
+    }
+  });
+  key.addEventListener("click", () => pinLegendBand(band));
 }
 
 // Set once the map's layer is made, after the legend is first shown.
 let highlightBand = (_band: number): void => {};
 let restorePinnedBand = (): void => {};
+let pinLegendBand = (_band: number): void => {};
 
 function legendItems(view: View): HTMLElement[] {
   const viewBands = bands(view);
@@ -283,6 +299,8 @@ function legendItems(view: View): HTMLElement[] {
     const m = document.createElement("span");
     m.className = "legend-station legend-station-new";
     label(m, savedBands.length + 0.5);
+    // As easy to tap as the band, as it's small.
+    bandKey(m, savedBands.length);
   } else {
     label(String(MAX_MINUTES), viewBands.length);
     // Beside the heading, to save a line.
@@ -292,7 +310,11 @@ function legendItems(view: View): HTMLElement[] {
     heading.append(note);
   }
   heading.append(stationKeyShow);
-  return [heading, bar, labels];
+  // What a band pinned from the legend is, said here, as there's no pointing at it on a phone to see its title.
+  const description = document.createElement("p");
+  description.className = "band-description";
+  description.hidden = true;
+  return [heading, bar, labels, description];
 }
 
 // The lines of the scenario the view shows, with QueensLink's for what it saves.
@@ -692,14 +714,14 @@ const bandPopup = new Popup({ closeButton: false, closeOnClick: false, className
 
 highlightBand = (band: number): void => {
   bandsLayer.setHighlight(band);
-  for (const key of legend.querySelectorAll<HTMLElement>("[data-band]")) {
+  for (const key of legend.querySelectorAll<HTMLElement>(".legend-bands [data-band]")) {
     key.classList.toggle("highlighted", key.dataset["band"] === String(band));
   }
 };
 
 // The band clicked or tapped, kept highlighted and said until clicked again or another is,
-// and where, for its popup.
-let pinned: { readonly band: number; readonly lngLat: LngLat } | undefined;
+// and where, for its popup, if on the map rather than in the legend.
+let pinned: { readonly band: number; readonly lngLat?: LngLat } | undefined;
 
 // Highlights a band and says what it is at a point, or shows the pinned one if there's none.
 function showBand(band: number, lngLat: LngLat): void {
@@ -712,12 +734,22 @@ function showBand(band: number, lngLat: LngLat): void {
 }
 
 restorePinnedBand = (): void => {
-  if (pinned === undefined) {
-    highlightBand(NOTHING);
+  if (pinned?.lngLat === undefined) {
+    highlightBand(pinned?.band ?? NOTHING);
     bandPopup.remove();
   } else {
     showBand(pinned.band, pinned.lngLat);
   }
+  const description = legend.querySelector<HTMLElement>(".band-description");
+  if (description !== null) {
+    description.hidden = pinned === undefined || pinned.lngLat !== undefined;
+    description.textContent = pinned === undefined ? "" : describeBand(pinned.band, currentView());
+  }
+};
+
+pinLegendBand = (band: number): void => {
+  pinned = band === pinned?.band && pinned.lngLat === undefined ? undefined : { band };
+  restorePinnedBand();
 };
 
 // Pins the band at a point, or unpins it if it's the one pinned or there's none there.

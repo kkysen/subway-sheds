@@ -296,6 +296,7 @@ body,
 }
 
 .legend-bands span {
+  position: relative;
   flex: 1;
   /* As the cells are drawn, at 60% over the map. */
   opacity: 0.6;
@@ -309,7 +310,24 @@ body,
 }
 
 .legend-bands span {
-  cursor: default;
+  cursor: pointer;
+}
+
+/* Easier to tap than the band's 12px, reaching halfway to the labels and above it. */
+.legend-bands span::before {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+
+.legend-labels [data-band] {
+  cursor: pointer;
+}
+
+#controls .band-description {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #555555;
 }
 
 /* Set apart from the minutes saved, a different kind of place. */
