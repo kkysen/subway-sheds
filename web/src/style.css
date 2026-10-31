@@ -225,6 +225,10 @@ body,
   }
 }
 
+.heading-note {
+  font-weight: normal;
+}
+
 #legend p {
   margin-top: 4px;
 }

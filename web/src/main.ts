@@ -254,7 +254,7 @@ let restorePinnedBand = (): void => {};
 function legendItems(view: View): HTMLElement[] {
   const viewBands = bands(view);
   const heading = document.createElement("h2");
-  heading.textContent = view === "saved" ? "Minutes saved" : "Minutes from station";
+  heading.textContent = view === "saved" ? "Minutes saved" : "Minutes from Station";
   const bar = document.createElement("div");
   bar.className = "legend-bands";
   const labels = document.createElement("div");
@@ -274,14 +274,18 @@ function legendItems(view: View): HTMLElement[] {
   if (view !== "saved") {
     label(String(MAX_MINUTES), viewBands.length);
   }
-  const note = document.createElement("p");
-  if (view === "saved") {
-    const swatch = legendBand(savedBands.length, QUEENSLINK_ONLY_COLOR, view);
-    swatch.className = "legend-swatch";
-    note.append(swatch, ` Reached only with QueensLink, within ${ROUTED_MINUTES} minutes`);
-  } else {
-    note.textContent = "Walking at the end";
+  if (view !== "saved") {
+    // Beside the heading, to save a line.
+    const note = document.createElement("span");
+    note.className = "heading-note";
+    note.textContent = ", walking at the end";
+    heading.append(note);
+    return [heading, bar, labels];
   }
+  const note = document.createElement("p");
+  const swatch = legendBand(savedBands.length, QUEENSLINK_ONLY_COLOR, view);
+  swatch.className = "legend-swatch";
+  note.append(swatch, ` Reached only with QueensLink, within ${ROUTED_MINUTES} minutes`);
   return [heading, bar, labels, note];
 }
 
@@ -309,7 +313,6 @@ const legend = element("#legend", HTMLElement);
 const fullMap = element("#full-map", HTMLAnchorElement);
 
 // Narrow screens, as on phones, where the controls and credits open would cover much of the map.
-// The same width as `style.css`'s narrow layout.
 // Or short ones, as on phones turned sideways, where the controls open are 300px of under 500.
 const small = window.matchMedia("(max-width: 600px), (max-height: 500px)").matches;
 
