@@ -196,6 +196,25 @@ function prefetchTimes(station: string): void {
   fetchTimes(station).catch(() => {});
 }
 
+// How long the mouse stays on a station before it's prefetched,
+// so that sweeping across the map doesn't fetch every station it passes.
+const HOVER_PREFETCH_MS = 100;
+let hovered: string | undefined;
+let hoverPrefetch: number | undefined;
+
+// Prefetches `station` once the mouse has stayed on it, or stops waiting to if `undefined`.
+function hoverStation(station: string | undefined): void {
+  if (station === hovered) {
+    return;
+  }
+  hovered = station;
+  clearTimeout(hoverPrefetch);
+  hoverPrefetch =
+    station === undefined
+      ? undefined
+      : window.setTimeout(() => prefetchTimes(station), HOVER_PREFETCH_MS);
+}
+
 // The grid as a raster, `width` cells by `height`, cell (0, 0) at its southwest corner.
 function rasterSize(grid: Grid): { width: number; height: number } {
   return { width: Math.max(...grid.cols) + 1, height: Math.max(...grid.rows) + 1 };
@@ -1740,9 +1759,7 @@ await loaded;
   map.on("mousemove", (event: MapMouseEvent) => {
     const id = stationAt(event, MOUSE_RADIUS);
     map.getCanvas().style.cursor = id === undefined ? "" : "pointer";
-    if (id !== undefined) {
-      prefetchTimes(id);
-    }
+    hoverStation(id);
     const station = id === undefined ? undefined : stationsById.get(id);
     if (station === undefined) {
       showBand(bandAt(event.lngLat), event.lngLat);
@@ -1812,7 +1829,10 @@ await loaded;
       event.preventDefault();
     }
   });
-  map.getCanvas().addEventListener("mouseleave", restorePinnedBand);
+  map.getCanvas().addEventListener("mouseleave", () => {
+    hoverStation(undefined);
+    restorePinnedBand();
+  });
 
   void selectStation(stationFromHash());
 }
