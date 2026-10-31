@@ -198,14 +198,14 @@ const travelTimeBands: readonly Band[] = [
 ];
 
 // Minutes saved, from a minute, from light teal to QueensLink's green, `#24685b`, as QueensLink's own maps are.
+// Only out to an hour, since QueensLink saves at most 81 minutes from any station to anywhere,
+// and an hour or more for at most a tenth of a percent of them.
 const savedBands: readonly Band[] = [
   [1, "#8cd1c6"],
-  [BAND_STARTS[0], "#6ebfb0"],
-  [BAND_STARTS[1], "#55aa9a"],
-  [BAND_STARTS[2], "#449586"],
-  [BAND_STARTS[3], "#3a8578"],
-  [BAND_STARTS[4], "#31796c"],
-  [BAND_STARTS[5], "#24685b"],
+  [BAND_STARTS[0], "#55aa9a"],
+  [BAND_STARTS[1], "#449586"],
+  [BAND_STARTS[2], "#31796c"],
+  [BAND_STARTS[3], "#24685b"],
 ];
 
 // Places only QueensLink reaches within `ROUTED_MINUTES`, which there's no saying how much it saves.
