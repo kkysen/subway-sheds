@@ -676,7 +676,6 @@ R29,636,Jay St-MetroTech,40.6920651,-73.9851702,Easement - Street,25.8,MTA eleva
 125,614,59 St-Columbus Circle,40.7676504,-73.9812302,Stair,14.8,OSM level -1,30
 125,614,59 St-Columbus Circle,40.7685822,-73.982112,Stair,14.8,OSM level -1,30
 126,316,50 St,40.7615236,-73.9844507,Easement - Street,14.8,OSM level -1,30
-126,316,50 St,40.7616592,-73.9843289,Easement - Street,14.8,OSM level -1,30
 126,316,50 St,40.7612765,-73.9838216,Stair,14.8,OSM level -1,30
 126,316,50 St,40.761364,-73.9837605,Stair,14.8,OSM level -1,30
 126,316,50 St,40.7611955,-73.9837075,Easement - Street,14.8,OSM level -1,30
@@ -995,7 +994,6 @@ L29,138,Canarsie-Rockaway Pkwy,40.6457226,-73.9025381,Walkway,0.0,structure At G
 230,333,Wall St,40.7074605,-74.0087297,Easement - Passage,29.5,OSM level -2,44
 230,333,Wall St,40.706645,-74.0086351,Easement - Street,29.5,OSM level -2,44
 230,333,Wall St,40.706586,-74.0087004,Easement - Passage,29.5,OSM level -2,44
-230,333,Wall St,40.7080774,-74.0097526,Easement - Street,29.5,OSM level -2,44
 231,334,Clark St,40.6976131,-73.9933883,Easement - Street,29.5,OSM level -2,44
 231,334,Clark St,40.6976945,-73.993039,Easement - Street,29.5,OSM level -2,44
 232,620,Borough Hall,40.6937353,-73.9906256,Stair,29.0,MTA elevators and escalators,44
@@ -1355,7 +1353,6 @@ M23,107,Broad St,40.7059737,-74.0112223,Stair,29.5,OSM level -2,44
 M23,107,Broad St,40.7061973,-74.0110885,Stair,29.5,OSM level -2,44
 M23,107,Broad St,40.706887,-74.010687,Stair,29.5,OSM level -2,44
 M23,107,Broad St,40.706911,-74.010494,Stair,29.5,OSM level -2,44
-M23,107,Broad St,40.7080774,-74.0097526,Easement - Street,29.5,OSM level -2,44
 M23,107,Broad St,40.708035,-74.010665,Easement - Passage,29.5,OSM level -2,44
 401,378,Woodlawn,40.886819,-73.878376,Stair,29.5,OSM level 2,44
 401,378,Woodlawn,40.886737,-73.87812,Stair,29.5,OSM level 2,44
@@ -1654,7 +1651,6 @@ M23,107,Broad St,40.708035,-74.010665,Easement - Passage,29.5,OSM level -2,44
 419,413,Wall St,40.7075602,-74.0117429,Stair,14.8,OSM level -1,30
 419,413,Wall St,40.7084833,-74.0112799,Easement - Street,14.8,OSM level -1,30
 419,413,Wall St,40.708035,-74.010665,Easement - Passage,14.8,OSM level -1,30
-419,413,Wall St,40.7080774,-74.0097526,Easement - Street,14.8,OSM level -1,30
 420,414,Bowling Green,40.7048374,-74.0145964,Stair,40.0,MTA elevators and escalators,55
 420,414,Bowling Green,40.704157,-74.014509,Station House,40.0,MTA elevators and escalators,55
 420,414,Bowling Green,40.7048029,-74.0144281,Stair,40.0,MTA elevators and escalators,55

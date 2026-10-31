@@ -237,7 +237,7 @@ def build() -> pd.DataFrame:
         str(r["gtfs_stop_id"]): r for r in stations.to_dict("records")
     }
 
-    def row(gtfs_id: str, lat: float, lon: float, kind: str) -> dict[str, Any]:
+    def row(gtfs_id: str, lat: float, lon: float, kind: str) -> dict[Hashable, Any]:
         station = by_id[gtfs_id]
         walk = WALKS.get((lat, lon))
         depth_ft = float(station["depth_ft"])
@@ -261,7 +261,7 @@ def build() -> pd.DataFrame:
         for gtfs_id in str(e["gtfs_stop_id"]).split("; ")
         for kind in [e["entrance_type"]]
     ]
-    rows = _drop_misattributed(pd.DataFrame(rows), by_id).to_dict("records")
+    rows = _drop_misattributed(pd.DataFrame(rows)).to_dict("records")
     # Stations the MTA lists no entrances for, at their own coordinates.
     listed = {r["station"] for r in rows}
     rows += [
@@ -272,40 +272,33 @@ def build() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# How much nearer, as a fraction, another station sharing a street entrance must be
-# for it to be only that station's.
-MISATTRIBUTED_NEARER = 0.5
-
-
-def _drop_misattributed(rows: pd.DataFrame, by_id: dict[str, dict[Hashable, Any]]) -> pd.DataFrame:
-    """`rows` without street entrances the MTA lists under a station they aren't one of.
+def _drop_misattributed(rows: pd.DataFrame) -> pd.DataFrame:
+    """`rows` without street entrances the MTA lists under stations not connected to each other.
 
     The MTA lists some entrances under stations of different complexes.
-    A station house or passage may really join them underground, as at Fulton St,
-    but a street entrance listed under both 50 Sts, at Broadway, is only the 1's:
-    the C and E's is at 8 Av, and routing changed between them through it in a minute and a half.
-    A shared street entrance is dropped from a station it's farther from than any of its own,
-    when another station sharing it is at most `MISATTRIBUTED_NEARER` as far.
+    A station house or passage may really join them, as at Fulton St,
+    but it lists a street entrance at Broadway under both 50 Sts, the 1's and the C and E's at 8 Av,
+    and one near William St under both Wall Sts and Broad St,
+    so routing changed between them through it in barely more than going in and out.
+    Stations are connected if in one complex or sharing a station house or passage,
+    and a street entrance listed under stations not all connected is dropped from all of them,
+    as there's no telling whose it is.
     """
-    lat = rows["station"].map(lambda s: float(by_id[s]["gtfs_latitude"]))
-    lon = rows["station"].map(lambda s: float(by_id[s]["gtfs_longitude"]))
-    meters_per_degree = 111_320
-    rows = rows.assign(
-        meters=meters_per_degree
-        * ((rows["lat"] - lat) ** 2 + ((rows["lon"] - lon) * math.cos(math.radians(40.7))) ** 2)
-        ** 0.5
+    at = ["lat", "lon"]
+    complexes = rows.groupby(at)["complex"].agg(frozenset)
+    joining = rows[~rows["kind"].eq("Easement - Street")].groupby(at)["complex"].agg(frozenset)
+    connected = {frozenset((a, b)) for joined in joining for a in joined for b in joined if a != b}
+    unconnected = {
+        place
+        for place, listed in complexes.items()
+        if any(frozenset((a, b)) not in connected for a in listed for b in listed if a < b)
+    }
+    street = rows["kind"].eq("Easement - Street")
+    misattributed = street & pd.Series(
+        [place in unconnected for place in zip(rows["lat"], rows["lon"], strict=True)],
+        index=rows.index,
     )
-    at = rows.groupby(["lat", "lon"])
-    shared = at["complex"].transform("nunique") > 1
-    own_farthest = rows["station"].map(rows[~shared].groupby("station")["meters"].max())
-    nearest = at["meters"].transform("min")
-    misattributed = (
-        shared
-        & rows["kind"].eq("Easement - Street")
-        & (rows["meters"] > own_farthest)
-        & (nearest <= MISATTRIBUTED_NEARER * rows["meters"])
-    )
-    return rows[~misattributed].drop(columns="meters")
+    return rows[~misattributed]
 
 
 def write() -> pd.DataFrame:
