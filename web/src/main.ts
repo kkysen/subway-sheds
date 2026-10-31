@@ -106,12 +106,39 @@ async function fetchJson<T>(path: string): Promise<T> {
 // Fetched first, as reading a station's arrivals needs how many stations there are.
 const stationList = fetchJson<Station[]>("stations.json");
 
+// Whether the browser decompresses Brotli itself; its `DecompressionStream` throws if not.
+const nativeBrotli = ((): boolean => {
+  try {
+    new DecompressionStream("brotli" as CompressionFormat);
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+// Decompresses a Brotli file the pipeline wrote, as GitHub Pages sends them as they are,
+// with the browser's own decompression if it has Brotli, else a WebAssembly decoder fetched only then.
+async function unbrotli(response: Response): Promise<ArrayBuffer> {
+  if (nativeBrotli && response.body !== null) {
+    const stream = response.body.pipeThrough(
+      new DecompressionStream("brotli" as CompressionFormat),
+    );
+    return new Response(stream).arrayBuffer();
+  }
+  const [compressed, decoder] = await Promise.all([
+    response.arrayBuffer(),
+    import("brotli-dec-wasm").then((module) => module.default),
+  ]);
+  // Copied out of the decoder's memory.
+  return new Uint8Array(decoder.decompress(new Uint8Array(compressed))).buffer;
+}
+
 async function fetchBinary(path: string): Promise<ArrayBuffer> {
   const response = await fetch(data(path));
   if (!response.ok) {
     throw new Error(`${response.status} fetching ${path}`);
   }
-  return response.arrayBuffer();
+  return unbrotli(response);
 }
 
 // What a station's times and routes are made from.

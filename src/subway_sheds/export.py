@@ -4,7 +4,9 @@ import datetime
 import itertools
 import json
 import zipfile
+from pathlib import Path
 
+import brotli
 import numpy as np
 import pandas as pd
 
@@ -16,6 +18,14 @@ from subway_sheds.scenarios import FREE_TRANSFERS, Day, Fare, Scenario
 UNREACHED = 0xFFFF
 # In a station's routes, a leg that walks between stations.
 WALK_LEG = 0xFFFF
+
+
+def _write_brotli(path: Path, data: bytes) -> None:
+    """
+    Write `data` to `path` compressed with Brotli, as GitHub Pages won't:
+    it sends `.bin` files as they are, so the page decompresses them itself.
+    """
+    path.write_bytes(brotli.compress(data, quality=11))
 
 
 def _deltas(values: np.ndarray, first: np.ndarray) -> np.ndarray:
@@ -63,6 +73,8 @@ def write(grid: Grid) -> None:
       each minute and time but a station's first as the change from the one before,
       wrapping around, as those are small and alike, which compresses better.
       The page adds each departure's walk out to each cell and takes the median, as routing does.
+
+    The `.bin` files are each compressed with Brotli (see `_write_brotli`).
     """
     # Only the files, keeping the directories, which a running `vite` watches:
     # replacing them, it serves the page itself for every file in them until restarted.
@@ -159,8 +171,9 @@ def write(grid: Grid) -> None:
     columns = [
         exits[c].to_numpy(dtype="<u2") for c in ["station", "cell", "exit_seconds", "meters"]
     ]
-    (paths.WEB_DATA / "exits.bin").write_bytes(
-        np.array([len(exits)], dtype="<u4").tobytes() + b"".join(c.tobytes() for c in columns)
+    _write_brotli(
+        paths.WEB_DATA / "exits.bin",
+        np.array([len(exits)], dtype="<u4").tobytes() + b"".join(c.tobytes() for c in columns),
     )
 
     minutes = travel_times.DEPARTURE_WINDOW // datetime.timedelta(minutes=1)
@@ -240,7 +253,7 @@ def write(grid: Grid) -> None:
                 end - start,
             ]
         ).astype("<u2")
-        (routes_dir / f"{station}.bin").write_bytes(counts[i].tobytes() + fields.tobytes())
+        _write_brotli(routes_dir / f"{station}.bin", counts[i].tobytes() + fields.tobytes())
 
     # When, from the window's start, rather than how long after each departure.
     reached = seconds != UNREACHED
@@ -256,7 +269,8 @@ def write(grid: Grid) -> None:
     for station, i in index.items():
         minute = minute_of[changed[i]]
         first = minute == 0
-        (arrivals_dir / f"{station}.bin").write_bytes(
+        _write_brotli(
+            arrivals_dir / f"{station}.bin",
             counts[i].tobytes()
             + _deltas(minute, first).astype(np.uint8).tobytes()
             + (_deltas(clock[i][changed[i]], first) % 0x10000).astype("<u2").tobytes(),
