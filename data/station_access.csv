@@ -90,17 +90,17 @@ D15,225,47-50 Sts-Rockefeller Ctr,40.7596484,-73.9809099,Easement - Passage,29.5
 D15,225,47-50 Sts-Rockefeller Ctr,40.760109,-73.980582,Easement - Passage,29.5,OSM level -2,44
 D15,225,47-50 Sts-Rockefeller Ctr,40.7593998,-73.9803382,Easement - Passage,29.5,OSM level -2,44
 D15,225,47-50 Sts-Rockefeller Ctr,40.7592389,-73.981182,Easement - Passage,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7537136,-73.985193,Easement - Street,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7533955,-73.9848446,Stair,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7535053,-73.9847341,Stair,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7549381,-73.9846882,Easement - Street,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7550511,-73.9841897,Stair,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7552322,-73.9840526,Stair,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7545962,-73.9838771,Stair,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7550226,-73.9837875,Stair,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7531465,-73.9855491,Easement - Street,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7531005,-73.9856594,Easement - Street,29.5,OSM level -2,44
-D16,609,42 St-Bryant Pk,40.7551429,-73.9841152,Elevator,29.5,OSM level -2,70
+D16,611,42 St-Bryant Pk,40.7537136,-73.985193,Easement - Street,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7533955,-73.9848446,Stair,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7535053,-73.9847341,Stair,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7549381,-73.9846882,Easement - Street,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7550511,-73.9841897,Stair,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7552322,-73.9840526,Stair,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7545962,-73.9838771,Stair,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7550226,-73.9837875,Stair,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7531465,-73.9855491,Easement - Street,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7531005,-73.9856594,Easement - Street,29.5,OSM level -2,44
+D16,611,42 St-Bryant Pk,40.7551429,-73.9841152,Elevator,29.5,OSM level -2,70
 D17,607,34 St-Herald Sq,40.74875,-73.9887643,Easement - Street,43.0,MTA elevators and escalators,58
 D17,607,34 St-Herald Sq,40.7489087,-73.9886438,Easement - Street,43.0,MTA elevators and escalators,58
 D17,607,34 St-Herald Sq,40.7498382,-73.9881986,Stair,43.0,MTA elevators and escalators,58
@@ -1257,9 +1257,9 @@ G36,292,Fulton St,40.6873938,-73.9747688,Stair,29.5,OSM level -2,44
 721,464,Vernon Blvd-Jackson Av,40.7423743,-73.9526921,Stair,14.8,OSM level -1,30
 721,464,Vernon Blvd-Jackson Av,40.7426074,-73.952238,Stair,14.8,OSM level -1,30
 723,610,Grand Central-42 St,40.7508941,-73.9751175,Easement - Street,81.8,MTA elevators and escalators,113
-724,609,5 Av,40.7542646,-73.9831451,Stair,59.0,OSM level -4,74
-724,609,5 Av,40.7542373,-73.9830705,Stair,59.0,OSM level -4,74
-724,609,5 Av,40.7535726,-73.9814889,Stair,59.0,OSM level -4,74
+724,611,5 Av,40.7542646,-73.9831451,Stair,59.0,OSM level -4,74
+724,611,5 Av,40.7542373,-73.9830705,Stair,59.0,OSM level -4,74
+724,611,5 Av,40.7535726,-73.9814889,Stair,59.0,OSM level -4,74
 726,471,34 St-Hudson Yards,40.754904,-74.001323,Elevator,113.0,MTA elevators and escalators,112
 726,471,34 St-Hudson Yards,40.7549612,-74.0009265,Stair/Escalator,113.0,MTA elevators and escalators,151
 726,471,34 St-Hudson Yards,40.755766,-74.0002359,Stair/Escalator,113.0,MTA elevators and escalators,151

@@ -78,6 +78,10 @@ class Walk:
     note: str
 
 
+# Complexes changed between without leaving the system, which the MTA lists as separate,
+# each by the one it's joined to: 42 St-Bryant Pk and 5 Av's, by the passage to Times Sq-42 St's.
+JOINED_COMPLEXES = {"609": "611"}
+
 # Entrances reached by a long walk inside the station, by the MTA's entrance coordinates.
 WALKS = {
     # 191 St's Broadway entrance: OSM's "Tunnel Street" footway, 280 m,
@@ -243,7 +247,7 @@ def build() -> pd.DataFrame:
         depth_ft = float(station["depth_ft"])
         return {
             "station": gtfs_id,
-            "complex": station["complex_id"],
+            "complex": JOINED_COMPLEXES.get(station["complex_id"], station["complex_id"]),
             "name": station["stop_name"],
             "lat": lat,
             "lon": lon,
