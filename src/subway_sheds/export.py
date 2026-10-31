@@ -95,14 +95,19 @@ def write(grid: Grid) -> None:
     )
     index = {station: i for i, station in enumerate(stations)}
 
+    def rows_of(ids: pd.Series) -> np.ndarray:
+        """Each of `ids`' index in `stations`, by its categories, not its millions of rows."""
+        codes = ids.astype("category").cat
+        return np.array([index[str(c)] for c in codes.categories], dtype=np.intp)[codes.codes]
+
     for (d, day), (s, scenario) in itertools.product(enumerate(Day), enumerate(Scenario)):
         times = pd.read_parquet(travel_times.output_path(scenario, day))
-        rows = times["station"].astype(str).map(index).to_numpy()
+        rows = rows_of(times["station"])
         minutes[rows, d, s, times["cell"].to_numpy()] = times["minutes"].to_numpy()
         # Each station's own time, after the cells'.
         to_stations = pd.read_parquet(travel_times.stations_output_path(scenario, day))
-        rows = to_stations["station"].astype(str).map(index).to_numpy()
-        columns = cell_count + to_stations["to_station"].astype(str).map(index).to_numpy()
+        rows = rows_of(to_stations["station"])
+        columns = cell_count + rows_of(to_stations["to_station"])
         minutes[rows, d, s, columns] = to_stations["minutes"].to_numpy()
     for station, i in index.items():
         (times_dir / f"{station}.bin").write_bytes(minutes[i].tobytes())

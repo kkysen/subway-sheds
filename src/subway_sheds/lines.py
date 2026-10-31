@@ -6,6 +6,8 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import shapely
 from pyproj import Transformer
 from shapely import LineString, Point
@@ -82,7 +84,8 @@ def segments(feed_path: Path) -> list[Segment]:
     with zipfile.ZipFile(feed_path) as feed:
         stops = list(gtfs.read_csv(feed, "stops.txt"))
         route_rows = list(gtfs.read_csv(feed, "routes.txt"))
-        shape_rows = list(gtfs.read_csv(feed, "shapes.txt"))
+        with feed.open("shapes.txt") as f:
+            shape_rows = pd.read_csv(f, dtype={"shape_id": str})
     points = {
         s["stop_id"]: _point(float(s["stop_lon"]), float(s["stop_lat"]))
         for s in stops
@@ -92,14 +95,13 @@ def segments(feed_path: Path) -> list[Segment]:
         route["route_id"]: (i, f"#{route['route_color']}") for i, route in enumerate(route_rows)
     }
 
-    shape_points: dict[str, list[tuple[int, float, float]]] = {}
-    for row in shape_rows:
-        shape_points.setdefault(row["shape_id"], []).append(
-            (int(row["shape_pt_sequence"]), float(row["shape_pt_lon"]), float(row["shape_pt_lat"]))
-        )
+    shape_rows = shape_rows.sort_values(["shape_id", "shape_pt_sequence"])
+    xs, ys = _to_meters.transform(
+        shape_rows["shape_pt_lon"].to_numpy(), shape_rows["shape_pt_lat"].to_numpy()
+    )
     shapes = {
-        shape: LineString([_to_meters.transform(lon, lat) for _, lon, lat in sorted(rows)])
-        for shape, rows in shape_points.items()
+        str(shape): LineString(np.column_stack([xs[rows], ys[rows]]))
+        for shape, rows in shape_rows.groupby("shape_id").indices.items()
         if len(rows) > 1
     }
 
