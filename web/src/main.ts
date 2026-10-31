@@ -1072,15 +1072,23 @@ function routeLegs(station: Station): RouteLeg[] {
 }
 
 // A ride's train, and whether it's an express variant, as the FX, 6X and 7X are,
-// which the MTA draws as a diamond with the line's own name, without the X.
+// which the MTA draws as a diamond with the line's own name, without the X,
+// and for a shuttle, which shuttle, which the MTA writes small in its S's upper right.
 interface Train extends RouteInfo {
   readonly express: boolean;
+  readonly corner: string;
 }
+const SHUTTLE_CORNERS: Readonly<Record<string, string>> = { GS: "42", FS: "F", H: "R" };
 function trainOf(leg: RouteLeg): Train {
   const route = patterns[currentRun()]?.[leg.pattern]?.route ?? "";
   const info = routeInfo[route] ?? { name: route, color: "#808183", text: "#ffffff" };
   const express = /^.X$/.test(info.name);
-  return { ...info, name: express ? info.name.slice(0, -1) : info.name, express };
+  return {
+    ...info,
+    name: express ? info.name.slice(0, -1) : info.name,
+    express,
+    corner: SHUTTLE_CORNERS[route] ?? "",
+  };
 }
 
 // A train's bullet, as the MTA draws it.
@@ -1088,6 +1096,12 @@ function bullet(train: Train): HTMLElement {
   const b = document.createElement("span");
   b.className = train.express ? "route-bullet route-bullet-express" : "route-bullet";
   b.textContent = train.name;
+  if (train.corner !== "") {
+    const corner = document.createElement("span");
+    corner.className = "route-bullet-corner";
+    corner.textContent = train.corner;
+    b.append(corner);
+  }
   b.style.setProperty("--bullet-color", train.color);
   b.style.color = train.text;
   return b;
@@ -1239,6 +1253,7 @@ function routeFeatures(
         color: train.color,
         text: train.text,
         express: train.express,
+        corner: train.corner,
       },
     });
     at = passed[passed.length - 1] ?? at;
@@ -1395,6 +1410,26 @@ await loaded;
       "text-ignore-placement": true,
     },
     paint: { "text-color": ["get", "text"] },
+  });
+  // A shuttle's which, small in its bullet's upper right, outlined in its color to stand off the map.
+  map.addLayer({
+    id: "route-bullet-corners",
+    type: "symbol",
+    source: "route",
+    filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "corner"], ""]],
+    layout: {
+      "text-field": ["get", "corner"],
+      "text-font": ["Noto Sans Bold"],
+      "text-size": 9,
+      "text-offset": [1.1, -1.1],
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: {
+      "text-color": ["get", "text"],
+      "text-halo-color": ["get", "color"],
+      "text-halo-width": 2,
+    },
   });
   // The white M in each new station's bullet, in bold Helvetica as the MTA's is.
   map.addImage("queenslink-m", imageData(legendM), { pixelRatio: devicePixelRatio });

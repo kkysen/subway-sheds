@@ -504,6 +504,22 @@ body,
   background: var(--bullet-color);
 }
 
+/* A shuttle's which, as the MTA writes it, small in its S's upper right. */
+.route-bullet {
+  position: relative;
+}
+
+.route-bullet-corner {
+  position: absolute;
+  top: -0.35em;
+  right: -0.45em;
+  padding: 0 0.15em;
+  border-radius: 0.4em;
+  background: var(--bullet-color);
+  font-size: 0.6em;
+  line-height: 1.3;
+}
+
 /* An express variant's, a diamond: a square turned behind the name, as wide as the circle is. */
 .route-bullet-express {
   position: relative;
