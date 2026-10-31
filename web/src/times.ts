@@ -86,6 +86,13 @@ export function parseArrivals(buffer: ArrayBuffer, stations: number): Arrivals {
 // by train and walking out of a station, or walking from `origin` itself.
 // Each station's own, its median arrival on its platforms; `origin`'s, on the first train there.
 // The runs not asked for are left unreached.
+// With each cell's station walked out of on its median trip, by run, `origin` if walked from it.
+export interface TravelTimes {
+  readonly times: Uint8Array;
+  readonly exitFrom: Uint16Array;
+}
+export const NO_STATION = 0xffff;
+
 export function travelTimes(
   arrivals: Arrivals,
   exits: Exits,
@@ -94,7 +101,7 @@ export function travelTimes(
   stations: number,
   mph: number,
   runs: readonly number[],
-): Uint8Array {
+): TravelTimes {
   const speed = mph * METERS_PER_SECOND_PER_MPH;
   // Each walk out's seconds, through the station's entrance and on the streets.
   const out = new Uint16Array(exits.meters.length);
@@ -113,10 +120,15 @@ export function travelTimes(
   }
   const stride = cells + stations;
   const times = new Uint8Array(RUNS * stride).fill(UNREACHED);
-  // The earliest time, from the window's start, each cell is reached by train this minute.
+  const exitFrom = new Uint16Array(RUNS * cells).fill(NO_STATION);
+  // The earliest time, from the window's start, each cell is reached by train this minute,
+  // and the station walked out of to it.
   const best = new Uint16Array(cells);
-  // Each cell's trip each minute, cell-major.
-  const trips = new Uint16Array(cells * MINUTES);
+  const bestFrom = new Uint16Array(cells);
+  // Each cell's trip each minute, cell-major, in the high half, and its station in the low,
+  // so that sorting them sorts by trip and keeps each's station with it.
+  const trips = new Uint32Array(cells * MINUTES);
+  const eachTrip = new Uint32Array(MINUTES);
   const each = new Uint16Array(MINUTES);
   const minutes = (seconds: number): number =>
     seconds <= MAX_SECONDS ? Math.floor(seconds / 60) : UNREACHED;
@@ -137,6 +149,7 @@ export function travelTimes(
           const cell = exits.cell[k] ?? 0;
           if (t < (best[cell] ?? UNREACHED_SECONDS)) {
             best[cell] = t;
+            bestFrom[cell] = s;
           }
         }
       }
@@ -144,13 +157,22 @@ export function travelTimes(
       for (let cell = 0; cell < cells; cell++) {
         const reached = best[cell] ?? UNREACHED_SECONDS;
         const byTrain = reached >= UNREACHED_SECONDS ? reached : reached - departs;
-        trips[cell * MINUTES + m] = Math.min(byTrain, direct[cell] ?? UNREACHED_SECONDS);
+        const walked = direct[cell] ?? UNREACHED_SECONDS;
+        trips[cell * MINUTES + m] =
+          walked <= byTrain
+            ? walked * 0x10000 + origin
+            : byTrain * 0x10000 + (bestFrom[cell] ?? NO_STATION);
       }
     }
     const first = run * stride;
     for (let cell = 0; cell < cells; cell++) {
-      each.set(trips.subarray(cell * MINUTES, (cell + 1) * MINUTES));
-      times[first + cell] = minutes(each.sort()[MEDIAN] ?? UNREACHED_SECONDS);
+      eachTrip.set(trips.subarray(cell * MINUTES, (cell + 1) * MINUTES));
+      const median = eachTrip.sort()[MEDIAN] ?? 0xffffffff;
+      const trip = Math.floor(median / 0x10000);
+      times[first + cell] = minutes(trip);
+      if (trip !== UNREACHED_SECONDS) {
+        exitFrom[run * cells + cell] = median % 0x10000;
+      }
     }
     for (let s = 0; s < stations; s++) {
       for (let m = 0; m < MINUTES; m++) {
@@ -160,7 +182,7 @@ export function travelTimes(
       times[first + cells + s] = minutes(each.sort()[MEDIAN] ?? UNREACHED_SECONDS);
     }
   }
-  return times;
+  return { times, exitFrom };
 }
 
 // A leg of a journey: a ride on `pattern`, boarding at its stop `a` and getting off at its stop `b`,

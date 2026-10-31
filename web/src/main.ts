@@ -17,6 +17,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { BandsLayer, EARTH_CIRCUMFERENCE } from "./bands";
 import {
   type Arrivals,
+  NO_STATION,
   parseArrivals,
   parseExits,
   parseRoutes,
@@ -645,6 +646,11 @@ const [grid, stations, lines, exits, routeInfo, patterns] = await Promise.all([
 ]);
 const { width, height } = rasterSize(grid);
 const bandsLayer = new BandsLayer("bands", grid, width, height);
+// Each raster pixel's cell, as `grid.json` lists them, or -1 where there's none.
+const cellOfPixel = new Int32Array(width * height).fill(-1);
+grid.cols.forEach((col, i) => {
+  cellOfPixel[(grid.rows[i] ?? 0) * width + col] = i;
+});
 const stationsById = new Map(stations.map((station) => [station.id, station]));
 
 // Broad Channel, whose trip to most of the city QueensLink shortens.
@@ -656,15 +662,17 @@ let selected = "";
 let selectedArrivals: Arrivals | undefined;
 // The journeys from the station shown.
 let selectedRoutes: Routes | undefined;
-// The times from the station shown, at the walking speed chosen.
+// The times from the station shown, at the walking speed chosen,
+// and each cell's station walked out of to it.
 let selectedTimes: Uint8Array | undefined;
+let selectedExitFrom: Uint16Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
 
 function computeTimes(): void {
   if (selectedArrivals !== undefined) {
     const origin = stations.findIndex((station) => station.id === selected);
-    selectedTimes = travelTimes(
+    ({ times: selectedTimes, exitFrom: selectedExitFrom } = travelTimes(
       selectedArrivals,
       exits,
       origin,
@@ -673,7 +681,7 @@ function computeTimes(): void {
       currentSpeed(),
       // Only the day shown, both scenarios, as the minutes saved need both.
       [2 * days.indexOf(currentDay()), 2 * days.indexOf(currentDay()) + 1],
-    );
+    ));
   }
 }
 
@@ -801,10 +809,8 @@ const blurWeights = (t: number): readonly number[] => [
 
 // The class drawn at a point on the map, or `NOTHING`,
 // weighing the cells around it as the bands' shader does, so that it's the band seen there.
-function bandAt(lngLat: LngLat): number {
-  if (selectedClasses === undefined) {
-    return NOTHING;
-  }
+// Where `lngLat` is in the raster, in cells, or `undefined` off it.
+function rasterAt(lngLat: LngLat): { readonly col: number; readonly row: number } | undefined {
   // In Web Mercator meters, as the grid is, then in cells.
   const x = (lngLat.lng / 360) * EARTH_CIRCUMFERENCE;
   const y =
@@ -813,8 +819,53 @@ function bandAt(lngLat: LngLat): number {
   const col = (x - grid.x0) / grid.spacing;
   const row = (y - grid.y0) / grid.spacing;
   if (col < -0.5 || col > width - 0.5 || row < -0.5 || row > height - 0.5) {
+    return undefined;
+  }
+  return { col, row };
+}
+
+// The cell at `lngLat`, as `grid.json` lists them, or -1 where there's none.
+function cellAt(lngLat: LngLat): number {
+  const at = rasterAt(lngLat);
+  return at === undefined
+    ? -1
+    : (cellOfPixel[Math.round(at.row) * width + Math.round(at.col)] ?? -1);
+}
+
+// The station walked out of to `cell`, in the run shown, or `NO_STATION`.
+function exitFromOf(cell: number): number {
+  return cell < 0 || selectedExitFrom === undefined
+    ? NO_STATION
+    : (selectedExitFrom[currentRun() * grid.cols.length + cell] ?? NO_STATION);
+}
+
+// How long the trip to `cell` takes, walking out included, in the view shown, as said in its popup.
+function describeCell(cell: number): string {
+  if (cell < 0 || selectedTimes === undefined) {
+    return "";
+  }
+  const stride = timesStride(grid);
+  const start = days.indexOf(currentDay()) * 2 * stride + cell;
+  const say = (minutes: number): string =>
+    minutes === UNREACHED ? "not reached" : `${minutes} min`;
+  const baseline = selectedTimes[start] ?? UNREACHED;
+  const queenslink = selectedTimes[start + stride] ?? UNREACHED;
+  const view = currentView();
+  const trip =
+    view === "saved"
+      ? `${say(baseline)} without QueensLink, ${say(queenslink)} with it`
+      : say(view === "baseline" ? baseline : queenslink);
+  const from = stations[exitFromOf(cell)];
+  const out = from === undefined ? "" : `, walking out of ${from.name}`;
+  return `Here: ${trip}${out}`;
+}
+
+function bandAt(lngLat: LngLat): number {
+  const at = rasterAt(lngLat);
+  if (selectedClasses === undefined || at === undefined) {
     return NOTHING;
   }
+  const { col, row } = at;
   const clamp = (value: number, max: number): number => Math.min(Math.max(value, 0), max);
   const lowCol = Math.min(Math.floor(clamp(col, width - 1)), Math.max(width - 2, 0));
   const lowRow = Math.min(Math.floor(clamp(row, height - 1)), Math.max(height - 2, 0));
@@ -863,10 +914,14 @@ function showBand(band: number, lngLat: LngLat): void {
     return;
   }
   highlightBand(band);
+  // The journey there: the trains to the station walked out of, and the walk from it, drawn straight.
+  const cell = cellAt(lngLat);
+  showRoute(stations[exitFromOf(cell)], lngLat);
+  const here = describeCell(cell);
   bandPopup
     .setLngLat(lngLat)
     .setMaxWidth(BAND_POPUP_WIDTH)
-    .setText(describeBand(band, currentView()))
+    .setText(`${describeBand(band, currentView())}${here === "" ? "" : `. ${here}`}`)
     .addTo(map);
 }
 
@@ -1027,7 +1082,12 @@ const coordinatesOf = (i: number): GeoJSON.Position => {
 };
 
 // The journey to `to` on the map: each ride along its line, walks dashed, and a bullet where each ride boards.
-function routeFeatures(legs: readonly RouteLeg[], to: number): GeoJSON.FeatureCollection {
+// Then, if given, walking on from `to` to `end`.
+function routeFeatures(
+  legs: readonly RouteLeg[],
+  to: number,
+  end?: GeoJSON.Position,
+): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
   const origin = stations.findIndex((station) => station.id === selected);
   let at = origin;
@@ -1075,17 +1135,30 @@ function routeFeatures(legs: readonly RouteLeg[], to: number): GeoJSON.FeatureCo
   }
   // Walking the rest of the way, or all of it, from a station as near as the origin.
   walk(at, to);
+  if (end !== undefined) {
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [coordinatesOf(to), end] },
+      properties: { kind: "walk" },
+    });
+  }
   return { type: "FeatureCollection", features };
 }
 
-// The journey to `station` on the map, or none.
-function showRoute(station: Station | undefined): void {
+// The journey to `station` on the map, or none, walking on to `end` if given.
+function showRoute(station: Station | undefined, end?: LngLat): void {
   const source = map.getSource("route");
   if (source !== undefined && "setData" in source && typeof source.setData === "function") {
-    const reached = station !== undefined && stationMinutes(station) !== NOTHING;
+    // Walked out of to a cell, it's reached, if only on foot from the origin.
+    const reached =
+      station !== undefined && (end !== undefined || stationMinutes(station) !== NOTHING);
     source.setData(
       reached
-        ? routeFeatures(routeLegs(station), stations.indexOf(station))
+        ? routeFeatures(
+            routeLegs(station),
+            stations.indexOf(station),
+            end === undefined ? undefined : [end.lng, end.lat],
+          )
         : { type: "FeatureCollection", features: [] },
     );
   }
