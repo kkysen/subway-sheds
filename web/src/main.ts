@@ -4,7 +4,8 @@ import {
   type CircleLayerSpecification,
   type ExpressionSpecification,
   FullscreenControl,
-  type LngLat,
+  LngLat,
+  type LngLatLike,
   Map as MapLibreMap,
   type MapMouseEvent,
   type MapTouchEvent,
@@ -218,6 +219,30 @@ function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8A
     }
   });
   return classes;
+}
+
+// In a cell's minutes saved, a place only QueensLink reaches, which there's no saying how much it saves.
+const ONLY_QUEENSLINK = -2;
+
+// Each cell's minutes, as in `cellClasses`: the trip's, or those saved,
+// `ONLY_QUEENSLINK`, or `NOTHING` where there's none to say.
+function cellMinutes(grid: Grid, times: Uint8Array, day: Day, view: View): Int16Array {
+  const { width, height } = rasterSize(grid);
+  const count = grid.cols.length;
+  const start = days.indexOf(day) * 2 * count;
+  const minutes = new Int16Array(width * height).fill(NOTHING);
+  grid.cols.forEach((col, i) => {
+    const baseline = times[start + i] ?? UNREACHED;
+    const queenslink = times[start + count + i] ?? UNREACHED;
+    const at = (grid.rows[i] ?? 0) * width + col;
+    if (view !== "saved") {
+      const trip = view === "baseline" ? baseline : queenslink;
+      minutes[at] = trip === UNREACHED ? NOTHING : trip;
+    } else if (queenslink !== UNREACHED) {
+      minutes[at] = baseline === UNREACHED ? ONLY_QUEENSLINK : Math.max(baseline - queenslink, 0);
+    }
+  });
+  return minutes;
 }
 
 // What the cells of class `band` are, as said when they're pointed at or tapped.
@@ -569,11 +594,14 @@ let selected = "";
 let selectedTimes: Uint8Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
+// And their minutes, to say a station's.
+let selectedMinutes: Int16Array | undefined;
 
 function drawCells(): void {
   if (selectedTimes !== undefined) {
     const view = currentView();
     selectedClasses = cellClasses(grid, selectedTimes, currentDay(), view);
+    selectedMinutes = cellMinutes(grid, selectedTimes, currentDay(), view);
     bandsLayer.setClasses(selectedClasses, classColors(view));
     clearBand();
   }
@@ -678,17 +706,38 @@ const blurWeights = (t: number): readonly number[] => [
 
 // The class drawn at a point on the map, or `NOTHING`,
 // weighing the cells around it as the bands' shader does, so that it's the band seen there.
+// Where a point on the map is in the grid, in cells, fractions of them included.
+function gridPosition(lngLat: LngLatLike): { readonly col: number; readonly row: number } {
+  const { lng, lat } = LngLat.convert(lngLat);
+  // In Web Mercator meters, as the grid is, then in cells.
+  const x = (lng / 360) * EARTH_CIRCUMFERENCE;
+  const y =
+    (Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI)) * EARTH_CIRCUMFERENCE;
+  return { col: (x - grid.x0) / grid.spacing, row: (y - grid.y0) / grid.spacing };
+}
+
+// The minutes of the cell a station's in, from the selected station, as `cellMinutes` says them.
+function minutesAt(station: Station): number {
+  const { col, row } = gridPosition([station.lon, station.lat]);
+  const atCol = Math.round(col);
+  const atRow = Math.round(row);
+  if (
+    selectedMinutes === undefined ||
+    atCol < 0 ||
+    atCol >= width ||
+    atRow < 0 ||
+    atRow >= height
+  ) {
+    return NOTHING;
+  }
+  return selectedMinutes[atRow * width + atCol] ?? NOTHING;
+}
+
 function bandAt(lngLat: LngLat): number {
   if (selectedClasses === undefined) {
     return NOTHING;
   }
-  // In Web Mercator meters, as the grid is, then in cells.
-  const x = (lngLat.lng / 360) * EARTH_CIRCUMFERENCE;
-  const y =
-    (Math.log(Math.tan(Math.PI / 4 + (lngLat.lat * Math.PI) / 360)) / (2 * Math.PI)) *
-    EARTH_CIRCUMFERENCE;
-  const col = (x - grid.x0) / grid.spacing;
-  const row = (y - grid.y0) / grid.spacing;
+  const { col, row } = gridPosition(lngLat);
   if (col < -0.5 || col > width - 0.5 || row < -0.5 || row > height - 0.5) {
     return NOTHING;
   }
@@ -717,6 +766,8 @@ function bandAt(lngLat: LngLat): number {
   return most;
 }
 
+// MapLibre's own, which a band's description wraps in, but a station's name and minutes are kept on one line past.
+const BAND_POPUP_WIDTH = "240px";
 const bandPopup = new Popup({ closeButton: false, closeOnClick: false, className: "band-popup" });
 
 highlightBand = (band: number): void => {
@@ -737,7 +788,11 @@ function showBand(band: number, lngLat: LngLat): void {
     return;
   }
   highlightBand(band);
-  bandPopup.setLngLat(lngLat).setText(describeBand(band, currentView())).addTo(map);
+  bandPopup
+    .setLngLat(lngLat)
+    .setMaxWidth(BAND_POPUP_WIDTH)
+    .setText(describeBand(band, currentView()))
+    .addTo(map);
 }
 
 restorePinnedBand = (): void => {
@@ -970,7 +1025,18 @@ await loaded;
     highlightBand(pinned?.band ?? NOTHING);
     const label = document.createElement("span");
     label.append(...stationLabel(station));
-    bandPopup.setLngLat([station.lon, station.lat]).setDOMContent(label).addTo(map);
+    // How far it is, or how much is saved getting there, in the view shown.
+    const minutes = minutesAt(station);
+    if (minutes === ONLY_QUEENSLINK) {
+      label.append(": only with QueensLink");
+    } else if (minutes !== NOTHING) {
+      label.append(`: ${minutes} min${currentView() === "saved" ? " saved" : ""}`);
+    }
+    bandPopup
+      .setLngLat([station.lon, station.lat])
+      .setMaxWidth("none")
+      .setDOMContent(label)
+      .addTo(map);
   });
   // On a phone, the touch starts a little before the tap it ends in.
   map.on("touchstart", (event: MapTouchEvent) => {
