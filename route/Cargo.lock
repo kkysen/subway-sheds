@@ -942,6 +942,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 [[package]]
 name = "raptor"
 version = "0.1.0"
+source = "git+https://github.com/kkysen/mta-od-data?rev=943608ec646bd9f39b152d19ea0294dc4a799e27#943608ec646bd9f39b152d19ea0294dc4a799e27"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -1124,6 +1125,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 [[package]]
 name = "streets"
 version = "0.1.0"
+source = "git+https://github.com/kkysen/mta-od-data?rev=943608ec646bd9f39b152d19ea0294dc4a799e27#943608ec646bd9f39b152d19ea0294dc4a799e27"
 dependencies = [
  "anyhow",
  "osmpbf",
@@ -1182,7 +1184,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
  "windows-sys 0.61.2",
