@@ -629,6 +629,8 @@ function computeTimes(): void {
       grid.cols.length,
       stations.length,
       currentSpeed(),
+      // Only the day shown, both scenarios, as the minutes saved need both.
+      [2 * days.indexOf(currentDay()), 2 * days.indexOf(currentDay()) + 1],
     );
   }
 }
