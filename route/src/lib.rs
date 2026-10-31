@@ -17,16 +17,16 @@ use pyo3::types::{PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pyfunction, pymodule, wrap_pyfunction};
 use raptor::gtfs::{Feed, Secs, parse_time};
 use raptor::raptor::Router;
-use raptor::timetable::{StopIdx, Timetable};
+use raptor::timetable::Timetable;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::walks::{Transfer, Walks};
 
-/// To be considered for boarding, R5's RAPTOR has a train leave more than 60 s
+/// R5's RAPTOR boards only a train leaving more than 60 s
 /// after the rider reaches its stop, whether on foot or by train
 /// (`FastRaptorWorker.MINIMUM_BOARD_WAIT_SEC`),
-/// so a train leaving at least 61 s after.
-const BOARD_WAIT: Secs = 61;
+/// so one leaving at least 61 s after.
+const BOARD_SLACK: Secs = 61;
 
 /// The percentile R5 reports: the median.
 const PERCENTILE: f64 = 50.0;
@@ -49,7 +49,7 @@ pub struct Request<'a> {
 /// its `PERCENTILE`th journey over a departure each minute of the window,
 /// in whole minutes rounded down, to each destination reached within `max_secs`.
 pub fn travel_times(req: &Request, origins: &[String]) -> Vec<Vec<(u32, u8)>> {
-    let router = Router::with_max_rides(req.tt, req.max_rides);
+    let router = Router::with_max_rides(req.tt, req.max_rides).with_board_slack(BOARD_SLACK);
     origins
         .par_iter()
         .map(|origin| origin_times(req, &router, origin))
@@ -58,13 +58,7 @@ pub fn travel_times(req: &Request, origins: &[String]) -> Vec<Vec<(u32, u8)>> {
 
 fn origin_times(req: &Request, router: &Router, origin: &str) -> Vec<(u32, u8)> {
     let walks = req.walks;
-    let access: Vec<(StopIdx, Secs)> = walks
-        .access
-        .get(origin)
-        .map_or(&[][..], Vec::as_slice)
-        .iter()
-        .map(|&(s, walk)| (s, walk + BOARD_WAIT))
-        .collect();
+    let access = walks.access.get(origin).map_or(&[][..], Vec::as_slice);
     let direct = walks.direct.get(origin).map_or(&[][..], Vec::as_slice);
     // Each destination's time each minute, minute-major.
     let n = req.destinations;
@@ -72,7 +66,7 @@ fn origin_times(req: &Request, router: &Router, origin: &str) -> Vec<(u32, u8)> 
     let mut labels = router.labels();
     for m in (0..req.minutes).rev() {
         let depart = req.depart + 60 * m as Secs;
-        labels.run_access(&access, depart);
+        labels.run_access(access, depart);
         let times = &mut times[m as usize * n..][..n];
         for &(d, walk) in direct {
             times[d as usize] = times[d as usize].min(walk);
@@ -108,22 +102,18 @@ fn percentile_index(n: usize, percentile: f64) -> usize {
 
 /// `feed`'s timetable for `date`,
 /// changing trains as R5 does: walking between stops by `walks`' transfers, not `transfers.txt`'s,
-/// and waiting `BOARD_WAIT` to board, as at the start.
-fn timetable(
-    feed: &Path,
-    date: Date,
-    transfers: &Path,
-) -> Result<(Timetable, Vec<Transfer>)> {
+/// and with no time to change trains at a stop but `BOARD_SLACK`.
+fn timetable(feed: &Path, date: Date, transfers: &Path) -> Result<(Timetable, Vec<Transfer>)> {
     let mut tt = Timetable::build(&Feed::open(feed)?, date)?;
     let transfers = walks::read_transfers(transfers)?;
-    tt.min_change.fill(BOARD_WAIT);
+    tt.min_change.fill(0);
     for paths in &mut tt.footpaths {
         paths.clear();
     }
     let mut unknown = Vec::new();
     for (from, to, walk) in transfers {
         match (tt.stop(&from), tt.stop(&to)) {
-            (Some(a), Some(b)) if a != b => tt.footpaths[a as usize].push((b, walk + BOARD_WAIT)),
+            (Some(a), Some(b)) if a != b => tt.footpaths[a as usize].push((b, walk)),
             (Some(_), Some(_)) => {}
             _ => unknown.push((from, to, walk)),
         }
