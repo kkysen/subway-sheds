@@ -7,7 +7,7 @@ import httpx
 import pandas as pd
 from typer import Argument, Option, Typer, echo
 
-from subway_sheds import export, gtfs, osm, paths, scenarios, travel_times
+from subway_sheds import access, export, gtfs, osm, paths, scenarios, travel_times
 from subway_sheds.grid import land_grid
 from subway_sheds.scenarios import Day, Scenario
 
@@ -131,6 +131,16 @@ def _save(times: pd.DataFrame, dest: Path, routed: set[str] | None) -> None:
         ).astype({"station": "category"})
     dest.parent.mkdir(parents=True, exist_ok=True)
     times.to_parquet(dest, index=False)
+
+
+@app.command(name="access")
+def access_() -> None:
+    """
+    Rebuild each station entrance's time to the platforms, `data/station_access.csv`,
+    from the MTA's and OSM's data now, to review and commit.
+    """
+    table = access.write()
+    echo(f"{len(table)} entrances of {table['station'].nunique()} stations")
 
 
 @app.command()
