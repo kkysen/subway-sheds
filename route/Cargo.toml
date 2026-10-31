@@ -1,0 +1,23 @@
+[package]
+name = "subway-sheds-route"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "subway_sheds_route"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow = "1.0.104"
+arrow-array = "60.0.0"
+arrow-schema = "60.0.0"
+jiff = "0.2.38"
+parquet = { version = "60.0.0", default-features = false, features = ["arrow", "zstd"] }
+pyo3 = { version = "0.30.1", features = ["anyhow", "jiff-02"] }
+# Overridden by a local checkout in `.cargo/config.toml`, if there is one.
+raptor = { git = "https://github.com/kkysen/mta-od-data", branch = "main" }
+rayon = "1.12.0"
+rustc-hash = "2.1.3"
+
+[build-dependencies]
+pyo3-build-config = "0.30.1"

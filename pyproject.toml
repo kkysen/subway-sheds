@@ -20,8 +20,16 @@ dependencies = [
 subway-sheds = "subway_sheds.cli:app"
 
 [build-system]
-requires = ["uv_build>=0.13,<0.14"]
-build-backend = "uv_build"
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "route/Cargo.toml"
+python-source = "src"
+module-name = "subway_sheds._route"
+bindings = "pyo3"
+# Routing every station takes far longer unoptimized, even for an editable install.
+profile = "release"
 
 [dependency-groups]
 dev = [
