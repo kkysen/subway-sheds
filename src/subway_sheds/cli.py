@@ -157,13 +157,13 @@ def route(
     # so that from QueensLink's new ones, the baseline is walking from where they'd be,
     # and there's saying how much they save.
     every_station = {s.id: s for scenario in Scenario for s in gtfs.stations(scenario.gtfs)}
-    for scenario, day in itertools.product(scenario_ or list(Scenario), day_ or list(Day)):
-        stations = list(every_station.values())
-        if stop_ids:
-            stations = [s for s in stations if s.id in stop_ids]
-        times, station_times = travel_times.from_stations(
-            scenario, day, stations, destinations, list(every_station.values())
-        )
+    stations = list(every_station.values())
+    if stop_ids:
+        stations = [s for s in stations if s.id in stop_ids]
+    runs = list(itertools.product(scenario_ or list(Scenario), day_ or list(Day)))
+    for scenario, day, times, station_times in travel_times.from_stations(
+        runs, stations, destinations, list(every_station.values())
+    ):
         routed = {s.id for s in stations} if stop_ids else None
         _save(times, travel_times.output_path(scenario, day), routed)
         _save(station_times, travel_times.stations_output_path(scenario, day), routed)

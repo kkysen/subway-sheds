@@ -20,10 +20,11 @@ use raptor::gtfs::{Feed, Secs, parse_time};
 use raptor::raptor::Router;
 use raptor::timetable::Timetable;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rustc_hash::FxHashMap as HashMap;
 use streets::osm::Osm;
 use streets::{Graph, Mm};
 
-use crate::walks::Walks;
+use crate::walks::{StreetWalks, Walks};
 
 /// R5's RAPTOR boards only a train leaving more than 60 s
 /// after the rider reaches its stop, whether on foot or by train
@@ -141,49 +142,90 @@ fn write_times(out: &Path, origins: &[String], times: &[Vec<(u32, u8)>]) -> Resu
     Ok(rows)
 }
 
+/// One routing: a feed on a date, departing each minute of `minutes` from `depart`,
+/// written to `out`.
+type Run = (PathBuf, Date, String, u32, PathBuf);
+
 /// Median minutes from each of `origins`, as `(id, latitude, longitude)`,
-/// to each of `destinations`, as `(latitude, longitude)`,
-/// over a departure each minute of `minutes` from `depart`,
+/// to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
 /// walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second
-/// (see `walks.rs`), written to `out`. Returns how many rows were written.
+/// (see `walks.rs`). Returns how many rows each run wrote.
+///
+/// The streets are read and walked once, for every feed's stops (see `walks.rs`).
 #[pyfunction(name = "travel_times")]
 #[allow(clippy::too_many_arguments)]
 fn py_travel_times(
     py: Python<'_>,
     osm: PathBuf,
-    feed: PathBuf,
-    date: Date,
-    depart: &str,
-    minutes: u32,
     max_rides: usize,
     max_minutes: u32,
     origins: Vec<(String, f64, f64)>,
     destinations: Vec<(f64, f64)>,
     speed: Mm,
-    out: PathBuf,
-) -> Result<usize> {
-    let Some(depart) = parse_time(depart) else {
-        bail!("not a time: {depart}");
-    };
+    runs: Vec<Run>,
+) -> Result<Vec<usize>> {
     let max_secs = max_minutes as Secs * 60;
+    let ids: Vec<String> = origins.iter().map(|(id, ..)| id.clone()).collect();
     py.detach(|| {
+        // Each feed once, in the order runs first name them, and each run's timetable.
+        let mut feeds: Vec<&PathBuf> = Vec::new();
+        for (feed, ..) in &runs {
+            if !feeds.contains(&feed) {
+                feeds.push(feed);
+            }
+        }
+        let opened = feeds
+            .iter()
+            .map(|&f| Ok((f, Feed::open(f)?)))
+            .collect::<Result<HashMap<_, _>>>()?;
+        // In the order of `runs`.
+        let mut tts = runs
+            .iter()
+            .map(|(f, date, ..)| Timetable::build(&opened[f], *date))
+            .collect::<Result<Vec<_>>>()?;
+        drop(opened);
+        // Every feed's stops, once each.
+        let mut stops: Vec<(String, f64, f64)> = Vec::new();
+        let mut seen = rustc_hash::FxHashSet::default();
+        for tt in &tts {
+            for stop in &tt.stops {
+                if let Some((lat, lon)) = stop.coords
+                    && seen.insert(stop.id.clone())
+                {
+                    stops.push((stop.id.clone(), lat, lon));
+                }
+            }
+        }
         let graph = Graph::build(&Osm::read(&osm)?);
-        let mut tt = Timetable::build(&Feed::open(&feed)?, date)?;
-        let walks = Walks::compute(&graph, &tt, &origins, &destinations, speed, max_secs);
+        let all = StreetWalks::compute(&graph, &stops, &origins, &destinations, speed, max_secs);
         drop(graph);
-        change_as_r5(&mut tt, &walks);
-        let req = Request {
-            tt: &tt,
-            walks: &walks,
-            depart,
-            minutes,
-            max_rides,
-            max_secs,
-            destinations: destinations.len(),
-        };
-        let ids: Vec<String> = origins.into_iter().map(|(id, ..)| id).collect();
-        let times = travel_times(&req, &ids);
-        write_times(&out, &ids, &times)
+
+        let mut rows = vec![0; runs.len()];
+        for &feed_path in &feeds {
+            let mine: Vec<usize> = (0..runs.len())
+                .filter(|&i| &runs[i].0 == feed_path)
+                .collect();
+            let walks = Walks::for_feed(&all, &mine.iter().map(|&i| &tts[i]).collect::<Vec<_>>());
+            for &i in &mine {
+                let (_, _, depart, minutes, out) = &runs[i];
+                let Some(depart) = parse_time(depart) else {
+                    bail!("not a time: {depart}");
+                };
+                let tt = &mut tts[i];
+                change_as_r5(tt, &walks);
+                let req = Request {
+                    tt,
+                    walks: &walks,
+                    depart,
+                    minutes: *minutes,
+                    max_rides,
+                    max_secs,
+                    destinations: destinations.len(),
+                };
+                rows[i] = write_times(out, &ids, &travel_times(&req, &ids))?;
+            }
+        }
+        Ok(rows)
     })
 }
 

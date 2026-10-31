@@ -7,21 +7,20 @@ type StrPath = str | PathLike[str]
 
 def travel_times(
     osm: StrPath,
-    feed: StrPath,
-    date: date,
-    depart: str,
-    minutes: int,
     max_rides: int,
     max_minutes: int,
     origins: list[tuple[str, float, float]],
     destinations: list[tuple[float, float]],
     speed: int,
-    out: StrPath,
-) -> int:
+    runs: list[tuple[StrPath, date, str, int, StrPath]],
+) -> list[int]:
     """
     Median minutes from each of `origins`, as `(id, latitude, longitude)`,
-    to each of `destinations`, as `(latitude, longitude)`,
-    over a departure each minute of `minutes` from `depart`,
-    walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second
-    (see `route/src/walks.rs`), written to `out`. Returns how many rows were written.
+    to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
+    as `(feed, date, depart, minutes, out)`: departing each minute of `minutes` from `depart`,
+    written to `out`, walking on the streets in `osm`, an `.osm.pbf`,
+    at `speed` millimeters a second (see `route/src/walks.rs`).
+    Returns how many rows each run wrote.
+
+    The streets are read and walked once, for every feed's stops.
     """

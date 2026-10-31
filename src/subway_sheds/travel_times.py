@@ -5,6 +5,7 @@ routed with `mta-od-data`'s RAPTOR, walking on the streets, through `subway_shed
 
 import datetime
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import geopandas as gpd
@@ -37,47 +38,60 @@ def stations_output_path(scenario: Scenario, day: Day) -> Path:
 
 
 def from_stations(
-    scenario: Scenario,
-    day: Day,
+    runs: list[tuple[Scenario, Day]],
     origins: list[gtfs.Station],
     cells: gpd.GeoDataFrame,
     stations: list[gtfs.Station],
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> Iterator[tuple[Scenario, Day, pd.DataFrame, pd.DataFrame]]:
     """
-    Median minutes from each of `origins` to each of `cells` and `stations`, walking at both ends.
+    Median minutes from each of `origins` to each of `cells` and `stations`, walking at both ends,
+    in each scenario on each day of `runs`, routed together so that the streets are walked once.
 
     Only the pairs reachable within `MAX_TIME`:
     to the cells as `station`, `cell`, and `minutes`,
     and to the stations themselves as `station`, `to_station`, and `minutes`,
     so that a station's own time doesn't count walking to the middle of the cell it's in.
     """
-    date = gtfs.service_date(scenario.gtfs, day.weekday)
     # The stations after the cells, numbered on from them, as one set of destinations.
     destinations = list(zip(cells.geometry.y, cells.geometry.x, strict=True)) + [
         (s.lat, s.lon) for s in stations
     ]
     paths.CACHE.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=paths.CACHE) as tmp:
-        out = Path(tmp) / "times.parquet"
+        outs = [Path(tmp) / f"{scenario}-{day}.parquet" for scenario, day in runs]
         _route.travel_times(
             paths.OSM_PBF,
-            scenario.gtfs,
-            date,
-            day.departure.isoformat(),
-            DEPARTURE_WINDOW // datetime.timedelta(minutes=1),
             MAX_RIDES,
             MAX_TIME // datetime.timedelta(minutes=1),
             [(s.id, s.lat, s.lon) for s in origins],
             destinations,
             WALKING_SPEED_MM_PER_S,
-            out,
+            [
+                (
+                    scenario.gtfs,
+                    gtfs.service_date(scenario.gtfs, day.weekday),
+                    day.departure.isoformat(),
+                    DEPARTURE_WINDOW // datetime.timedelta(minutes=1),
+                    out,
+                )
+                for (scenario, day), out in zip(runs, outs, strict=True)
+            ],
         )
-        times = pd.read_parquet(out).rename(columns={"origin": "station", "destination": "cell"})
-    to_station = times["cell"] >= len(cells)
-    station_times = times[to_station].assign(
-        to_station=lambda t: [stations[i - len(cells)].id for i in t["cell"]]
-    )[["station", "to_station", "minutes"]]
-    return (
-        times[~to_station].astype({"station": "category", "cell": "int32", "minutes": "uint8"}),
-        station_times.astype({"station": "category", "to_station": "category", "minutes": "uint8"}),
-    )
+        for (scenario, day), out in zip(runs, outs, strict=True):
+            times = pd.read_parquet(out).rename(
+                columns={"origin": "station", "destination": "cell"}
+            )
+            to_station = times["cell"] >= len(cells)
+            station_times = times[to_station].assign(
+                to_station=lambda t: [stations[i - len(cells)].id for i in t["cell"]]
+            )[["station", "to_station", "minutes"]]
+            yield (
+                scenario,
+                day,
+                times[~to_station].astype(
+                    {"station": "category", "cell": "int32", "minutes": "uint8"}
+                ),
+                station_times.astype(
+                    {"station": "category", "to_station": "category", "minutes": "uint8"}
+                ),
+            )
