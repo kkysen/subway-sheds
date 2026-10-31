@@ -314,7 +314,9 @@ const fullMap = element("#full-map", HTMLAnchorElement);
 
 // Narrow screens, as on phones, where the controls and credits open would cover much of the map.
 // Or short ones, as on phones turned sideways, where the controls open are 300px of under 500.
-const small = window.matchMedia("(max-width: 600px), (max-height: 500px)").matches;
+// The same as `style.css`'s compact layout.
+const smallScreen = window.matchMedia("(max-width: 600px), (max-height: 500px)");
+const small = smallScreen.matches;
 
 // Collapsed to start with on small screens.
 const details = element("#controls details", HTMLDetailsElement);
@@ -465,6 +467,23 @@ new MutationObserver(prependCredits).observe(attribution, { childList: true });
 
 // The whole page rather than just the map, which would leave the controls out.
 map.addControl(new FullscreenControl({ container: document.body }));
+
+// In the controls' heading bar on small screens, so that the controls can take the full width below it,
+// and back in the map's corner otherwise.
+const fullscreenGroup = element(".maplibregl-ctrl-fullscreen", HTMLButtonElement).parentElement;
+const fullscreenCorner = fullscreenGroup?.parentElement;
+if (fullscreenGroup !== null && fullscreenCorner !== null && fullscreenCorner !== undefined) {
+  // Not also toggling the controls open or closed, as clicking anything else in their heading bar does.
+  fullscreenGroup.addEventListener("click", (event) => event.preventDefault());
+  const placeFullscreen = (): void => {
+    (smallScreen.matches ? element("#controls summary", HTMLElement) : fullscreenCorner).append(
+      fullscreenGroup,
+    );
+    showSummaryStatus();
+  };
+  placeFullscreen();
+  smallScreen.addEventListener("change", placeFullscreen);
+}
 
 // Listened for before awaiting the data, which the map can finish loading before.
 const loaded = new Promise((resolve) => map.once("load", resolve));

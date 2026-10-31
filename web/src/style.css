@@ -215,10 +215,12 @@ body,
   accent-color: #000000;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 600px), (max-height: 500px) {
   #controls {
-    /* Right up to the fullscreen button, open or collapsed, so that the line under the heading has room for long names. */
-    width: calc(100% - 59px);
+    /* The full width, with the fullscreen button moved into the heading bar by `main.ts`,
+       so that the line under the heading has room for long names,
+       but no wider than the choices need, as on phones turned sideways. */
+    width: min(560px, calc(100% - 20px));
     font-size: 12px;
   }
 
@@ -238,6 +240,26 @@ body,
   #controls legend,
   #controls h2 {
     font-size: 13px;
+  }
+
+  /* The fullscreen button at the right end of the heading bar, after the marker. */
+  #controls summary {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  #controls summary .maplibregl-ctrl-group {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  /* Only as tall as the heading's line, rather than MapLibre's 29px, so that the bar's no taller for it. */
+  #controls summary .maplibregl-ctrl-group button {
+    width: 20px;
+    height: 20px;
+  }
+
+  #controls summary .maplibregl-ctrl-icon {
+    background-size: contain;
   }
 }
 
