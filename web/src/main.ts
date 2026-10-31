@@ -857,6 +857,9 @@ function clearBand(): void {
   restorePinnedBand();
 }
 
+// How long a touch on a station is held to say its minutes rather than pick it.
+const HOLD_MS = 500;
+
 // The MTA's M bullet's orange, from its SVG.
 const M_BULLET_ORANGE = "#ff6319";
 
@@ -1031,6 +1034,11 @@ await loaded;
   });
 
   map.on("click", (event: MapMouseEvent) => {
+    // Not the tap a hold ends in, which would pick the station held.
+    if (held) {
+      held = false;
+      return;
+    }
     const fromMouse =
       event.originalEvent instanceof PointerEvent && event.originalEvent.pointerType === "mouse";
     const id = stationAt(event, fromMouse ? MOUSE_RADIUS : HIT_RADIUS);
@@ -1053,6 +1061,9 @@ await loaded;
       return;
     }
     // Which station a click would pick, as they're close together in much of the city.
+    showStationPopup(station);
+  });
+  function showStationPopup(station: Station): void {
     highlightBand(pinned?.band ?? NOTHING);
     const label = document.createElement("span");
     label.append(...stationLabel(station));
@@ -1068,12 +1079,39 @@ await loaded;
       .setMaxWidth("none")
       .setDOMContent(label)
       .addTo(map);
-  });
+  }
+  // On a phone, which can't point, holding a station says what pointing at it would,
+  // without picking it, until the next tap.
+  let holding: number | undefined;
+  let held = false;
+  const stopHolding = (): void => {
+    clearTimeout(holding);
+    holding = undefined;
+  };
   // On a phone, the touch starts a little before the tap it ends in.
   map.on("touchstart", (event: MapTouchEvent) => {
+    stopHolding();
+    held = false;
     const id = event.points.length === 1 ? stationAt(event) : undefined;
-    if (id !== undefined) {
-      prefetchTimes(id);
+    if (id === undefined) {
+      return;
+    }
+    prefetchTimes(id);
+    holding = window.setTimeout(() => {
+      const station = stationsById.get(id);
+      if (station !== undefined) {
+        held = true;
+        showStationPopup(station);
+      }
+    }, HOLD_MS);
+  });
+  map.on("touchmove", stopHolding);
+  map.on("touchcancel", stopHolding);
+  map.on("touchend", stopHolding);
+  // Not the browser's own menu for a long press.
+  map.getCanvas().addEventListener("contextmenu", (event) => {
+    if (held) {
+      event.preventDefault();
     }
   });
   map.getCanvas().addEventListener("mouseleave", restorePinnedBand);
