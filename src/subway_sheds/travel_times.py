@@ -1,59 +1,31 @@
-"""Travel times from subway stations to the grid over the city, routed with R5."""
+"""
+Travel times from subway stations to the grid over the city,
+routed with `mta-od-data`'s RAPTOR, walking on the streets, through `subway_sheds._route`.
+"""
 
 import datetime
-import os
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+import tempfile
 from pathlib import Path
-from typing import override
 
 import geopandas as gpd
-import numpy as np
 import pandas as pd
-import r5py
 
-from subway_sheds import gtfs, paths
-from subway_sheds.grid import WGS84
+from subway_sheds import _route, gtfs, paths
 from subway_sheds.scenarios import Day, Scenario
 
-# From each day's departure time, R5 departs every minute in the window
-# and reports percentiles across them,
+# From each day's departure time, departing every minute in the window
+# and taking the median trip across them,
 # so waiting for a train counts the way it does for someone who doesn't time their arrival.
 DEPARTURE_WINDOW = datetime.timedelta(hours=1)
-PERCENTILES = [50]
 # Past the 90 minutes the page draws travel times out to,
 # so that it can tell how much QueensLink saves places that take longer than that without it.
 MAX_TIME = datetime.timedelta(minutes=120)
-# 3 mph, a typical adult's pace, rather than R5's default, 3.6 km/h, which is slower.
+# 3 mph, a typical adult's pace.
 WALKING_SPEED_KM_PER_H = 3 * 1.609344
-
-
-class _ParallelTravelTimeMatrix(r5py.TravelTimeMatrix):
-    """
-    A `TravelTimeMatrix` that routes its origins on several threads at once.
-
-    `r5py` routes them one at a time, keeping only a few cores busy,
-    though it defines how many threads to use (`NUM_THREADS`, half the cores).
-    Each origin is routed in Java, which `jpype` runs without holding the GIL.
-    One thread per core rather than half as many routes about 1.7 times as fast
-    (11 s rather than 19 s for 150 stations on 4 cores, like a GitHub runner's),
-    and twice as many again is no faster.
-    """
-
-    NUM_THREADS = os.process_cpu_count() or 1
-
-    @override
-    def _compute(self) -> pd.DataFrame:
-        self._prepare_origins_destinations()
-        self.request.destinations = self.destinations
-        with ThreadPoolExecutor(self.NUM_THREADS) as pool:
-            matrices = list(pool.map(self._travel_times_per_origin, self.origins.id))
-        return pd.concat(matrices, ignore_index=True)
-
-
-# `TravelTimeMatrix` subclasses `GeoDataFrame`, so type checkers check calls to it against
-# pandas' constructor overloads rather than its own `__init__`, which takes keywords for R5.
-_travel_time_matrix: Callable[..., pd.DataFrame] = _ParallelTravelTimeMatrix
+# In millimeters a second, rounded down, as the routing walks.
+WALKING_SPEED_MM_PER_S = int(WALKING_SPEED_KM_PER_H / 3600 * 1000 * 1000)
+# Most rides in a journey, as R5 routed before.
+MAX_RIDES = 8
 
 
 def output_path(scenario: Scenario, day: Day) -> Path:
@@ -62,22 +34,6 @@ def output_path(scenario: Scenario, day: Day) -> Path:
 
 def stations_output_path(scenario: Scenario, day: Day) -> Path:
     return paths.TRAVEL_TIMES / f"{scenario}-{day}-stations.parquet"
-
-
-def _points(stations: list[gtfs.Station], ids: object) -> gpd.GeoDataFrame:
-    return gpd.GeoDataFrame(
-        {"id": ids},
-        geometry=gpd.points_from_xy([s.lon for s in stations], [s.lat for s in stations]),
-        crs=WGS84,
-    )
-
-
-def station_points(stations: list[gtfs.Station], first_id: int) -> gpd.GeoDataFrame:
-    """
-    `stations` as destinations after cells numbered up to `first_id`, numbered on from them,
-    as R5 takes one set of destinations.
-    """
-    return _points(stations, first_id + np.arange(len(stations)))
 
 
 def from_stations(
@@ -96,22 +52,27 @@ def from_stations(
     so that a station's own time doesn't count walking to the middle of the cell it's in.
     """
     date = gtfs.service_date(scenario.gtfs, day.weekday)
-    to_stations = station_points(stations, len(cells))
-    matrix = _travel_time_matrix(
-        r5py.TransportNetwork(paths.OSM_PBF, [scenario.gtfs]),
-        origins=_points(origins, [s.id for s in origins]),
-        destinations=pd.concat([cells, to_stations], ignore_index=True),
-        departure=datetime.datetime.combine(date, day.departure),
-        departure_time_window=DEPARTURE_WINDOW,
-        percentiles=PERCENTILES,
-        transport_modes=[r5py.TransportMode.TRANSIT, r5py.TransportMode.WALK],
-        max_time=MAX_TIME,
-        speed_walking=WALKING_SPEED_KM_PER_H,
-    )
-    times = pd.DataFrame(matrix).rename(
-        columns={"from_id": "station", "to_id": "cell", "travel_time": "minutes"}
-    )
-    times = times.dropna(subset=["minutes"])
+    # The stations after the cells, numbered on from them, as one set of destinations.
+    destinations = list(zip(cells.geometry.y, cells.geometry.x, strict=True)) + [
+        (s.lat, s.lon) for s in stations
+    ]
+    paths.CACHE.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=paths.CACHE) as tmp:
+        out = Path(tmp) / "times.parquet"
+        _route.travel_times(
+            paths.OSM_PBF,
+            scenario.gtfs,
+            date,
+            day.departure.isoformat(),
+            DEPARTURE_WINDOW // datetime.timedelta(minutes=1),
+            MAX_RIDES,
+            MAX_TIME // datetime.timedelta(minutes=1),
+            [(s.id, s.lat, s.lon) for s in origins],
+            destinations,
+            WALKING_SPEED_MM_PER_S,
+            out,
+        )
+        times = pd.read_parquet(out).rename(columns={"origin": "station", "destination": "cell"})
     to_station = times["cell"] >= len(cells)
     station_times = times[to_station].assign(
         to_station=lambda t: [stations[i - len(cells)].id for i in t["cell"]]

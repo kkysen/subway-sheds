@@ -3,12 +3,11 @@ import itertools
 from pathlib import Path
 from typing import Annotated
 
-import geopandas as gpd
 import httpx
 import pandas as pd
 from typer import Argument, Option, Typer, echo
 
-from subway_sheds import export, gtfs, osm, paths, raptor_check, scenarios, travel_times
+from subway_sheds import export, gtfs, osm, paths, scenarios, travel_times
 from subway_sheds.grid import land_grid
 from subway_sheds.scenarios import Day, Scenario
 
@@ -172,144 +171,6 @@ def route(
             f"{scenario} {day}: {len(stations)} stations, {len(times)} reachable cells, "
             f"{len(station_times)} reachable stations"
         )
-
-
-def _differences(name: str, both: pd.DataFrame) -> None:
-    off = (both["raptor"] - both["r5"]).abs()
-    shares = ", ".join(f"{(off <= m).mean():.1%} within {m}" for m in (0, 1, 2, 5))
-    echo(f"  {name}: {len(both)} reached by both: {shares} min")
-
-
-def _compared_stations() -> tuple[gpd.GeoDataFrame, list[gtfs.Station]]:
-    """The cells and every scenario's stations, as `route` routes from and to them."""
-    cells = land_grid().points()
-    return cells, list({s.id: s for sc in Scenario for s in gtfs.stations(sc.gtfs)}.values())
-
-
-@app.command(name="r5-walks")
-def r5_walks(
-    scenario: Annotated[Scenario, Option(help="The scenario whose walks to write.")],
-) -> None:
-    """
-    Write R5's own walks, in seconds, for `compare-raptor`.
-
-    One scenario at a time, since each loads R5's network into the JVM for good.
-    """
-    cells, stations = _compared_stations()
-    destinations = pd.concat(
-        [cells, travel_times.station_points(stations, len(cells))], ignore_index=True
-    )
-    raptor_check.write_walks(scenario, Day.WEEKDAY, stations, destinations)
-    echo(f"wrote {raptor_check.walks_dir(scenario).relative_to(paths.ROOT)}")
-
-
-@app.command(name="compare-raptor")
-def compare_raptor(
-    scenario_: Annotated[
-        list[Scenario] | None,
-        Option("--scenario", help="A scenario to compare, repeatable; every one if none."),
-    ] = None,
-    day_: Annotated[
-        list[Day] | None,
-        Option("--day", help="A day to compare, repeatable; every one if none."),
-    ] = None,
-) -> None:
-    """Route with RAPTOR walking R5's own walks from `r5-walks`, and compare with R5's `route`."""
-    cells, stations = _compared_stations()
-    destinations = len(cells) + len(stations)
-    for scenario, day in itertools.product(scenario_ or list(Scenario), day_ or list(Day)):
-        rows, unknown = raptor_check.route(
-            scenario, day, stations, destinations, raptor_check.walks_dir(scenario)
-        )
-        echo(
-            f"{scenario} {day}: RAPTOR wrote {rows} rows; "
-            f"{len(unknown)} of R5's transfers are between stops it doesn't serve"
-        )
-        times = raptor_check.compare(scenario, day, len(cells), stations)
-        both = times.dropna(subset=["r5", "raptor"])
-        to_station = both["destination"] >= len(cells)
-        _differences("to stations", both[to_station])
-        _differences("to cells", both[~to_station])
-        echo(
-            f"  reached by R5 only: {times['raptor'].isna().sum()}, "
-            f"by RAPTOR only: {times['r5'].isna().sum()}"
-        )
-        worst = both[to_station].assign(off=lambda t: t["raptor"] - t["r5"])
-        worst = worst.reindex(worst["off"].abs().sort_values(ascending=False).index).head(10)
-        for origin, destination, r5, raptor in zip(
-            worst["origin"].tolist(),
-            worst["destination"].tolist(),
-            worst["r5"].tolist(),
-            worst["raptor"].tolist(),
-            strict=True,
-        ):
-            from_, to = stations[origin], stations[destination - len(cells)]
-            echo(
-                f"    {from_.name} ({from_.id}) to {to.name} ({to.id}): "
-                f"R5 {r5:.0f}, RAPTOR {raptor:.0f} min"
-            )
-
-
-@app.command(name="street-walks")
-def street_walks(
-    scenario_: Annotated[
-        list[Scenario] | None,
-        Option(
-            "--scenario", help="A scenario whose walks to write, repeatable; every one if none."
-        ),
-    ] = None,
-) -> None:
-    """Write the walks `r5-walks` reads from R5, computed by the `streets` crate instead."""
-    cells, stations = _compared_stations()
-    destinations = pd.concat(
-        [cells, travel_times.station_points(stations, len(cells))], ignore_index=True
-    )
-    for scenario in scenario_ or list(Scenario):
-        raptor_check.write_street_walks(scenario, Day.WEEKDAY, stations, destinations)
-        echo(f"wrote {raptor_check.street_walks_dir(scenario).relative_to(paths.ROOT)}")
-
-
-def _seconds_off(name: str, t: pd.DataFrame, a: str, b: str, unit: str, within: list[int]) -> None:
-    both = t.dropna(subset=[a, b])
-    off = (both[b] - both[a]).abs()
-    shares = ", ".join(f"{(off <= w).mean():.1%} within {w}" for w in within)
-    echo(
-        f"  {name}: {len(both)} in both: {shares} {unit}; "
-        f"mean {(both[b] - both[a]).mean():+.2f}; "
-        f"only {a}: {t[b].isna().sum()}, only {b}: {t[a].isna().sum()}"
-    )
-
-
-@app.command(name="compare-walks")
-def compare_walks(
-    scenario_: Annotated[
-        list[Scenario] | None,
-        Option("--scenario", help="A scenario to compare, repeatable; every one if none."),
-    ] = None,
-    day_: Annotated[
-        list[Day] | None,
-        Option("--day", help="A day to compare, repeatable; every one if none."),
-    ] = None,
-) -> None:
-    """
-    Compare the `streets` crate's walks from `street-walks` with R5's from `r5-walks`,
-    table by table, and RAPTOR's times walking each.
-    """
-    cells, stations = _compared_stations()
-    destinations = len(cells) + len(stations)
-    for scenario in scenario_ or list(Scenario):
-        echo(f"{scenario} walks, in seconds:")
-        for table, t in raptor_check.compare_walks(scenario).items():
-            _seconds_off(table, t, "r5", "streets", "s", [0, 1, 5, 30])
-        for day in day_ or list(Day):
-            raptor_check.route(
-                scenario, day, stations, destinations, raptor_check.street_walks_dir(scenario)
-            )
-            t = raptor_check.compare_raptors(scenario, day)
-            to_station = t["destination"] >= len(cells)
-            echo(f"{scenario} {day}, RAPTOR's minutes on each's walks:")
-            _seconds_off("to stations", t[to_station], "r5", "streets", "min", [0, 1, 2, 5])
-            _seconds_off("to cells", t[~to_station], "r5", "streets", "min", [0, 1, 2, 5])
 
 
 @app.command(name="export")
