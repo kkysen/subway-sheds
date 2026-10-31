@@ -12,6 +12,8 @@ from pathlib import Path
 import brotli
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from subway_sheds import access, gtfs, lines, paths, travel_times
 from subway_sheds.grid import SPACING, Grid
@@ -54,6 +56,24 @@ class _BrotliFiles:
             written.result()
 
 
+def _station_rows(ids: pa.ChunkedArray, index: dict[str, int]) -> np.ndarray:
+    """Each of `ids`' index in `stations.json`, by their dictionary, not their many rows."""
+    encoded = ids.combine_chunks().dictionary_encode()
+    lookup = np.array(
+        [index.get(str(s), 0) for s in encoded.dictionary.to_pylist()], dtype=np.uint16
+    )
+    return lookup[encoded.indices.to_numpy()]
+
+
+def _bounds(groups: np.ndarray, n: int) -> np.ndarray:
+    """Where each of `n` groups' rows start in `groups`, which has each's together, and end."""
+    bounds = np.zeros(n + 1, dtype=np.int64)
+    changes = np.flatnonzero(np.concatenate([[True], groups[1:] != groups[:-1]]))
+    ends = np.append(changes[1:], len(groups))
+    bounds[groups[changes].astype(np.int64) + 1] = ends - changes
+    return np.cumsum(bounds)
+
+
 def _deltas(values: np.ndarray, first: np.ndarray) -> np.ndarray:
     """Each of `values` less the one before it, but where `first`, which starts a series."""
     values = values.astype(np.int64)
@@ -74,10 +94,13 @@ def write(grid: Grid) -> None:
     - `routes.json`: each route's name and colors, by its ID.
     - `patterns.json`: in each run, by day, then fare, then scenario,
       each pattern's route and its stops' stations, as `stations.json` lists them.
-    - `routes/{station}.bin`: the journey from the station to each station at the minute
-      its arrival there is the median of, in each run, by day, then fare, then scenario,
-      then station, as `stations.json` lists them:
-      a `uint8` count of legs for each, then every leg, as five little-endian `uint16`s,
+    - `routes/{station}.bin`: the journeys from the station to each station,
+      each departing at the minute it was read back at and every minute before
+      until the one before it, so that the page can show the one behind any trip it times,
+      in each run, by day, then fare, then scenario, then station, as `stations.json` lists them:
+      a `uint8` count of journeys for each, then each journey's minute, a `uint8`,
+      as the change from the one before but a station's first, then each's count of legs, a `uint8`,
+      then every leg, as five little-endian `uint16`s,
       a ride's pattern and the positions in it it boards and gets off at,
       or `WALK_LEG` and the stations a walk between stations is from and to,
       then when it starts, in seconds from the window's start for a journey's first leg
@@ -245,42 +268,87 @@ def write(grid: Grid) -> None:
     (paths.WEB_DATA / "patterns.json").write_text(json.dumps(patterns, separators=(",", ":")))
     routes_dir = paths.WEB_DATA / "routes"
     routes_dir.mkdir(exist_ok=True)
-    counts = np.zeros((len(stations), len(runs), len(stations)), dtype=np.uint8)
-    legs_of: list[list[pd.DataFrame]] = []
-    for r, (day, fare, scenario) in enumerate(runs):
-        legs = pd.read_parquet(travel_times.routes_path(scenario, day, fare))
-        legs = legs.assign(origin=rows_of(legs["station"]), dest=rows_of(legs["to_station"]), run=r)
-        walk = legs["pattern"] == travel_times.WALK
-        legs["a"] = np.where(walk, [index.get(str(s), 0) for s in legs["from"]], legs["board"])
-        legs["b"] = np.where(walk, [index.get(str(s), 0) for s in legs["to"]], legs["alight"])
-        legs["p"] = np.where(walk, WALK_LEG, legs["pattern"])
-        legs_of.append([g for _, g in legs.groupby("origin")])
-        sizes = legs.groupby(["origin", "dest"]).size()
-        counts[sizes.index.get_level_values(0), r, sizes.index.get_level_values(1)] = (
-            sizes.to_numpy()
+    # Each run's legs, as `route` writes them: by origin, then destination, minute, and leg,
+    # as compact arrays, sliced by origin below rather than grouped, as there are tens of millions.
+    columns_of: list[dict[str, np.ndarray]] = []
+    for day, fare, scenario in runs:
+        table = pq.read_table(travel_times.routes_path(scenario, day, fare))
+        walk = table["pattern"].to_numpy() == travel_times.WALK
+        origin = _station_rows(table["station"], index)
+        columns_of.append(
+            {
+                "origin": origin,
+                "dest": _station_rows(table["to_station"], index),
+                "minute": table["minute"].to_numpy(),
+                "leg": table["leg"].to_numpy(),
+                "p": np.where(walk, WALK_LEG, table["pattern"].to_numpy()).astype(np.uint16),
+                "a": np.where(
+                    walk, _station_rows(table["from"], index), table["board"].to_numpy()
+                ).astype(np.uint16),
+                "b": np.where(
+                    walk, _station_rows(table["to"], index), table["alight"].to_numpy()
+                ).astype(np.uint16),
+                "start": table["start"].to_numpy(),
+                "end": table["end"].to_numpy(),
+                # Where each origin's rows start and end, as they're together.
+                "bounds": _bounds(origin, len(stations)),
+            }
         )
-    by_origin: dict[int, list[pd.DataFrame]] = {}
-    for groups in legs_of:
-        for g in groups:
-            by_origin.setdefault(int(g["origin"].iloc[0]), []).append(g)
+        del table
     for station, i in index.items():
-        legs = (
-            pd.concat(by_origin[i]).sort_values(["run", "dest", "leg"])
-            if i in by_origin
-            else pd.DataFrame({"p": [], "a": [], "b": [], "start": [], "end": []})
+        counts = np.zeros((len(runs), len(stations)), dtype=np.uint8)
+        pieces = [
+            {k: v[c["bounds"][i] : c["bounds"][i + 1]] for k, v in c.items() if k != "bounds"}
+            for c in columns_of
+        ]
+        legs = {k: np.concatenate([piece[k] for piece in pieces]) for k in pieces[0]}
+        run = np.repeat(np.arange(len(runs)), [len(piece["leg"]) for piece in pieces])
+        # Each journey, starting where its run, destination, or minute changes,
+        # and its legs: none for one walked from the origin, on a row of its own.
+        starts = np.flatnonzero(
+            np.concatenate(
+                [
+                    [True],
+                    (run[1:] != run[:-1])
+                    | (legs["dest"][1:] != legs["dest"][:-1])
+                    | (legs["minute"][1:] != legs["minute"][:-1]),
+                ]
+            )
+        )[: len(run)]
+        has_leg = legs["leg"] != travel_times.NO_LEGS
+        leg_counts = (
+            np.add.reduceat(has_leg.astype(np.uint8), starts) if len(starts) else np.zeros(0, int)
         )
-        first = legs["leg"].to_numpy() == 0 if len(legs) else np.zeros(0, dtype=bool)
-        start = legs["start"].to_numpy(dtype=np.int64)
-        end = legs["end"].to_numpy(dtype=np.int64)
-        before = np.concatenate([[0], end[:-1]])
+        journey_run = run[starts]
+        journey_dest = legs["dest"][starts]
+        np.add.at(counts, (journey_run, journey_dest), 1)
+        first_journey = np.concatenate(
+            [
+                [True],
+                (journey_run[1:] != journey_run[:-1]) | (journey_dest[1:] != journey_dest[:-1]),
+            ]
+        )[: len(starts)]
+        start = legs["start"][has_leg].astype(np.int64)
+        end = legs["end"][has_leg].astype(np.int64)
+        first = legs["leg"][has_leg] == 0
+        before = np.concatenate([[0], end[:-1]])[: len(end)]
         fields = np.column_stack(
             [
-                legs[["p", "a", "b"]].to_numpy(dtype=np.int64),
+                legs["p"][has_leg],
+                legs["a"][has_leg],
+                legs["b"][has_leg],
                 np.where(first, start, start - before),
                 end - start,
             ]
         ).astype("<u2")
-        files.write(routes_dir / f"{station}.bin", counts[i].tobytes() + fields.tobytes())
+        files.write(
+            routes_dir / f"{station}.bin",
+            counts.tobytes()
+            + _deltas(legs["minute"][starts], first_journey).astype(np.uint8).tobytes()
+            + leg_counts.astype(np.uint8).tobytes()
+            + fields.tobytes(),
+        )
+    del columns_of
 
     # When, from the window's start, rather than how long after each departure.
     reached = seconds != UNREACHED

@@ -96,6 +96,8 @@ export function parseArrivals(buffer: ArrayBuffer, stations: number): Arrivals {
 export interface TravelTimes {
   readonly times: Uint8Array;
   readonly exitFrom: Uint16Array;
+  // And the minute of the window its median trip departs, by run.
+  readonly exitMinute: Uint8Array;
 }
 export const NO_STATION = 0xffff;
 
@@ -127,6 +129,7 @@ export function travelTimes(
   const stride = cells + stations;
   const times = new Uint8Array(RUNS * stride).fill(UNREACHED);
   const exitFrom = new Uint16Array(RUNS * cells).fill(NO_STATION);
+  const exitMinute = new Uint8Array(RUNS * cells);
   // The earliest time, from the window's start, each cell is reached by train this minute,
   // and the station walked out of to it.
   const best = new Uint16Array(cells);
@@ -178,6 +181,11 @@ export function travelTimes(
       times[first + cell] = minutes(trip);
       if (trip !== UNREACHED_SECONDS) {
         exitFrom[run * cells + cell] = median % 0x10000;
+        // The first minute of the median trip, as `route` sorts ties.
+        exitMinute[run * cells + cell] = Math.max(
+          trips.subarray(cell * MINUTES, (cell + 1) * MINUTES).indexOf(median),
+          0,
+        );
       }
     }
     for (let s = 0; s < stations; s++) {
@@ -188,7 +196,7 @@ export function travelTimes(
       times[first + cells + s] = minutes(each.sort()[MEDIAN] ?? UNREACHED_SECONDS);
     }
   }
-  return { times, exitFrom };
+  return { times, exitFrom, exitMinute };
 }
 
 // The minute of the window departing at which `station` is reached at its median in `run`,
@@ -249,49 +257,80 @@ export interface RouteLeg {
 const LEG_FIELDS = 5;
 export const WALK_LEG = 0xffff;
 
-// The journeys from a station to every station, at the minute each is timed by, in each run.
+// The journeys from a station to every station in each run,
+// each read back departing at its minute and taken every minute before until the one before it.
 export interface Routes {
-  // Where each run's station's legs start, run-major, and the last one's end.
+  // Where each run's station's journeys start, run-major, and the last one's end.
   readonly starts: Uint32Array;
+  // Each journey's minute, ascending for each station.
+  readonly minutes: Uint8Array;
+  // Where each journey's legs start, and the last one's end.
+  readonly legStarts: Uint32Array;
   readonly legs: Uint16Array;
 }
 
 export function parseRoutes(buffer: ArrayBuffer, stations: number): Routes {
-  const counts = new Uint8Array(buffer, 0, RUNS * stations);
+  const bytes = new Uint8Array(buffer);
+  const counts = bytes.subarray(0, RUNS * stations);
   const starts = new Uint32Array(RUNS * stations + 1);
   for (let i = 0; i < counts.length; i++) {
     starts[i + 1] = (starts[i] ?? 0) + (counts[i] ?? 0);
   }
-  const view = new DataView(buffer, RUNS * stations);
-  const legs = new Uint16Array(LEG_FIELDS * (starts[RUNS * stations] ?? 0));
+  const journeys = starts[RUNS * stations] ?? 0;
+  // Each journey's minute, from the one before but a station's first.
+  const minutes = bytes.slice(RUNS * stations, RUNS * stations + journeys);
+  for (let i = 0; i < RUNS * stations; i++) {
+    for (let k = (starts[i] ?? 0) + 1; k < (starts[i + 1] ?? 0); k++) {
+      minutes[k] = (minutes[k] ?? 0) + (minutes[k - 1] ?? 0);
+    }
+  }
+  const legCounts = bytes.subarray(RUNS * stations + journeys, RUNS * stations + 2 * journeys);
+  const legStarts = new Uint32Array(journeys + 1);
+  for (let k = 0; k < journeys; k++) {
+    legStarts[k + 1] = (legStarts[k] ?? 0) + (legCounts[k] ?? 0);
+  }
+  const view = new DataView(buffer, RUNS * stations + 2 * journeys);
+  const legs = new Uint16Array(LEG_FIELDS * (legStarts[journeys] ?? 0));
   for (let k = 0; k < legs.length; k++) {
     legs[k] = view.getUint16(2 * k, true);
   }
   // When each leg starts and ends, from when it starts after the leg before, or the window for the first,
   // and how long it takes.
-  for (let i = 0; i < RUNS * stations; i++) {
+  for (let j = 0; j < journeys; j++) {
     let end = 0;
-    for (let k = starts[i] ?? 0; k < (starts[i + 1] ?? 0); k++) {
+    for (let k = legStarts[j] ?? 0; k < (legStarts[j + 1] ?? 0); k++) {
       const at = LEG_FIELDS * k;
-      const start = (k > (starts[i] ?? 0) ? end : 0) + (legs[at + 3] ?? 0);
+      const start = (k > (legStarts[j] ?? 0) ? end : 0) + (legs[at + 3] ?? 0);
       end = start + (legs[at + 4] ?? 0);
       legs[at + 3] = start;
       legs[at + 4] = end;
     }
   }
-  return { starts, legs };
+  return { starts, minutes, legStarts, legs };
 }
 
-// The legs of the journey to `station` in `run`, none if it isn't reached by train.
+// The legs of the journey to `station` in `run` departing at `minute`, as `route` picks it:
+// the first read back at that minute or after, none if it isn't reached by train.
 export function routeTo(
   routes: Routes,
   run: number,
   station: number,
   stations: number,
+  minute: number,
 ): RouteLeg[] {
   const i = run * stations + station;
+  let journey = -1;
+  for (let j = routes.starts[i] ?? 0; j < (routes.starts[i + 1] ?? 0); j++) {
+    if ((routes.minutes[j] ?? 0) >= minute) {
+      journey = j;
+      break;
+    }
+  }
   const legs: RouteLeg[] = [];
-  for (let k = routes.starts[i] ?? 0; k < (routes.starts[i + 1] ?? 0); k++) {
+  if (journey < 0) {
+    return legs;
+  }
+  for (let k = routes.legStarts[journey] ?? 0; k < (routes.legStarts[journey + 1] ?? 0); k++) {
     const at = LEG_FIELDS * k;
     legs.push({
       pattern: routes.legs[at] ?? WALK_LEG,

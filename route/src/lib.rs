@@ -102,10 +102,11 @@ pub struct RouteLeg {
 /// `RouteLeg::pattern` for a walk.
 pub const WALK: u32 = u32::MAX;
 
-/// An origin's journey to each station it reaches by train,
-/// departing at the minute its arrival there is the `PERCENTILE`th of:
-/// the trip the page times the station by.
-pub type Routes = Vec<(u32, Vec<RouteLeg>)>;
+/// An origin's journeys to each station it reaches by train, as `(station, minute, legs)`,
+/// each read back departing at `minute` when the station's arrival differs from departing the minute after,
+/// and the journey departing any minute until the one before it read back, ascending:
+/// so that the page can show the one behind any trip it times, a station's or a cell's.
+pub type Routes = Vec<(u32, u8, Vec<RouteLeg>)>;
 
 /// What `origin_times` gives for an origin.
 pub type OriginTimes = (Vec<(u32, u8)>, Arrivals, Routes);
@@ -263,24 +264,19 @@ fn origin_times(
             (t <= req.max_secs).then_some((s as u32, m as u8, t as u16))
         })
         .collect();
-    // Each station's journey at the minute its arrival is the median of,
-    // read back at that minute or the latest after it with the same arrival.
-    let mut each_minute: Vec<(Secs, usize)> = Vec::with_capacity(req.minutes as usize);
-    let routes = (0..ns)
-        .filter_map(|station| {
-            each_minute.clear();
-            each_minute
-                .extend((0..req.minutes as usize).map(|m| (at_stations[m * ns + station], m)));
-            each_minute.sort_unstable();
-            let (ride, minute) = each_minute[index];
-            if ride > req.max_secs {
-                return None;
-            }
-            let (_, legs) = journeys[station]
-                .iter()
-                .rev()
-                .find(|(m, _)| usize::from(*m) >= minute)?;
-            Some((station as u32, legs.clone()))
+    // Each station's journeys within `max_secs`, earliest departure first.
+    let at_stations = &at_stations;
+    let routes = journeys
+        .into_iter()
+        .enumerate()
+        .flat_map(|(station, journeys)| {
+            journeys.into_iter().rev().filter_map(move |(m, legs)| {
+                (at_stations[usize::from(m) * ns + station] <= req.max_secs).then_some((
+                    station as u32,
+                    m,
+                    legs,
+                ))
+            })
         })
         .collect();
     (cells, arrivals, routes)
@@ -501,22 +497,39 @@ fn beside(out: &Path, what: &str) -> PathBuf {
     out.with_file_name(format!("{stem}-{what}.parquet"))
 }
 
-/// Writes each origin's routes as `origin`, `station`, `leg`,
-/// `pattern` (`WALK` for a walk), `board`, `alight`, `from`, and `to`, the stations.
+/// `write_routes`' `leg` for a journey with no legs, walked from the origin, on a row of its own.
+pub const NO_LEGS: u8 = u8::MAX;
+
+/// Writes each origin's routes as `origin`, `station`, `minute`, `leg`,
+/// `pattern` (`WALK` for a walk), `board`, `alight`, `from`, and `to`, the stations,
+/// `start`, and `end`, a journey with no legs as one row with `leg` `NO_LEGS`.
 fn write_routes(
     out: &Path,
     origins: &[String],
     stations: &[String],
     routes: &[Routes],
 ) -> Result<()> {
-    let rows: Vec<(&str, u32, u8, &RouteLeg)> = origins
+    const NONE: RouteLeg = RouteLeg {
+        pattern: WALK,
+        board: 0,
+        alight: 0,
+        from: u32::MAX,
+        to: u32::MAX,
+        start: 0,
+        end: 0,
+    };
+    let rows: Vec<(&str, u32, u8, u8, &RouteLeg)> = origins
         .iter()
         .zip(routes)
         .flat_map(|(o, r)| {
-            r.iter().flat_map(move |(s, legs)| {
+            r.iter().flat_map(move |(s, minute, legs)| {
+                let none = legs
+                    .is_empty()
+                    .then_some((o.as_str(), *s, *minute, NO_LEGS, &NONE));
                 legs.iter()
                     .enumerate()
-                    .map(move |(i, leg)| (o.as_str(), *s, i as u8, leg))
+                    .map(move |(i, leg)| (o.as_str(), *s, *minute, i as u8, leg))
+                    .chain(none)
             })
         })
         .collect();
@@ -535,48 +548,52 @@ fn write_routes(
                 )),
             ),
             (
-                "leg",
+                "minute",
                 Arc::new(UInt8Array::from_iter_values(rows.iter().map(|r| r.2))),
+            ),
+            (
+                "leg",
+                Arc::new(UInt8Array::from_iter_values(rows.iter().map(|r| r.3))),
             ),
             (
                 "pattern",
                 Arc::new(UInt32Array::from_iter_values(
-                    rows.iter().map(|r| r.3.pattern),
+                    rows.iter().map(|r| r.4.pattern),
                 )),
             ),
             (
                 "board",
                 Arc::new(UInt16Array::from_iter_values(
-                    rows.iter().map(|r| r.3.board),
+                    rows.iter().map(|r| r.4.board),
                 )),
             ),
             (
                 "alight",
                 Arc::new(UInt16Array::from_iter_values(
-                    rows.iter().map(|r| r.3.alight),
+                    rows.iter().map(|r| r.4.alight),
                 )),
             ),
             (
                 "from",
                 Arc::new(StringArray::from_iter_values(
-                    rows.iter().map(|r| name(r.3.from)),
+                    rows.iter().map(|r| name(r.4.from)),
                 )),
             ),
             (
                 "to",
                 Arc::new(StringArray::from_iter_values(
-                    rows.iter().map(|r| name(r.3.to)),
+                    rows.iter().map(|r| name(r.4.to)),
                 )),
             ),
             (
                 "start",
                 Arc::new(UInt16Array::from_iter_values(
-                    rows.iter().map(|r| r.3.start),
+                    rows.iter().map(|r| r.4.start),
                 )),
             ),
             (
                 "end",
-                Arc::new(UInt16Array::from_iter_values(rows.iter().map(|r| r.3.end))),
+                Arc::new(UInt16Array::from_iter_values(rows.iter().map(|r| r.4.end))),
             ),
         ],
     )

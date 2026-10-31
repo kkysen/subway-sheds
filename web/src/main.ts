@@ -716,13 +716,18 @@ let selectedRoutes: Routes | undefined;
 // and each cell's station walked out of to it.
 let selectedTimes: Uint8Array | undefined;
 let selectedExitFrom: Uint16Array | undefined;
+let selectedExitMinute: Uint8Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
 
 function computeTimes(): void {
   if (selectedArrivals !== undefined) {
     const origin = stations.findIndex((station) => station.id === selected);
-    ({ times: selectedTimes, exitFrom: selectedExitFrom } = travelTimes(
+    ({
+      times: selectedTimes,
+      exitFrom: selectedExitFrom,
+      exitMinute: selectedExitMinute,
+    } = travelTimes(
       selectedArrivals,
       exits,
       origin,
@@ -966,7 +971,11 @@ function showBand(band: number, lngLat: LngLat): void {
   highlightBand(band);
   // The journey there: the trains to the station walked out of, and the walk from it, drawn straight.
   const cell = cellAt(lngLat);
-  showRoute((run) => stations[exitFromOf(cell, run)], lngLat);
+  showRoute(
+    (run) => stations[exitFromOf(cell, run)],
+    lngLat,
+    (run) => cellDepartureOf(cell, run),
+  );
   const here = describeCell(cell);
   const label = document.createElement("span");
   // What the band is, wrapped at `BAND_TEXT_WIDTH`, or as wide as the journey under it.
@@ -990,7 +999,7 @@ function showBand(band: number, lngLat: LngLat): void {
     const line =
       exitFrom === origin
         ? journeyLine([], undefined, walk, run)
-        : journeyLine(routeLegs(from, run), departureOf(from, run), walk, run);
+        : journeyAt(from, cellDepartureOf(cell, run), walk, run);
     if (line !== undefined) {
       label.append(line);
     }
@@ -1128,22 +1137,39 @@ function shownRuns(): number[] {
   return currentView() === "saved" ? [run - 1, run] : [run];
 }
 
-// When, in seconds into the window, the journey to `station` the page shows departs.
+// The minute of the window the median trip to `station` itself departs, in the run shown or `run`.
 function departureOf(station: Station, run = currentRun()): number | undefined {
   if (selectedArrivals === undefined) {
     return undefined;
   }
-  const at = stations.indexOf(station);
-  const minute = medianDeparture(selectedArrivals, run, at, stations.length);
-  return minute === undefined ? undefined : 60 * minute;
+  return medianDeparture(selectedArrivals, run, stations.indexOf(station), stations.length);
 }
 
-// The journey from the selected station to `station`, in the run shown or `run`.
-function routeLegs(station: Station, run = currentRun()): RouteLeg[] {
+// The journey to `station` departing at `minute` in `run`, as `journeyLine` says it, if it's reached.
+function journeyAt(
+  station: Station,
+  minute: number | undefined,
+  walkOut: number | undefined,
+  run: number,
+): HTMLElement | undefined {
+  return minute === undefined
+    ? undefined
+    : journeyLine(routeLegs(station, minute, run), 60 * minute, walkOut, run);
+}
+
+// The minute of the window the median trip to `cell` departs, in the run shown or `run`.
+function cellDepartureOf(cell: number, run = currentRun()): number | undefined {
+  return cell < 0 || selectedExitMinute === undefined
+    ? undefined
+    : selectedExitMinute[run * grid.cols.length + cell];
+}
+
+// The journey from the selected station to `station` departing at `minute`, in the run shown or `run`.
+function routeLegs(station: Station, minute: number, run = currentRun()): RouteLeg[] {
   if (selectedRoutes === undefined) {
     return [];
   }
-  return routeTo(selectedRoutes, run, stations.indexOf(station), stations.length);
+  return routeTo(selectedRoutes, run, stations.indexOf(station), stations.length, minute);
 }
 
 // A ride's train, and whether it's an express variant, as the FX, 6X and 7X are,
@@ -1393,11 +1419,13 @@ function reachedIn(station: Station, run: number): boolean {
 }
 
 // The journey to `station` on the map, or none, walking on to `end` if given,
-// in each run shown, the station for which `station` says if it differs between them.
+// in each run shown, the station for which `station` says if it differs between them,
+// departing at the minute `minute` says, or else the median trip to the station itself does.
 // For minutes saved, the one without QueensLink is fainter, under the one with it.
 function showRoute(
   station: Station | undefined | ((run: number) => Station | undefined),
   end?: LngLat,
+  minute?: (run: number) => number | undefined,
 ): void {
   const source = map.getSource("route");
   if (source !== undefined && "setData" in source && typeof source.setData === "function") {
@@ -1411,7 +1439,9 @@ function showRoute(
       const position: GeoJSON.Position | undefined =
         end === undefined ? undefined : [end.lng, end.lat];
       const faded = runs.length > 1 && run !== currentRun();
-      return routeFeatures(routeLegs(to, run), stations.indexOf(to), position, run, faded);
+      const departs = minute === undefined ? departureOf(to, run) : minute(run);
+      const legs = departs === undefined ? [] : routeLegs(to, departs, run);
+      return routeFeatures(legs, stations.indexOf(to), position, run, faded);
     });
     source.setData({ type: "FeatureCollection", features });
   }
@@ -1675,7 +1705,7 @@ await loaded;
       if (!reachedIn(station, run)) {
         continue;
       }
-      const line = journeyLine(routeLegs(station, run), departureOf(station, run), undefined, run);
+      const line = journeyAt(station, departureOf(station, run), undefined, run);
       if (line !== undefined) {
         label.append(line);
       }

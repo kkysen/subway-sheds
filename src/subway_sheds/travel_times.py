@@ -35,6 +35,8 @@ EXIT_WALK_MM = int(SLIDER_MPH[1] * 1609.344 / 3600 * 1000 * EXIT_WALK.total_seco
 EXITS = paths.TRAVEL_TIMES / "exits.parquet"
 # A route's leg that walks between stations, rather than riding a pattern.
 WALK = 0xFFFFFFFF
+# A route's `leg` for a journey with no legs, walked from the origin, on a row of its own.
+NO_LEGS = 0xFF
 # Most rides in a journey, as R5 routed before.
 MAX_RIDES = 8
 
@@ -102,9 +104,11 @@ def from_stations(
     With them, the median ride to each station's platforms reached by train,
     as `station`, `to_station`, and `seconds`, which the page adds walks out of stations to
     at whatever speed its reader walks.
-    And the journey each takes to each station at the minute its arrival is the median of,
-    as `station`, `to_station`, `leg`, `pattern` (`WALK` for a walk), `board`, `alight`,
-    `from`, and `to`, with each run's patterns' stations going to `patterns_path`.
+    And the journeys each takes to each station, each read back departing at `minute`
+    and taken every minute before until the one before it,
+    as `station`, `to_station`, `minute`, `leg` (`NO_LEGS` for none),
+    `pattern` (`WALK` for a walk), `board`, `alight`, `from`, and `to`,
+    with each run's patterns' stations going to `patterns_path`.
     Every station's walks out to the cells, for that, go to `EXITS`.
     """
     # The stations after the cells, numbered on from them, as one set of destinations.
