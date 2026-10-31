@@ -181,13 +181,14 @@ def route(
     if stop_ids:
         stations = [s for s in stations if s.id in stop_ids]
     runs = list(itertools.product(scenario_ or list(Scenario), day_ or list(Day)))
-    for scenario, day, times, station_times, arrivals in travel_times.from_stations(
+    for scenario, day, times, station_times, arrivals, routes in travel_times.from_stations(
         runs, stations, destinations, list(every_station.values())
     ):
         routed = {s.id for s in stations} if stop_ids else None
         _save(times, travel_times.output_path(scenario, day), routed)
         _save(station_times, travel_times.stations_output_path(scenario, day), routed)
         _save(arrivals, travel_times.arrivals_path(scenario, day), routed)
+        _save(routes, travel_times.routes_path(scenario, day), routed)
         echo(
             f"{scenario} {day}: {len(stations)} stations, {len(times)} reachable cells, "
             f"{len(station_times)} reachable stations"

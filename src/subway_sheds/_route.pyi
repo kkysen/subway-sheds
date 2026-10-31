@@ -29,8 +29,10 @@ def travel_times(
     (see `route/src/walks.rs`),
     changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
     with `islands`' stations' stops all on one island platform.
-    Each run also writes its origins' median rides to stations' platforms
-    to `{out}-arrivals.parquet`, as `origin`, `station`, and `seconds`,
+    Each run also writes its origins' rides to stations' platforms
+    each minute to `{out}-arrivals.parquet`, as `origin`, `station`, `minute`, and `seconds`,
+    the journeys to them at the median minute to `{out}-routes.parquet`,
+    and its patterns' stations to `{out}-patterns.parquet`,
     and every station's walks out to destinations, up to `exits_limit` millimeters,
     go to `exits_out`, as `station`, `destination`, `exit_seconds`, and `meters`.
     Returns how many rows each run wrote.

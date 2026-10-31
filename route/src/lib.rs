@@ -20,7 +20,7 @@ use pyo3::{Bound, PyResult, Python, pyfunction, pymodule, wrap_pyfunction};
 use raptor::assign::{DEFAULT_STACKED_SECS_PER_LEVEL, DEFAULT_UP_AND_OVER_SECS};
 use raptor::gtfs::{Feed, Secs, parse_time};
 use raptor::platforms::Platforms;
-use raptor::raptor::Router;
+use raptor::raptor::{Labels, Leg, Router};
 use raptor::timetable::{StopIdx, Timetable};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -53,7 +53,7 @@ pub struct Request<'a> {
 /// in whole minutes rounded down, to each destination reached within `max_secs`.
 /// With each, its ride to each station's platforms each minute, before walking out
 /// (see `Arrivals`).
-pub fn travel_times(req: &Request, origins: &[String]) -> Vec<(Vec<(u32, u8)>, Arrivals)> {
+pub fn travel_times(req: &Request, origins: &[String]) -> Vec<OriginTimes> {
     let router = Router::with_max_rides(req.tt, req.max_rides);
     // Each stop's departures, from every pattern leaving it, sorted.
     let mut departures: Vec<Vec<Secs>> = vec![Vec::new(); req.tt.stops.len()];
@@ -76,7 +76,8 @@ pub fn travel_times(req: &Request, origins: &[String]) -> Vec<(Vec<(u32, u8)>, A
         .collect()
 }
 
-/// An origin's arrival by train on each station's platforms each minute of the window,
+/// An origin's arrival on each station's platforms each minute of the window,
+/// by train or, if sooner, walking there,
 /// within `max_secs`, as `(station, minute, seconds from departing)`,
 /// and at its own station, when it's on the first train it can board there,
 /// by the station's index in `StreetWalks`:
@@ -84,12 +85,34 @@ pub fn travel_times(req: &Request, origins: &[String]) -> Vec<(Vec<(u32, u8)>, A
 /// before taking each destination's `PERCENTILE`th over the minutes, as here.
 pub type Arrivals = Vec<(u32, u8, u16)>;
 
+/// A leg of a journey: a ride on `pattern` from its stop at `board` to its stop at `alight`,
+/// or with `pattern` `WALK`, a walk between stations, by their indices in `StreetWalks`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RouteLeg {
+    pub pattern: u32,
+    pub board: u16,
+    pub alight: u16,
+    pub from: u32,
+    pub to: u32,
+}
+
+/// `RouteLeg::pattern` for a walk.
+pub const WALK: u32 = u32::MAX;
+
+/// An origin's journey to each station it reaches by train,
+/// departing at the minute its arrival there is the `PERCENTILE`th of:
+/// the trip the page times the station by.
+pub type Routes = Vec<(u32, Vec<RouteLeg>)>;
+
+/// What `origin_times` gives for an origin.
+pub type OriginTimes = (Vec<(u32, u8)>, Arrivals, Routes);
+
 fn origin_times(
     req: &Request,
     router: &Router,
     departures: &[Vec<Secs>],
     origin: &str,
-) -> (Vec<(u32, u8)>, Arrivals) {
+) -> OriginTimes {
     let walks = req.walks;
     let access = walks.access.get(origin).map_or(&[][..], Vec::as_slice);
     let direct = walks.direct.get(origin).map_or(&[][..], Vec::as_slice);
@@ -99,10 +122,29 @@ fn origin_times(
     // Each station's arrival each minute, minute-major.
     let ns = req.stations;
     let mut at_stations = vec![Secs::MAX; req.minutes as usize * ns];
+    // Each station's arrival the minute after, when its journey was last read back.
+    let mut later = vec![Secs::MAX; ns];
+    // Each station's journeys, as `(minute, legs)`, latest first:
+    // read back only when its arrival changes, the same journey until it does.
+    let mut journeys: Vec<Vec<(u8, Vec<RouteLeg>)>> = vec![Vec::new(); ns];
+    // How each station was reached this minute: the stop a train reached,
+    // and the stop of the station walked to from it, if it was walked to,
+    // or `None` if walked to from the origin.
+    let mut via: Vec<Option<(StopIdx, Option<StopIdx>)>> = vec![None; ns];
+    // Walking there from the origin, on the streets, the same every minute.
+    let mut on_foot = vec![Secs::MAX; ns];
+    for &(stop, walk) in access {
+        if let Some(station) = walks.stations[stop as usize] {
+            let at = &mut on_foot[station as usize];
+            *at = (*at).min(walk);
+        }
+    }
     let mut labels = router.labels();
     for m in (0..req.minutes).rev() {
         let depart = req.depart + 60 * m as Secs;
         labels.run_access(access, depart);
+        at_stations[m as usize * ns..][..ns].copy_from_slice(&on_foot);
+        via.fill(None);
         let times = &mut times[m as usize * n..][..n];
         for &(d, walk) in direct {
             times[d as usize] = times[d as usize].min(walk);
@@ -112,13 +154,60 @@ fn origin_times(
                 continue;
             }
             let ride = arrive - depart;
+            let row = &mut at_stations[m as usize * ns..][..ns];
             if let Some(station) = walks.stations[s] {
-                let at = &mut at_stations[m as usize * ns + station as usize];
-                *at = (*at).min(ride);
+                let at = &mut row[station as usize];
+                if ride < *at {
+                    *at = ride;
+                    via[station as usize] = Some((s as StopIdx, None));
+                }
+            }
+            // On the platforms of a station walked to from the train,
+            // as across a complex, which the walk out of the station doesn't count.
+            for &(to, walk) in &req.tt.footpaths[s] {
+                if let Some(station) = walks.stations[to as usize] {
+                    let at = &mut row[station as usize];
+                    if ride + walk < *at {
+                        *at = ride + walk;
+                        via[station as usize] = Some((s as StopIdx, Some(to)));
+                    }
+                }
             }
             for &(d, walk) in &walks.egress[s] {
                 times[d as usize] = times[d as usize].min(ride + walk);
             }
+        }
+        for station in 0..ns {
+            let ride = at_stations[m as usize * ns + station];
+            let arrive = if ride == Secs::MAX {
+                ride
+            } else {
+                ride + depart
+            };
+            if arrive != Secs::MAX && arrive != later[station] {
+                // No rides if walked to from the origin.
+                let (mut legs, walked) = match via[station] {
+                    Some((stop, walked)) => (
+                        fastest_journey(req, &labels, &[stop]),
+                        walked.map(|to| (stop, to)),
+                    ),
+                    None => (Vec::new(), None),
+                };
+                if let Some((stop, to)) = walked {
+                    let of = |s: StopIdx| walks.stations[s as usize].unwrap_or(u32::MAX);
+                    if of(stop) != of(to) {
+                        legs.push(RouteLeg {
+                            pattern: WALK,
+                            board: 0,
+                            alight: 0,
+                            from: of(stop),
+                            to: of(to),
+                        });
+                    }
+                }
+                journeys[station].push((m as u8, legs));
+            }
+            later[station] = arrive;
         }
     }
     // On the first train from the origin's own platforms, after going in to them.
@@ -168,7 +257,55 @@ fn origin_times(
             (t <= req.max_secs).then_some((s as u32, m as u8, t as u16))
         })
         .collect();
-    (cells, arrivals)
+    // Each station's journey at the minute its arrival is the median of,
+    // read back at that minute or the latest after it with the same arrival.
+    let mut each_minute: Vec<(Secs, usize)> = Vec::with_capacity(req.minutes as usize);
+    let routes = (0..ns)
+        .filter_map(|station| {
+            each_minute.clear();
+            each_minute
+                .extend((0..req.minutes as usize).map(|m| (at_stations[m * ns + station], m)));
+            each_minute.sort_unstable();
+            let (ride, minute) = each_minute[index];
+            if ride > req.max_secs {
+                return None;
+            }
+            let (_, legs) = journeys[station]
+                .iter()
+                .rev()
+                .find(|(m, _)| usize::from(*m) >= minute)?;
+            Some((station as u32, legs.clone()))
+        })
+        .collect();
+    (cells, arrivals, routes)
+}
+
+/// The legs of the earliest arriving journey `labels` has to any of `targets`.
+fn fastest_journey(req: &Request, labels: &Labels, targets: &[StopIdx]) -> Vec<RouteLeg> {
+    let (legs, journeys) = labels.journeys(targets);
+    let Some(journey) = journeys.iter().min_by_key(|j| j.arrive) else {
+        return Vec::new();
+    };
+    let station = |stop: StopIdx| req.walks.stations[stop as usize].unwrap_or(u32::MAX);
+    legs.of(journey)
+        .iter()
+        .map(|leg| match leg {
+            Leg::Ride(ride) => RouteLeg {
+                pattern: ride.pattern,
+                board: ride.board_pos,
+                alight: ride.alight_pos,
+                from: station(ride.board_stop(req.tt)),
+                to: station(ride.alight_stop(req.tt)),
+            },
+            Leg::Walk { from, to, .. } => RouteLeg {
+                pattern: WALK,
+                board: 0,
+                alight: 0,
+                from: station(*from),
+                to: station(*to),
+            },
+        })
+        .collect()
 }
 
 /// The index of a percentile in a sorted list of `n`, as R5 picks it, without interpolating
@@ -329,10 +466,119 @@ fn write_exits(out: &Path, stations: &[String], exits: &[(u32, u32, u16, u16)]) 
     )
 }
 
-/// Where a run writing its times to `out` writes its arrivals: `{out}-arrivals.parquet`.
-fn arrivals_path(out: &Path) -> PathBuf {
+/// Where a run writing its times to `out` writes its `what`: `{out}-{what}.parquet`.
+fn beside(out: &Path, what: &str) -> PathBuf {
     let stem = out.file_stem().unwrap_or_default().to_string_lossy();
-    out.with_file_name(format!("{stem}-arrivals.parquet"))
+    out.with_file_name(format!("{stem}-{what}.parquet"))
+}
+
+/// Writes each origin's routes as `origin`, `station`, `leg`,
+/// `pattern` (`WALK` for a walk), `board`, `alight`, `from`, and `to`, the stations.
+fn write_routes(
+    out: &Path,
+    origins: &[String],
+    stations: &[String],
+    routes: &[Routes],
+) -> Result<()> {
+    let rows: Vec<(&str, u32, u8, &RouteLeg)> = origins
+        .iter()
+        .zip(routes)
+        .flat_map(|(o, r)| {
+            r.iter().flat_map(move |(s, legs)| {
+                legs.iter()
+                    .enumerate()
+                    .map(move |(i, leg)| (o.as_str(), *s, i as u8, leg))
+            })
+        })
+        .collect();
+    let name = |s: u32| stations.get(s as usize).map_or("", String::as_str);
+    write_parquet(
+        out,
+        vec![
+            (
+                "origin",
+                Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.0))),
+            ),
+            (
+                "station",
+                Arc::new(StringArray::from_iter_values(
+                    rows.iter().map(|r| name(r.1)),
+                )),
+            ),
+            (
+                "leg",
+                Arc::new(UInt8Array::from_iter_values(rows.iter().map(|r| r.2))),
+            ),
+            (
+                "pattern",
+                Arc::new(UInt32Array::from_iter_values(
+                    rows.iter().map(|r| r.3.pattern),
+                )),
+            ),
+            (
+                "board",
+                Arc::new(UInt16Array::from_iter_values(
+                    rows.iter().map(|r| r.3.board),
+                )),
+            ),
+            (
+                "alight",
+                Arc::new(UInt16Array::from_iter_values(
+                    rows.iter().map(|r| r.3.alight),
+                )),
+            ),
+            (
+                "from",
+                Arc::new(StringArray::from_iter_values(
+                    rows.iter().map(|r| name(r.3.from)),
+                )),
+            ),
+            (
+                "to",
+                Arc::new(StringArray::from_iter_values(
+                    rows.iter().map(|r| name(r.3.to)),
+                )),
+            ),
+        ],
+    )
+}
+
+/// Writes `tt`'s patterns' stations, as `pattern`, `route`, `position`, and `station`.
+fn write_patterns(out: &Path, tt: &Timetable, walks: &Walks, stations: &[String]) -> Result<()> {
+    let rows: Vec<(u32, &str, u16, &str)> = tt
+        .patterns
+        .iter()
+        .enumerate()
+        .flat_map(|(p, pattern)| {
+            pattern.stops.iter().enumerate().map(move |(i, &stop)| {
+                let station = walks.stations[stop as usize]
+                    .and_then(|s| stations.get(s as usize))
+                    .map_or("", String::as_str);
+                (p as u32, pattern.route_id.as_str(), i as u16, station)
+            })
+        })
+        .collect();
+    write_parquet(
+        out,
+        vec![
+            (
+                "pattern",
+                Arc::new(UInt32Array::from_iter_values(rows.iter().map(|r| r.0))),
+            ),
+            (
+                "route",
+                Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.1))),
+            ),
+            (
+                "position",
+                Arc::new(UInt16Array::from_iter_values(rows.iter().map(|r| r.2))),
+            ),
+            (
+                "station",
+                Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.3))),
+            ),
+        ],
+    )
 }
 
 /// One routing: a feed on a date, departing each minute of `minutes` from `depart`,
@@ -411,10 +657,23 @@ fn py_travel_times(
                 destinations: destinations.len(),
                 stations: all.stations().len(),
             };
-            let (times, arrivals): (Vec<_>, Vec<_>) =
-                travel_times(&req, &origins).into_iter().unzip();
+            let mut times = Vec::with_capacity(origins.len());
+            let mut arrivals = Vec::with_capacity(origins.len());
+            let mut routes = Vec::with_capacity(origins.len());
+            for (t, a, r) in travel_times(&req, &origins) {
+                times.push(t);
+                arrivals.push(a);
+                routes.push(r);
+            }
             rows[i] = write_times(out, &origins, &times)?;
-            write_arrivals(&arrivals_path(out), &origins, all.stations(), &arrivals)?;
+            write_arrivals(
+                &beside(out, "arrivals"),
+                &origins,
+                all.stations(),
+                &arrivals,
+            )?;
+            write_routes(&beside(out, "routes"), &origins, all.stations(), &routes)?;
+            write_patterns(&beside(out, "patterns"), tt, &walks, all.stations())?;
         }
         Ok(rows)
     })
@@ -519,9 +778,31 @@ mod tests {
         // Leaving at 08:00, 08:01, and 08:02, the walk makes the 08:05: 16, 15, and 14 minutes.
         // Destination 2 is never reached.
         let times = travel_times(&req, &["O".to_owned()]);
-        // On B's platform when the 08:05 arrives, 15, 14, and 13 minutes after departing;
-        // A's only on foot, which walking straight to destinations covers.
-        let b_each_minute = vec![(1, 0, 15 * 60), (1, 1, 14 * 60), (1, 2, 13 * 60)];
-        assert_eq!(times, [(vec![(0, 15), (1, 5)], b_each_minute)]);
+        // On A's platforms 2 minutes after departing, on foot;
+        // on B's when the 08:05 arrives, 15, 14, and 13 minutes after departing.
+        let each_minute = vec![
+            (0, 0, 120),
+            (0, 1, 120),
+            (0, 2, 120),
+            (1, 0, 15 * 60),
+            (1, 1, 14 * 60),
+            (1, 2, 13 * 60),
+        ];
+        // To B on the one pattern, from A, its first stop, to B, its second.
+        let to_b = RouteLeg {
+            pattern: 0,
+            board: 0,
+            alight: 1,
+            from: 0,
+            to: 1,
+        };
+        assert_eq!(
+            times,
+            [(
+                vec![(0, 15), (1, 5)],
+                each_minute,
+                vec![(0, vec![]), (1, vec![to_b])]
+            )]
+        );
     }
 }

@@ -4,6 +4,7 @@ routed with `mta-od-data`'s RAPTOR, walking on the streets, through `subway_shed
 """
 
 import datetime
+import shutil
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -32,6 +33,8 @@ EXIT_WALK = datetime.timedelta(minutes=30)
 EXIT_WALK_MM = int(SLIDER_MPH[1] * 1609.344 / 3600 * 1000 * EXIT_WALK.total_seconds())
 # Every station's walks out to the cells, for walking at any of the slider's speeds.
 EXITS = paths.TRAVEL_TIMES / "exits.parquet"
+# A route's leg that walks between stations, rather than riding a pattern.
+WALK = 0xFFFFFFFF
 # Most rides in a journey, as R5 routed before.
 MAX_RIDES = 8
 
@@ -42,6 +45,14 @@ def output_path(scenario: Scenario, day: Day) -> Path:
 
 def arrivals_path(scenario: Scenario, day: Day) -> Path:
     return paths.TRAVEL_TIMES / f"{scenario}-{day}-arrivals.parquet"
+
+
+def routes_path(scenario: Scenario, day: Day) -> Path:
+    return paths.TRAVEL_TIMES / f"{scenario}-{day}-routes.parquet"
+
+
+def patterns_path(scenario: Scenario, day: Day) -> Path:
+    return paths.TRAVEL_TIMES / f"{scenario}-{day}-patterns.parquet"
 
 
 def stations_output_path(scenario: Scenario, day: Day) -> Path:
@@ -78,7 +89,7 @@ def from_stations(
     origins: list[gtfs.Station],
     cells: gpd.GeoDataFrame,
     stations: list[gtfs.Station],
-) -> Iterator[tuple[Scenario, Day, pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+) -> Iterator[tuple[Scenario, Day, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
     """
     Median minutes from each of `origins` to each of `cells` and `stations`, walking at both ends,
     in each scenario on each day of `runs`, routed together so that the streets are walked once.
@@ -90,6 +101,9 @@ def from_stations(
     With them, the median ride to each station's platforms reached by train,
     as `station`, `to_station`, and `seconds`, which the page adds walks out of stations to
     at whatever speed its reader walks.
+    And the journey each takes to each station at the minute its arrival is the median of,
+    as `station`, `to_station`, `leg`, `pattern` (`WALK` for a walk), `board`, `alight`,
+    `from`, and `to`, with each run's patterns' stations going to `patterns_path`.
     Every station's walks out to the cells, for that, go to `EXITS`.
     """
     # The stations after the cells, numbered on from them, as one set of destinations.
@@ -140,6 +154,12 @@ def from_stations(
                 .rename(columns={"origin": "station", "station": "to_station"})
                 .astype({"station": "category", "to_station": "category"})
             )
+            routes = (
+                pd.read_parquet(out.with_name(f"{out.stem}-routes.parquet"))
+                .rename(columns={"origin": "station", "station": "to_station"})
+                .astype({"station": "category", "to_station": "category"})
+            )
+            shutil.copy(out.with_name(f"{out.stem}-patterns.parquet"), patterns_path(scenario, day))
             yield (
                 scenario,
                 day,
@@ -150,4 +170,5 @@ def from_stations(
                     {"station": "category", "to_station": "category", "minutes": "uint8"}
                 ),
                 arrivals,
+                routes,
             )
