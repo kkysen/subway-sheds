@@ -72,6 +72,14 @@ def _points(stations: list[gtfs.Station], ids: object) -> gpd.GeoDataFrame:
     )
 
 
+def station_points(stations: list[gtfs.Station], first_id: int) -> gpd.GeoDataFrame:
+    """
+    `stations` as destinations after cells numbered up to `first_id`, numbered on from them,
+    as R5 takes one set of destinations.
+    """
+    return _points(stations, first_id + np.arange(len(stations)))
+
+
 def from_stations(
     scenario: Scenario,
     day: Day,
@@ -88,12 +96,11 @@ def from_stations(
     so that a station's own time doesn't count walking to the middle of the cell it's in.
     """
     date = gtfs.service_date(scenario.gtfs, day.weekday)
-    # The stations after the cells, numbered on from them, as R5 takes one set of destinations.
-    station_points = _points(stations, len(cells) + np.arange(len(stations)))
+    to_stations = station_points(stations, len(cells))
     matrix = _travel_time_matrix(
         r5py.TransportNetwork(paths.OSM_PBF, [scenario.gtfs]),
         origins=_points(origins, [s.id for s in origins]),
-        destinations=pd.concat([cells, station_points], ignore_index=True),
+        destinations=pd.concat([cells, to_stations], ignore_index=True),
         departure=datetime.datetime.combine(date, day.departure),
         departure_time_window=DEPARTURE_WINDOW,
         percentiles=PERCENTILES,
