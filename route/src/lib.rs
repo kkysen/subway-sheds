@@ -55,20 +55,41 @@ pub struct Request<'a> {
 /// (see `Arrivals`).
 pub fn travel_times(req: &Request, origins: &[String]) -> Vec<(Vec<(u32, u8)>, Arrivals)> {
     let router = Router::with_max_rides(req.tt, req.max_rides);
+    // Each stop's departures, from every pattern leaving it, sorted.
+    let mut departures: Vec<Vec<Secs>> = vec![Vec::new(); req.tt.stops.len()];
+    for p in &req.tt.patterns {
+        for (pos, &stop) in p
+            .stops
+            .iter()
+            .enumerate()
+            .take(p.stops.len().saturating_sub(1))
+        {
+            departures[stop as usize].extend(p.trips.iter().map(|t| t.times[pos].1));
+        }
+    }
+    for d in &mut departures {
+        d.sort_unstable();
+    }
     origins
         .par_iter()
-        .map(|origin| origin_times(req, &router, origin))
+        .map(|origin| origin_times(req, &router, &departures, origin))
         .collect()
 }
 
 /// An origin's arrival by train on each station's platforms each minute of the window,
 /// within `max_secs`, as `(station, minute, seconds from departing)`,
+/// and at its own station, when it's on the first train it can board there,
 /// by the station's index in `StreetWalks`:
 /// what the page adds walks out of stations to, at whatever speed its reader walks,
 /// before taking each destination's `PERCENTILE`th over the minutes, as here.
 pub type Arrivals = Vec<(u32, u8, u16)>;
 
-fn origin_times(req: &Request, router: &Router, origin: &str) -> (Vec<(u32, u8)>, Arrivals) {
+fn origin_times(
+    req: &Request,
+    router: &Router,
+    departures: &[Vec<Secs>],
+    origin: &str,
+) -> (Vec<(u32, u8)>, Arrivals) {
     let walks = req.walks;
     let access = walks.access.get(origin).map_or(&[][..], Vec::as_slice);
     let direct = walks.direct.get(origin).map_or(&[][..], Vec::as_slice);
@@ -98,6 +119,29 @@ fn origin_times(req: &Request, router: &Router, origin: &str) -> (Vec<(u32, u8)>
             for &(d, walk) in &walks.egress[s] {
                 times[d as usize] = times[d as usize].min(ride + walk);
             }
+        }
+    }
+    // On the first train from the origin's own platforms, after going in to them.
+    let own: Vec<(StopIdx, Secs)> = access
+        .iter()
+        .copied()
+        .filter(|&(s, _)| req.tt.stops[s as usize].station == origin)
+        .collect();
+    if let Some(&(first, _)) = own.first()
+        && let Some(station) = walks.stations[first as usize]
+    {
+        for m in 0..req.minutes as usize {
+            let depart = req.depart + 60 * m as Secs;
+            let board = own
+                .iter()
+                .filter_map(|&(s, walk)| {
+                    let times = &departures[s as usize];
+                    times
+                        .get(times.partition_point(|&t| t < depart + walk))
+                        .copied()
+                })
+                .min();
+            at_stations[m * ns + station as usize] = board.map_or(Secs::MAX, |b| b - depart);
         }
     }
     let index = percentile_index(req.minutes as usize, PERCENTILE);
