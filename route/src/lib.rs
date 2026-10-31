@@ -19,9 +19,11 @@ use pyo3::types::{PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pyfunction, pymodule, wrap_pyfunction};
 use raptor::gtfs::{Feed, Secs, parse_time};
 use raptor::raptor::Router;
-use raptor::timetable::Timetable;
+use raptor::assign::{DEFAULT_STACKED_SECS_PER_LEVEL, DEFAULT_UP_AND_OVER_SECS};
+use raptor::platforms::Platforms;
+use raptor::timetable::{StopIdx, Timetable};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use rustc_hash::FxHashMap as HashMap;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use streets::osm::Osm;
 use streets::{Graph, Mm};
 
@@ -99,7 +101,39 @@ fn percentile_index(n: usize, percentile: f64) -> usize {
     ((percentile / 100.0 * n as f64).ceil() as usize).saturating_sub(1)
 }
 
-/// `tt`, changing trains within a complex by `transfers.txt`,
+/// `tt`'s changes within a complex timed by OSM's platforms (`Timetable::use_osm_transfers`):
+/// free on one platform, up and over to another of a station's, stacked a flight a level,
+/// and to another station of the complex a walk by the distance,
+/// with `islands`' stops, which `platforms` doesn't know, all on one island platform.
+/// Each copy of a stop split by platform keeps its station.
+fn use_platforms(
+    tt: &mut Timetable,
+    platforms: &Platforms,
+    islands: &HashSet<String>,
+    all: &StreetWalks,
+) {
+    tt.split_platforms(platforms);
+    for stop in &mut tt.stops {
+        if stop.platform.is_none() && islands.contains(&stop.station) {
+            stop.platform = Some(format!("island {}", stop.station));
+        }
+    }
+    let mut complexes: HashMap<&str, Vec<StopIdx>> = HashMap::default();
+    for (i, stop) in tt.stops.iter().enumerate() {
+        if let Some(complex) = all.complex(&stop.station) {
+            complexes.entry(complex).or_default().push(i as StopIdx);
+        }
+    }
+    let complexes: Vec<Vec<StopIdx>> = complexes.into_values().collect();
+    tt.use_osm_transfers(
+        complexes.iter().map(Vec::as_slice),
+        platforms,
+        DEFAULT_UP_AND_OVER_SECS,
+        DEFAULT_STACKED_SECS_PER_LEVEL,
+    );
+}
+
+/// `tt`, changing trains within a complex as `use_platforms` times it,
 /// and between complexes by `walks`' transfers on the streets.
 fn change_trains(tt: &mut Timetable, walks: &Walks) {
     for (from, paths) in tt.footpaths.iter_mut().enumerate() {
@@ -144,7 +178,10 @@ type Run = (PathBuf, Date, String, u32, PathBuf);
 /// Median minutes from each of `origins`, by station ID,
 /// to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
 /// walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second,
-/// through `stations`' entrances (see `walks.rs`). Returns how many rows each run wrote.
+/// through `stations`' entrances (see `walks.rs`),
+/// changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
+/// with `islands`' stations' stops all on one island platform (see `use_platforms`).
+/// Returns how many rows each run wrote.
 ///
 /// The streets are read and walked once, for every feed's stations (see `walks.rs`).
 #[pyfunction(name = "travel_times")]
@@ -155,6 +192,8 @@ fn py_travel_times(
     max_rides: usize,
     max_minutes: u32,
     stations: Vec<Station>,
+    platforms: PathBuf,
+    islands: Vec<String>,
     origins: Vec<String>,
     destinations: Vec<(f64, f64)>,
     speed: Mm,
@@ -162,17 +201,13 @@ fn py_travel_times(
 ) -> Result<Vec<usize>> {
     let max_secs = max_minutes as Secs * 60;
     py.detach(|| {
-        // Each feed once, in the order runs first name them, and each run's timetable.
-        let mut feeds: Vec<&PathBuf> = Vec::new();
+        // Each feed once, and each run's timetable.
+        let mut opened: HashMap<&PathBuf, Feed> = HashMap::default();
         for (feed, ..) in &runs {
-            if !feeds.contains(&feed) {
-                feeds.push(feed);
+            if !opened.contains_key(feed) {
+                opened.insert(feed, Feed::open(feed)?);
             }
         }
-        let opened = feeds
-            .iter()
-            .map(|&f| Ok((f, Feed::open(f)?)))
-            .collect::<Result<HashMap<_, _>>>()?;
         // In the order of `runs`.
         let mut tts = runs
             .iter()
@@ -183,30 +218,27 @@ fn py_travel_times(
         let all = StreetWalks::compute(&graph, &stations, &origins, &destinations, speed, max_secs);
         drop(graph);
 
+        let platforms = Platforms::load(&platforms)?;
+        let islands: HashSet<String> = islands.into_iter().collect();
         let mut rows = vec![0; runs.len()];
-        for &feed_path in &feeds {
-            let mine: Vec<usize> = (0..runs.len())
-                .filter(|&i| &runs[i].0 == feed_path)
-                .collect();
-            let walks = Walks::for_feed(&all, &mine.iter().map(|&i| &tts[i]).collect::<Vec<_>>());
-            for &i in &mine {
-                let (_, _, depart, minutes, out) = &runs[i];
-                let Some(depart) = parse_time(depart) else {
-                    bail!("not a time: {depart}");
-                };
-                let tt = &mut tts[i];
-                change_trains(tt, &walks);
-                let req = Request {
-                    tt,
-                    walks: &walks,
-                    depart,
-                    minutes: *minutes,
-                    max_rides,
-                    max_secs,
-                    destinations: destinations.len(),
-                };
-                rows[i] = write_times(out, &origins, &travel_times(&req, &origins))?;
-            }
+        // Each run's own walks, as splitting stops by platform numbers them by its patterns.
+        for (i, (tt, (_, _, depart, minutes, out))) in tts.iter_mut().zip(&runs).enumerate() {
+            let Some(depart) = parse_time(depart) else {
+                bail!("not a time: {depart}");
+            };
+            use_platforms(tt, &platforms, &islands, &all);
+            let walks = Walks::for_feed(&all, &[tt]);
+            change_trains(tt, &walks);
+            let req = Request {
+                tt,
+                walks: &walks,
+                depart,
+                minutes: *minutes,
+                max_rides,
+                max_secs,
+                destinations: destinations.len(),
+            };
+            rows[i] = write_times(out, &origins, &travel_times(&req, &origins))?;
         }
         Ok(rows)
     })

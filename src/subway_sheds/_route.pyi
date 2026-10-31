@@ -10,6 +10,8 @@ def travel_times(
     max_rides: int,
     max_minutes: int,
     stations: list[tuple[str, str, list[tuple[float, float, int]]]],
+    platforms: StrPath,
+    islands: list[str],
     origins: list[str],
     destinations: list[tuple[float, float]],
     speed: int,
@@ -22,7 +24,9 @@ def travel_times(
     written to `out`, walking on the streets in `osm`, an `.osm.pbf`,
     at `speed` millimeters a second, through `stations`' entrances,
     as `(id, complex, [(latitude, longitude, seconds to the platforms)])`
-    (see `route/src/walks.rs`).
+    (see `route/src/walks.rs`),
+    changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
+    with `islands`' stations' stops all on one island platform.
     Returns how many rows each run wrote.
 
     The streets are read and walked once, for every feed's stations.

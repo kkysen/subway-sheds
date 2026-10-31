@@ -37,6 +37,11 @@ def stations_output_path(scenario: Scenario, day: Day) -> Path:
     return paths.TRAVEL_TIMES / f"{scenario}-{day}-stations.parquet"
 
 
+def _mta_stations() -> set[str]:
+    """The stations `access.TABLE` has: every MTA station, not QueensLink's new ones."""
+    return set(pd.read_csv(access.TABLE, dtype={"station": str})["station"])
+
+
 def _entrances(
     stations: list[gtfs.Station],
 ) -> list[tuple[str, str, list[tuple[float, float, int]]]]:
@@ -84,6 +89,8 @@ def from_stations(
             MAX_RIDES,
             MAX_TIME // datetime.timedelta(minutes=1),
             _entrances(stations),
+            paths.PLATFORMS,
+            [s.id for s in stations if s.id not in _mta_stations()],
             [s.id for s in origins],
             destinations,
             WALKING_SPEED_MM_PER_S,

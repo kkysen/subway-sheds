@@ -1,5 +1,6 @@
 import hashlib
 import itertools
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -103,11 +104,14 @@ def _fetch_streets(force: bool) -> None:
     echo(f"kept {kept} ways")
 
 
+MTA_OD_DATA_RAW = "https://raw.githubusercontent.com/kkysen/mta-od-data"
+
+
 @app.command()
 def fetch(
     force: Annotated[bool, Option(help="Download again even if already cached.")] = False,
 ) -> None:
-    """Download the MTA feed, shoreline, and streets, and make both scenarios' feeds."""
+    """Download the MTA feed, shoreline, streets, and platforms, and make both scenarios' feeds."""
     for url, dest in [
         (scenarios.mta_feed_url(), scenarios.mta_feed()),
         (SHORELINE_URL, paths.SHORELINE),
@@ -116,6 +120,12 @@ def fetch(
             echo(f"downloading {url}")
             _download(url, dest)
     _fetch_streets(force)
+    rev = re.search(r'rev = "(\w+)"', (paths.ROOT / "route" / "Cargo.toml").read_text())
+    assert rev, "`route/Cargo.toml` pins `mta-od-data` by `rev`"
+    for name in ["platforms.csv", "stacked_platforms.csv"]:
+        dest = paths.PLATFORMS.with_name(name)
+        if force or not dest.exists():
+            _download(f"{MTA_OD_DATA_RAW}/{rev[1]}/src/mta_od_data/ridership/{name}", dest)
     gtfs.zip_feed(paths.QUEENSLINK_FEED, Scenario.QUEENSLINK.gtfs)
     gtfs.write_feed(scenarios.baseline_feed(), Scenario.BASELINE.gtfs)
 

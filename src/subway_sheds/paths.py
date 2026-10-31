@@ -20,6 +20,10 @@ QUEENSLINK_FEED = ROOT / "gtfs" / "queenslink"
 # Feeds zipped or downloaded as routing reads them.
 GTFS = CACHE / "gtfs"
 
+# `mta-od-data`'s physical platforms from OSM, at the commit `route/Cargo.toml` pins,
+# with `stacked_platforms.csv` beside it.
+PLATFORMS = CACHE / "platforms" / "platforms.csv"
+
 TRAVEL_TIMES = CACHE / "travel_times"
 
 # What the web page loads; `web/` serves `public/` as is.

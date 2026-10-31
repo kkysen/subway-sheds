@@ -45,8 +45,11 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   and the levels OSM puts platforms on,
   climbed by stairs, escalator, or elevator at the rates in `src/subway_sheds/access.py`.
   `subway-sheds access` rebuilds it to review and commit.
-  Changing trains within a station complex takes `transfers.txt`'s times;
-  between complexes, it walks the streets, out one entrance and in another.
+  Changing trains between complexes walks the streets, out one entrance and in another.
+- **Platforms**: `mta-od-data`'s physical platforms from OSM, at the commit `route/Cargo.toml` pins,
+  which time changing trains within a complex as its `raptor`'s OSM transfers do:
+  free on the same platform, up and over to another, a flight a level between stacked ones.
+  QueensLink's new stations are taken to have one island platform each.
 - **Land**: `nyc-subway-isochrones`' NYC shoreline, which keeps the grid out of the water.
 
 Travel times are routed from every station to a grid of about 21,500 cells over the city's land,

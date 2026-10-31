@@ -189,6 +189,14 @@ impl StreetWalks {
     }
 }
 
+impl StreetWalks {
+    /// The complex of the station `id`, if it's one of these.
+    pub fn complex(&self, id: &str) -> Option<&str> {
+        let i = self.stations.iter().position(|s| s == id)?;
+        Some(&self.complexes[i])
+    }
+}
+
 /// Of `reached` stops, only the closest on each of `tts`' patterns, as R5 keeps
 /// (`TransferFinder.retainClosestStopsOnPatterns`), the first stop of any tie:
 /// walking on to another of a pattern's stops is never quicker than riding to it.
