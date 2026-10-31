@@ -1147,7 +1147,12 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "streets",
+ "subway-sheds-times",
 ]
+
+[[package]]
+name = "subway-sheds-times"
+version = "0.1.0"
 
 [[package]]
 name = "syn"

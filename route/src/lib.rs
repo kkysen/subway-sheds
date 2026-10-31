@@ -24,7 +24,7 @@ use raptor::gtfs::{Feed, Secs, parse_time};
 use raptor::platforms::Platforms;
 use raptor::raptor::{Labels, Leg, Router};
 use raptor::timetable::{StopIdx, Timetable};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use streets::osm::Osm;
 use streets::{Graph, Mm};
@@ -828,6 +828,88 @@ fn station_pairs(py: Python<'_>, feed: PathBuf) -> Result<Vec<feed::Pair>> {
     py.detach(|| Ok(feed::station_pairs(&Feed::open(&feed)?)))
 }
 
+/// Which of the walks out of stations to the cells the page ever takes, by their place,
+/// as `web/times/`'s `used_exits` finds them,
+/// from every origin, in every run, at every one of `mphs`.
+/// `arrivals` is each origin's, as the page reads them, one after another,
+/// and the walks are `cell`, `exit_seconds`, and `meters`, by station from `starts`,
+/// all little-endian, as `export` writes them.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn used_exits(
+    py: Python<'_>,
+    arrivals: &[u8],
+    cell: &[u8],
+    exit_seconds: &[u8],
+    meters: &[u8],
+    starts: &[u8],
+    cells: usize,
+    stations: usize,
+    mphs: Vec<f64>,
+) -> Vec<bool> {
+    let u16s = |bytes: &[u8]| -> Vec<u16> {
+        bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect()
+    };
+    let (cell, exit_seconds, meters) = (u16s(cell), u16s(exit_seconds), u16s(meters));
+    let starts: Vec<u32> = starts
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    let per_origin = arrivals.len() / stations;
+    py.detach(|| {
+        let exits = times::Exits {
+            cell: &cell,
+            exit_seconds: &exit_seconds,
+            meters: &meters,
+            starts: &starts,
+        };
+        let runs: Vec<usize> = (0..times::RUNS).collect();
+        (0..stations)
+            .into_par_iter()
+            .fold(
+                || vec![false; cell.len()],
+                |mut used: Vec<bool>, origin| {
+                    let arrivals = u16s(&arrivals[origin * per_origin..][..per_origin]);
+                    let mut out = vec![0u8; times::RUNS * (cells + stations)];
+                    let mut exit_from = vec![0u16; times::RUNS * cells];
+                    let mut exit_minute = vec![0u8; times::RUNS * cells];
+                    for &mph in &mphs {
+                        times::used_exits(
+                            &arrivals,
+                            &exits,
+                            origin,
+                            cells,
+                            stations,
+                            mph,
+                            &runs,
+                            times::TravelTimes {
+                                times: &mut out,
+                                exit_from: &mut exit_from,
+                                exit_minute: &mut exit_minute,
+                            },
+                            &mut used,
+                        );
+                    }
+                    used
+                },
+            )
+            .reduce(
+                || vec![false; cell.len()],
+                |mut a: Vec<bool>, b| {
+                    a.iter_mut().zip(b).for_each(|(a, b)| *a |= b);
+                    a
+                },
+            )
+    })
+}
+
 #[pymodule]
 #[pyo3(name = "_route")]
 fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -836,6 +918,7 @@ fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(transfers, m)?)?;
     m.add_function(wrap_pyfunction!(stations, m)?)?;
     m.add_function(wrap_pyfunction!(station_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(used_exits, m)?)?;
     Ok(())
 }
 

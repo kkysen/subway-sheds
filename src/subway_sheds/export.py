@@ -15,7 +15,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from subway_sheds import access, gtfs, lines, paths, travel_times
+from subway_sheds import _route, access, gtfs, lines, paths, travel_times
 from subway_sheds.grid import SPACING, Grid
 from subway_sheds.scenarios import FREE_TRANSFERS, Day, Fare, Scenario
 
@@ -121,7 +121,8 @@ def write(grid: Grid) -> None:
       a journey's last leg's end, or the minute it departs at and its walk,
       unreached if that's more than `travel_times.MAX_TIME` after it departs.
       It adds each departure's walk out to each cell and takes the median, as routing does.
-    - `exits.bin`: every walk out of a station to a cell within `travel_times.NEAR_EXIT_WALK_M`,
+    - `exits.bin`: every walk out of a station to a cell the page ever takes
+      (see `web/times/`'s `used_exits`), within `travel_times.NEAR_EXIT_WALK_M`,
       to time at the reader's walking speed,
       as four little-endian `uint16` arrays of equal length after their length, a `uint32`:
       the station, as `stations.json` lists them, the cell, as `grid.json` lists them,
@@ -224,23 +225,6 @@ def write(grid: Grid) -> None:
         codes = ids.astype("category").cat
         return np.array([index[str(c)] for c in codes.categories], dtype=np.intp)[codes.codes]
 
-    exits = pd.read_parquet(travel_times.EXITS)
-    exits = exits.assign(station=rows_of(exits["station"])).sort_values(["station", "cell"])
-    near = exits["meters"] <= travel_times.NEAR_EXIT_WALK_M
-    default = exits["meters"] <= travel_times.DEFAULT_EXIT_WALK_M
-    for name, part in [
-        ("exits.bin", exits[near]),
-        ("exits-far.bin", exits[~near & default]),
-        ("exits-fast.bin", exits[~default]),
-    ]:
-        columns = [
-            part[c].to_numpy(dtype="<u2") for c in ["station", "cell", "exit_seconds", "meters"]
-        ]
-        files.write(
-            paths.WEB_DATA / name,
-            np.array([len(part)], dtype="<u4").tobytes() + b"".join(c.tobytes() for c in columns),
-        )
-
     minutes = travel_times.DEPARTURE_WINDOW // datetime.timedelta(minutes=1)
     seconds = np.full(
         (len(stations), len(Day) * len(Fare) * len(Scenario), minutes, len(stations)),
@@ -256,6 +240,43 @@ def write(grid: Grid) -> None:
             arrivals["minute"].to_numpy(),
             rows_of(arrivals["to_station"]),
         ] = arrivals["seconds"].to_numpy()
+    exits = pd.read_parquet(travel_times.EXITS)
+    exits = exits.assign(station=rows_of(exits["station"])).sort_values(["station", "cell"])
+    # Only the walks the page ever takes, from any station, at any of the slider's speeds,
+    # as the rest change nothing it shows, as `web/times/` finds them.
+    # When, from the window's start, as the page reads them from the routes.
+    reached = seconds != UNREACHED
+    offsets = (np.arange(minutes, dtype=np.uint32) * 60)[:, np.newaxis]
+    clock = np.where(reached, seconds.astype(np.uint32) + offsets, UNREACHED).astype("<u2")
+    del reached
+    station_starts = np.searchsorted(exits["station"].to_numpy(), np.arange(len(stations) + 1))
+    used = _route.used_exits(
+        clock.tobytes(),
+        exits["cell"].to_numpy(dtype="<u2").tobytes(),
+        exits["exit_seconds"].to_numpy(dtype="<u2").tobytes(),
+        exits["meters"].to_numpy(dtype="<u2").tobytes(),
+        station_starts.astype("<u4").tobytes(),
+        len(grid.cols),
+        len(stations),
+        travel_times.SLIDER_SPEEDS_MPH,
+    )
+    del clock
+    exits = exits[np.array(used)]
+    near = exits["meters"] <= travel_times.NEAR_EXIT_WALK_M
+    default = exits["meters"] <= travel_times.DEFAULT_EXIT_WALK_M
+    for name, part in [
+        ("exits.bin", exits[near]),
+        ("exits-far.bin", exits[~near & default]),
+        ("exits-fast.bin", exits[~default]),
+    ]:
+        columns = [
+            part[c].to_numpy(dtype="<u2") for c in ["station", "cell", "exit_seconds", "meters"]
+        ]
+        files.write(
+            paths.WEB_DATA / name,
+            np.array([len(part)], dtype="<u4").tobytes() + b"".join(c.tobytes() for c in columns),
+        )
+
     routes: dict[str, dict[str, str]] = {}
     for scenario in Scenario:
         with zipfile.ZipFile(scenario.gtfs) as feed:

@@ -95,6 +95,8 @@ CI routes, exports, and publishes the page to GitHub Pages on every push to `mai
 The page times walking out of stations itself, at the speed its slider is set to, 1 to 5 mph:
 `export` gives it when each station's trains reach every station each minute of the window,
 and every station's walks out to the cells, up to an hour at 5 mph,
+but only those some cell's quickest trip takes, from any station at any of the slider's speeds,
+which `export` finds by running the page's own Rust (`web/times/`) through `route`,
 those farther than half an hour at 5 mph loaded after the page first draws,
 and those farther than an hour at 3 mph, where the slider starts, only once it's faster,
 and it takes each cell's median over the minutes, as routing does,

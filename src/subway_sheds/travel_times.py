@@ -28,6 +28,12 @@ WALKING_SPEED_KM_PER_H = 3 * 1.609344
 WALKING_SPEED_MM_PER_S = int(WALKING_SPEED_KM_PER_H / 3600 * 1000 * 1000)
 # The speeds the page's slider walks out of stations at, in miles an hour.
 SLIDER_MPH = (1.0, 5.0)
+# And every speed it can be set to, in its steps, as `web/index.html` has them.
+SLIDER_STEP_MPH = 0.25
+SLIDER_SPEEDS_MPH = [
+    SLIDER_MPH[0] + i * SLIDER_STEP_MPH
+    for i in range(round((SLIDER_MPH[1] - SLIDER_MPH[0]) / SLIDER_STEP_MPH) + 1)
+]
 # How far the page may walk from a station: `EXIT_WALK` at the slider's fastest,
 # and how far it walks before it's loaded the rest, `NEAR_EXIT_WALK` at it.
 EXIT_WALK = datetime.timedelta(minutes=60)

@@ -55,6 +55,25 @@ def near_streets(osm: StrPath, points: list[tuple[float, float]], meters: float)
     links to the streets in `osm`, an `.osm.pbf`, within `meters`, as routing links it.
     """
 
+def used_exits(
+    arrivals: bytes,
+    cell: bytes,
+    exit_seconds: bytes,
+    meters: bytes,
+    starts: bytes,
+    cells: int,
+    stations: int,
+    mphs: list[float],
+) -> list[bool]:
+    """
+    Which of the walks out of stations to the cells the page ever takes, by their place,
+    as `web/times/`'s `used_exits` finds them,
+    from every origin, in every run, at every one of `mphs`.
+    `arrivals` is each origin's, as the page reads them, one after another,
+    and the walks are `cell`, `exit_seconds`, and `meters`, by station from `starts`,
+    all little-endian, as `export` writes them.
+    """
+
 def stations(feed: StrPath) -> list[tuple[str, str, float, float]]:
     """The stations some trip in `feed` stops at, as `(id, name, latitude, longitude)`."""
 
