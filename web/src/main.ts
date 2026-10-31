@@ -579,6 +579,16 @@ function drawCells(): void {
   }
 }
 
+// A station's name, with QueensLink's M bullet after a new station's, as the map draws it.
+function stationLabel(station: Station): (string | HTMLElement)[] {
+  if (station.scenarios.length !== 1) {
+    return [station.name];
+  }
+  const m = document.createElement("span");
+  m.className = "legend-station legend-station-new";
+  return [station.name, " ", m];
+}
+
 async function selectStation(id: string): Promise<void> {
   const station = stationsById.get(id);
   if (station === undefined) {
@@ -591,13 +601,7 @@ async function selectStation(id: string): Promise<void> {
   }
   // Only a new station has an M, which would otherwise be drawn over the others' white too.
   map.setFilter("selected-station-m", ["all", ["get", "new"], ["==", ["get", "id"], id]]);
-  stationName.textContent = station.name;
-  // QueensLink's M bullet after a new station's name, as the map draws it.
-  if (station.scenarios.length === 1) {
-    const m = document.createElement("span");
-    m.className = "legend-station legend-station-new";
-    stationName.append(" ", m);
-  }
+  stationName.replaceChildren(...stationLabel(station));
   selectedName = station.name;
   showSummaryStatus();
   writeHash();
@@ -632,16 +636,19 @@ function applyControls(): void {
 // How far from a station, in pixels, a click or tap still picks it,
 // since the dots are only a few pixels across when zoomed out.
 const HIT_RADIUS = 12;
+// And with a mouse, which can be precise, only on its dot, give or take a little,
+// so that the bands between the stations are still easy to point at and click.
+const MOUSE_RADIUS = 2;
 
 // The station nearest the point, of those within reach of it.
-function stationAt(event: { readonly point: Point }): string | undefined {
+function stationAt(event: { readonly point: Point }, radius = HIT_RADIUS): string | undefined {
   const { x, y } = event.point;
   let nearest: string | undefined;
   let nearestDistance = Infinity;
   const near = map.queryRenderedFeatures(
     [
-      [x - HIT_RADIUS, y - HIT_RADIUS],
-      [x + HIT_RADIUS, y + HIT_RADIUS],
+      [x - radius, y - radius],
+      [x + radius, y + radius],
     ],
     { layers: ["stations"] },
   );
@@ -938,7 +945,9 @@ await loaded;
   });
 
   map.on("click", (event: MapMouseEvent) => {
-    const id = stationAt(event);
+    const fromMouse =
+      event.originalEvent instanceof PointerEvent && event.originalEvent.pointerType === "mouse";
+    const id = stationAt(event, fromMouse ? MOUSE_RADIUS : HIT_RADIUS);
     if (id !== undefined) {
       void selectStation(id);
     } else {
@@ -947,13 +956,21 @@ await loaded;
     }
   });
   map.on("mousemove", (event: MapMouseEvent) => {
-    const id = stationAt(event);
+    const id = stationAt(event, MOUSE_RADIUS);
     map.getCanvas().style.cursor = id === undefined ? "" : "pointer";
     if (id !== undefined) {
       prefetchTimes(id);
     }
-    // Still shown near stations, which are close together in much of the city.
-    showBand(bandAt(event.lngLat), event.lngLat);
+    const station = id === undefined ? undefined : stationsById.get(id);
+    if (station === undefined) {
+      showBand(bandAt(event.lngLat), event.lngLat);
+      return;
+    }
+    // Which station a click would pick, as they're close together in much of the city.
+    highlightBand(pinned?.band ?? NOTHING);
+    const label = document.createElement("span");
+    label.append(...stationLabel(station));
+    bandPopup.setLngLat([station.lon, station.lat]).setDOMContent(label).addTo(map);
   });
   // On a phone, the touch starts a little before the tap it ends in.
   map.on("touchstart", (event: MapTouchEvent) => {

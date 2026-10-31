@@ -390,6 +390,17 @@ body,
   vertical-align: -6px;
 }
 
+/* The M bullet after a station's name where it's pointed at, as small as the text. */
+.band-popup .legend-station-new {
+  position: static;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border-width: 1px;
+  transform: none;
+  vertical-align: -3px;
+}
+
 /* The M bullet under the band of places only QueensLink reaches, and after a new station's name, as small as the text. */
 .legend-labels .legend-station-new,
 #station-name .legend-station-new {
