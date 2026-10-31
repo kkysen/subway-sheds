@@ -81,6 +81,14 @@ jobs:
           npm ci
           npm run check
 
+      # The `route` crate's own tests and lints, which `maturin` building it for `uv` doesn't run.
+      - name: route
+        working-directory: route
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
       # The page's travel times in WebAssembly, which `npm run build` builds.
       - name: web/times
         working-directory: web/times
