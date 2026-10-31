@@ -85,6 +85,8 @@ interface Station {
   readonly lon: number;
   readonly lat: number;
   readonly scenarios: readonly Scenario[];
+  // Its complex, the stations changed between without paying again.
+  readonly complex: string;
 }
 
 const data = (path: string): string => `${import.meta.env.BASE_URL}data/${path}`;
@@ -1134,15 +1136,38 @@ function diamond(): ImageData {
 // Whole minutes, as said under a journey's trains, rounded up from any part of one.
 const legMinutes = (seconds: number): string => `${Math.max(Math.ceil(seconds / 60), 0)} min`;
 
-// One step of a journey in its popup: `top`, with how long it takes in small text under it.
-function journeyStep(top: Node | string, seconds: number, className: string): HTMLElement {
+// The fare, said over each step a journey pays it at.
+// Neither feed has GTFS fares yet; once one does, it should come from them.
+const FARE = "$3";
+
+// One step of a journey in its popup: `top`, with how long it takes in small text under it,
+// and the fare over it if it's paid there.
+function journeyStep(
+  top: Node | string,
+  seconds: number,
+  className: string,
+  pays = false,
+): HTMLElement {
   const step = document.createElement("span");
   step.className = `journey-step ${className}`;
+  const fare = document.createElement("span");
+  fare.className = "journey-fare";
+  fare.textContent = pays ? FARE : "";
   const time = document.createElement("span");
   time.className = "journey-time";
   time.textContent = legMinutes(seconds);
-  step.append(top, time);
+  step.append(fare, top, time);
   return step;
+}
+
+// Whether changing from ride `from` to ride `to` of `legs` pays again:
+// if it walks between stations of different complexes, out of the system.
+function paysBetween(legs: readonly RouteLeg[], from: RouteLeg, to: RouteLeg): boolean {
+  return legs
+    .slice(legs.indexOf(from) + 1, legs.indexOf(to))
+    .some(
+      (leg) => leg.pattern === WALK_LEG && stations[leg.a]?.complex !== stations[leg.b]?.complex,
+    );
 }
 
 // A journey's trains, each with its ride's minutes under it, and between them,
@@ -1162,7 +1187,7 @@ function journeyLine(
   line.className = "route-trains";
   const first = rides[0];
   if (first !== undefined && departs !== undefined) {
-    line.append(journeyStep("→", first.start - departs, "journey-change"));
+    line.append(journeyStep("→", first.start - departs, "journey-change", true));
   }
   let last: RouteLeg | undefined;
   for (const leg of legs) {
@@ -1170,7 +1195,9 @@ function journeyLine(
       continue;
     }
     if (last !== undefined) {
-      line.append(journeyStep("→", leg.start - last.end, "journey-change"));
+      line.append(
+        journeyStep("→", leg.start - last.end, "journey-change", paysBetween(legs, last, leg)),
+      );
     }
     line.append(journeyStep(bullet(trainOf(leg)), leg.end - leg.start, "journey-ride"));
     last = leg;

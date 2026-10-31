@@ -504,6 +504,15 @@ body,
   background: var(--bullet-color);
 }
 
+/* The fare over a step where it's paid, as small as its minutes,
+   and room for it over the rest so that they line up. */
+.journey-fare {
+  min-height: 1.2em;
+  font-size: 0.75em;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
 /* A shuttle's which, as the MTA writes it, small in its S's upper right. */
 .route-bullet {
   position: relative;

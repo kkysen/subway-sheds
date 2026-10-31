@@ -8,7 +8,7 @@ import zipfile
 import numpy as np
 import pandas as pd
 
-from subway_sheds import gtfs, lines, paths, travel_times
+from subway_sheds import access, gtfs, lines, paths, travel_times
 from subway_sheds.grid import SPACING, Grid
 from subway_sheds.scenarios import Day, Scenario
 
@@ -24,7 +24,7 @@ def write(grid: Grid) -> None:
 
     - `grid.json`: the Web Mercator center of cell (0, 0), the spacing,
       and each cell's column and row.
-    - `stations.json`: each station in either scenario, and which.
+    - `stations.json`: each station in either scenario, and which, with its complex.
     - `lines.json`: GeoJSON of the lines between stations, each with its color
       and which scenarios run on it.
     - `routes.json`: each route's name and colors, by its ID.
@@ -73,6 +73,12 @@ def write(grid: Grid) -> None:
         )
     )
 
+    # Each station's complex, the stations changed between without paying again, its own if none.
+    complexes = (
+        pd.read_csv(access.TABLE, dtype=str)
+        .drop_duplicates("station")
+        .set_index("station")["complex"]
+    )
     stations: dict[str, dict[str, object]] = {}
     for scenario in Scenario:
         for station in gtfs.stations(scenario.gtfs):
@@ -83,6 +89,7 @@ def write(grid: Grid) -> None:
                     "name": station.name,
                     "lon": station.lon,
                     "lat": station.lat,
+                    "complex": str(complexes.get(station.id, station.id)),
                     "scenarios": [],
                 },
             )
