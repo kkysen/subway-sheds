@@ -19,7 +19,7 @@ from subway_sheds import access, gtfs, lines, paths, travel_times
 from subway_sheds.grid import SPACING, Grid
 from subway_sheds.scenarios import FREE_TRANSFERS, Day, Fare, Scenario
 
-# In a station's arrivals, a station not reached by train within `travel_times.MAX_TIME`.
+# In the arrivals read from routing, a station not reached within `travel_times.MAX_TIME`.
 UNREACHED = 0xFFFF
 # In a station's routes, a leg that walks between stations.
 WALK_LEG = 0xFFFF
@@ -103,12 +103,20 @@ def write(grid: Grid) -> None:
       in each run, by day, then fare, then scenario, then station, as `stations.json` lists them:
       a `uint8` count of journeys for each, then each journey's minute, a `uint8`,
       as the change from the one before but a station's first, then each's count of legs, a `uint8`,
-      then every leg, as five little-endian `uint16`s,
+      then, for each journey with none, walked from the station, the seconds it walks,
+      a little-endian `uint16`, then every leg, as five little-endian `uint16`s,
       a ride's pattern and the positions in it it boards and gets off at,
       or `WALK_LEG` and the stations a walk between stations is from and to,
       then when it starts, in seconds from the window's start for a journey's first leg
       and after the leg before for the rest, and how long it takes,
       as those are small and alike, which compresses better.
+      Walked journeys one after another that walk as long are one,
+      departing at every minute until the one before.
+      The page reads from them when the station's trains reach each station's platforms,
+      for each minute, which is all routing gives it to time:
+      a journey's last leg's end, or the minute it departs at and its walk,
+      unreached if that's more than `travel_times.MAX_TIME` after it departs.
+      It adds each departure's walk out to each cell and takes the median, as routing does.
     - `exits.bin`: every walk out of a station to a cell within `travel_times.NEAR_EXIT_WALK_M`,
       to time at the reader's walking speed,
       as four little-endian `uint16` arrays of equal length after their length, a `uint32`:
@@ -117,17 +125,6 @@ def write(grid: Grid) -> None:
       by station.
     - `exits-far.bin`: the rest, as `exits.bin` has them, which the page loads after,
       as there are about as many again, but few are any cell's quickest way.
-    - `arrivals/{station}.bin`: when trains from the station reach each station's platforms,
-      for each minute of the departure window, in each run,
-      in seconds from the window's start, `UNREACHED` if not within `travel_times.MAX_TIME`.
-      As that only changes when the best train does, only the changes:
-      by day, then fare, then scenario, in the order `Day`, `Fare`, and `Scenario` list them,
-      then station, as `stations.json` lists them,
-      a `uint8` count of changes for each, then each change's minute, a `uint8`,
-      then each change's time, a little-endian `uint16`, all in that order,
-      each minute and time but a station's first as the change from the one before,
-      wrapping around, as those are small and alike, which compresses better.
-      The page adds each departure's walk out to each cell and takes the median, as routing does.
 
     The `.bin` files are each compressed with Brotli (see `_BrotliFiles`).
     """
@@ -136,8 +133,6 @@ def write(grid: Grid) -> None:
     for old in paths.WEB_DATA.rglob("*"):
         if not old.is_dir():
             old.unlink()
-    arrivals_dir = paths.WEB_DATA / "arrivals"
-    arrivals_dir.mkdir(parents=True, exist_ok=True)
     files = _BrotliFiles()
 
     (paths.WEB_DATA / "grid.json").write_text(
@@ -355,13 +350,34 @@ def write(grid: Grid) -> None:
         )
         journey_run = run[starts]
         journey_dest = legs["dest"][starts]
+        journey_minute = legs["minute"][starts]
+        # How long each journey walked from the origin takes, as it has no legs to say,
+        # whose arrival is then the minute it departs at and that.
+        walk_only = leg_counts == 0
+        walk = seconds[i, journey_run, journey_minute, journey_dest]
+        assert not (walk_only & (walk == UNREACHED)).any()
+        walk = np.where(walk_only, walk, UNREACHED)
+        # And of those that walk as long one after another, only the last,
+        # as each is taken every minute before it until the one before.
+        same_next = (
+            walk_only[:-1]
+            & (walk[1:] == walk[:-1])
+            & (journey_run[1:] == journey_run[:-1])
+            & (journey_dest[1:] == journey_dest[:-1])
+        )
+        kept = ~np.append(same_next, False)
+        journey_run = journey_run[kept]
+        journey_dest = journey_dest[kept]
+        journey_minute = journey_minute[kept]
+        leg_counts = leg_counts[kept]
+        walk = walk[kept]
         np.add.at(counts, (journey_run, journey_dest), 1)
         first_journey = np.concatenate(
             [
                 [True],
                 (journey_run[1:] != journey_run[:-1]) | (journey_dest[1:] != journey_dest[:-1]),
             ]
-        )[: len(starts)]
+        )[: len(journey_run)]
         start = legs["start"][has_leg].astype(np.int64)
         end = legs["end"][has_leg].astype(np.int64)
         first = legs["leg"][has_leg] == 0
@@ -378,30 +394,10 @@ def write(grid: Grid) -> None:
         files.write(
             routes_dir / f"{station}.bin",
             counts.tobytes()
-            + _deltas(legs["minute"][starts], first_journey).astype(np.uint8).tobytes()
+            + _deltas(journey_minute, first_journey).astype(np.uint8).tobytes()
             + leg_counts.astype(np.uint8).tobytes()
+            + walk[walk != UNREACHED].astype("<u2").tobytes()
             + fields.tobytes(),
         )
-    del columns_of
-
-    # When, from the window's start, rather than how long after each departure.
-    reached = seconds != UNREACHED
-    offsets = (np.arange(minutes, dtype=np.uint32) * 60)[:, np.newaxis]
-    clock = np.where(reached, seconds.astype(np.uint32) + offsets, UNREACHED).astype("<u2")
-    del seconds, reached
-    # Station-major, so that each station's minutes are together.
-    clock = np.ascontiguousarray(clock.swapaxes(2, 3))
-    changed = np.ones_like(clock, dtype=bool)
-    changed[..., 1:] = clock[..., 1:] != clock[..., :-1]
-    counts = changed.sum(axis=-1, dtype=np.uint8)
-    minute_of = np.broadcast_to(np.arange(minutes, dtype=np.uint8), clock.shape[1:])
-    for station, i in index.items():
-        minute = minute_of[changed[i]]
-        first = minute == 0
-        files.write(
-            arrivals_dir / f"{station}.bin",
-            counts[i].tobytes()
-            + _deltas(minute, first).astype(np.uint8).tobytes()
-            + (_deltas(clock[i][changed[i]], first) % 0x10000).astype("<u2").tobytes(),
-        )
+    del columns_of, seconds
     files.close()

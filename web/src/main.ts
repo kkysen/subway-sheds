@@ -20,11 +20,11 @@ import {
   medianDeparture,
   mergeExits,
   NO_STATION,
-  parseArrivals,
   parseExits,
   parseRoutes,
   type RouteLeg,
   type Routes,
+  routesArrivals,
   routeTo,
   UNREACHED,
   WALK_LEG,
@@ -104,7 +104,7 @@ async function fetchJson<T>(path: string): Promise<T> {
   return json;
 }
 
-// Fetched first, as reading a station's arrivals needs how many stations there are.
+// Fetched first, as reading a station's routes needs how many stations there are.
 const stationList = fetchJson<Station[]>("stations.json");
 
 // Whether the browser decompresses Brotli itself; its `DecompressionStream` throws if not.
@@ -150,15 +150,9 @@ interface FromStation {
 
 async function fetchTimesUncached(station: string): Promise<FromStation> {
   const id = encodeURIComponent(station);
-  const [arrivals, routes, list] = await Promise.all([
-    fetchBinary(`arrivals/${id}.bin`),
-    fetchBinary(`routes/${id}.bin`),
-    stationList,
-  ]);
-  return {
-    arrivals: parseArrivals(arrivals, list.length),
-    routes: parseRoutes(routes, list.length),
-  };
+  const [buffer, list] = await Promise.all([fetchBinary(`routes/${id}.bin`), stationList]);
+  const routes = parseRoutes(buffer, list.length);
+  return { arrivals: routesArrivals(routes, list.length), routes };
 }
 
 // How many stations' arrivals are kept, about 240 KB each unpacked,

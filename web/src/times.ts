@@ -6,6 +6,8 @@
 // walking out of a station for up to an hour.
 const MINUTES = 60;
 const MAX_EXIT_WALK_SECONDS = 60 * 60;
+// As `MAX_TIME` there: what's reached later isn't.
+const MAX_SECONDS = 2 * 60 * 60;
 // The median over the window's departures, as routing picks it.
 const MEDIAN = Math.ceil(0.5 * MINUTES) - 1;
 // The runs each station's arrivals have, by day, then fare, then scenario.
@@ -76,33 +78,29 @@ export function mergeExits(near: Exits, far: Exits, stations: number): Exits {
 // by run, then minute, then station.
 export type Arrivals = Uint16Array;
 
-export function parseArrivals(buffer: ArrayBuffer, stations: number): Arrivals {
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-  const counts = bytes.subarray(0, RUNS * stations);
-  const changes = counts.reduce((sum, c) => sum + c, 0);
-  let minuteAt = RUNS * stations;
-  let clockAt = minuteAt + changes;
-  const arrivals = new Uint16Array(RUNS * MINUTES * stations);
-  // Each change's minute, from those since the one before.
-  const minutes = new Uint8Array(MINUTES);
+// Read from `routes`: a journey's last leg's end, every minute it's taken,
+// or for one walked from the origin, the minute and its walk,
+// unreached if that's more than `MAX_SECONDS` after departing.
+export function routesArrivals(routes: Routes, stations: number): Arrivals {
+  const arrivals = new Uint16Array(RUNS * MINUTES * stations).fill(UNREACHED_SECONDS);
   for (let run = 0; run < RUNS; run++) {
     for (let s = 0; s < stations; s++) {
-      const count = counts[run * stations + s] ?? 0;
-      for (let c = 0; c < count; c++) {
-        minutes[c] = (c > 0 ? (minutes[c - 1] ?? 0) : 0) + (bytes[minuteAt + c] ?? 0);
-      }
-      // Its time, from the change since the one before, wrapping around.
-      let clock = 0;
-      for (let c = 0; c < count; c++) {
-        clock = (clock + view.getUint16(clockAt + 2 * c, true)) & 0xffff;
-        const to = c + 1 < count ? (minutes[c + 1] ?? MINUTES) : MINUTES;
-        for (let m = minutes[c] ?? 0; m < to; m++) {
-          arrivals[(run * MINUTES + m) * stations + s] = clock;
+      const i = run * stations + s;
+      let from = 0;
+      for (let j = routes.starts[i] ?? 0; j < (routes.starts[i + 1] ?? 0); j++) {
+        const to = (routes.minutes[j] ?? 0) + 1;
+        const last = (routes.legStarts[j + 1] ?? 0) - 1;
+        const walked = last < (routes.legStarts[j] ?? 0);
+        for (let m = from; m < to; m++) {
+          const clock = walked
+            ? 60 * m + (routes.walks[j] ?? 0)
+            : (routes.legs[LEG_FIELDS * last + 4] ?? 0);
+          if (clock - 60 * m <= MAX_SECONDS) {
+            arrivals[(run * MINUTES + m) * stations + s] = clock;
+          }
         }
+        from = to;
       }
-      minuteAt += count;
-      clockAt += 2 * count;
     }
   }
   return arrivals;
@@ -191,6 +189,8 @@ export interface Routes {
   readonly minutes: Uint8Array;
   // Where each journey's legs start, and the last one's end.
   readonly legStarts: Uint32Array;
+  // How long each journey with no legs, walked from the station, walks, in seconds.
+  readonly walks: Uint16Array;
   readonly legs: Uint16Array;
 }
 
@@ -214,7 +214,15 @@ export function parseRoutes(buffer: ArrayBuffer, stations: number): Routes {
   for (let k = 0; k < journeys; k++) {
     legStarts[k + 1] = (legStarts[k] ?? 0) + (legCounts[k] ?? 0);
   }
-  const view = new DataView(buffer, RUNS * stations + 2 * journeys);
+  const walks = new Uint16Array(journeys);
+  const walkView = new DataView(buffer, RUNS * stations + 2 * journeys);
+  let walked = 0;
+  for (let k = 0; k < journeys; k++) {
+    if (legCounts[k] === 0) {
+      walks[k] = walkView.getUint16(2 * walked++, true);
+    }
+  }
+  const view = new DataView(buffer, RUNS * stations + 2 * journeys + 2 * walked);
   const legs = new Uint16Array(LEG_FIELDS * (legStarts[journeys] ?? 0));
   for (let k = 0; k < legs.length; k++) {
     legs[k] = view.getUint16(2 * k, true);
@@ -231,7 +239,7 @@ export function parseRoutes(buffer: ArrayBuffer, stations: number): Routes {
       legs[at + 4] = end;
     }
   }
-  return { starts, minutes, legStarts, legs };
+  return { starts, minutes, legStarts, walks, legs };
 }
 
 // The legs of the journey to `station` in `run` departing at `minute`, as `route` picks it:
