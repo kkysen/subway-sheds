@@ -264,9 +264,10 @@ body,
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
+  /* By the heading, as the marker is, so that it stays put whether or not the line under it is shown. */
   #controls summary .maplibregl-ctrl-group {
     grid-column: 3;
-    grid-row: 1 / span 2;
+    grid-row: 1;
   }
 
   /* Only as tall as the heading's line, rather than MapLibre's 29px, so that the bar's no taller for it. */
