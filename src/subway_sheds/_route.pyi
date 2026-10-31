@@ -24,3 +24,13 @@ def travel_times(
 
     The streets are read and walked once, for every feed's stops.
     """
+
+def stations(feed: StrPath) -> list[tuple[str, str, float, float]]:
+    """The stations some trip in `feed` stops at, as `(id, name, latitude, longitude)`."""
+
+def station_pairs(feed: StrPath) -> list[tuple[str, str, list[str], list[str]]]:
+    """
+    Each pair of stations some trip in `feed` runs between without stopping,
+    as `(station, station, routes, shapes)`, the smaller station ID first,
+    with the routes whose trips run between them and those trips' shapes, each sorted.
+    """

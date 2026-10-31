@@ -68,7 +68,7 @@ def write(grid: Grid) -> None:
 
     segments: dict[tuple[str, tuple[str, str]], dict[str, object]] = {}
     for scenario in Scenario:
-        for segment in lines.segments(gtfs.read_feed(scenario.gtfs)):
+        for segment in lines.segments(scenario.gtfs):
             feature = segments.setdefault(
                 (segment.color, segment.stations),
                 {
@@ -94,6 +94,7 @@ def write(grid: Grid) -> None:
         dtype=np.uint8,
     )
     index = {station: i for i, station in enumerate(stations)}
+
     for (d, day), (s, scenario) in itertools.product(enumerate(Day), enumerate(Scenario)):
         times = pd.read_parquet(travel_times.output_path(scenario, day))
         rows = times["station"].astype(str).map(index).to_numpy()

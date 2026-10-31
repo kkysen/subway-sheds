@@ -9,8 +9,10 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from subway_sheds import _route
 
-def _read_csv(feed: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
+
+def read_csv(feed: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
     with feed.open(name) as f:
         yield from csv.DictReader(io.TextIOWrapper(f, encoding="utf-8-sig"))
 
@@ -241,25 +243,12 @@ def stations(feed_path: Path) -> list[Station]:
 
     Not every station in `stops.txt`, since the baseline keeps QueensLink's stations
     with no trips stopping at them.
+    Read in Rust (`route/src/feed.rs`), as reading `stop_times.txt` in Python is slow.
     """
-    with zipfile.ZipFile(feed_path) as feed:
-        stop_ids = {stop_time["stop_id"] for stop_time in _read_csv(feed, "stop_times.txt")}
-        stops = list(_read_csv(feed, "stops.txt"))
-        served = {
-            stop["parent_station"] or stop["stop_id"]
-            for stop in stops
-            if stop["stop_id"] in stop_ids
-        }
-        return [
-            Station(
-                id=stop["stop_id"],
-                name=stop["stop_name"],
-                lat=float(stop["stop_lat"]),
-                lon=float(stop["stop_lon"]),
-            )
-            for stop in stops
-            if stop["location_type"] == "1" and stop["stop_id"] in served
-        ]
+    return [
+        Station(id=id_, name=name, lat=lat, lon=lon)
+        for id_, name, lat, lon in _route.stations(feed_path)
+    ]
 
 
 def _date(value: str) -> datetime.date:
@@ -277,13 +266,13 @@ def service_date(feed_path: Path, weekday: int) -> datetime.date:
     which also carries calendars from older feeds that only a route or two still use.
     """
     with zipfile.ZipFile(feed_path) as feed:
-        calendar = list(_read_csv(feed, "calendar.txt"))
+        calendar = list(read_csv(feed, "calendar.txt"))
         added: dict[datetime.date, set[str]] = {}
         removed: dict[datetime.date, set[str]] = {}
-        for row in _read_csv(feed, "calendar_dates.txt"):
+        for row in read_csv(feed, "calendar_dates.txt"):
             by_date = added if row["exception_type"] == "1" else removed
             by_date.setdefault(_date(row["date"]), set()).add(row["service_id"])
-        trips = Counter(trip["service_id"] for trip in _read_csv(feed, "trips.txt"))
+        trips = Counter(trip["service_id"] for trip in read_csv(feed, "trips.txt"))
 
     def trip_count(date: datetime.date) -> int:
         services = {

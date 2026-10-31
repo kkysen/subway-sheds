@@ -2,14 +2,16 @@
 
 import heapq
 import math
+import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 
 import shapely
 from pyproj import Transformer
 from shapely import LineString, Point
 from shapely.ops import substring
 
-from subway_sheds import gtfs
+from subway_sheds import _route, gtfs
 
 # How near, in meters, a shape has to pass both of a pair's stations to draw the line between them.
 # MTA's feed leaves many trips without a shape (every B, most Fs and Qs),
@@ -75,22 +77,23 @@ def _is_shortcut(
     return False
 
 
-def segments(feed: gtfs.Feed) -> list[Segment]:
+def segments(feed_path: Path) -> list[Segment]:
     """Each pair of stations trains run between without stopping, but for shortcuts."""
-    parents = {s["stop_id"]: s["parent_station"] or s["stop_id"] for s in feed.rows["stops.txt"]}
+    with zipfile.ZipFile(feed_path) as feed:
+        stops = list(gtfs.read_csv(feed, "stops.txt"))
+        route_rows = list(gtfs.read_csv(feed, "routes.txt"))
+        shape_rows = list(gtfs.read_csv(feed, "shapes.txt"))
     points = {
         s["stop_id"]: _point(float(s["stop_lon"]), float(s["stop_lat"]))
-        for s in feed.rows["stops.txt"]
+        for s in stops
         if not s["parent_station"]
     }
     routes = {
-        route["route_id"]: (i, f"#{route['route_color']}")
-        for i, route in enumerate(feed.rows["routes.txt"])
+        route["route_id"]: (i, f"#{route['route_color']}") for i, route in enumerate(route_rows)
     }
-    trips = {trip["trip_id"]: trip for trip in feed.rows["trips.txt"]}
 
     shape_points: dict[str, list[tuple[int, float, float]]] = {}
-    for row in feed.rows["shapes.txt"]:
+    for row in shape_rows:
         shape_points.setdefault(row["shape_id"], []).append(
             (int(row["shape_pt_sequence"]), float(row["shape_pt_lon"]), float(row["shape_pt_lat"]))
         )
@@ -100,25 +103,13 @@ def segments(feed: gtfs.Feed) -> list[Segment]:
         if len(rows) > 1
     }
 
-    trip_stops: dict[str, list[tuple[int, str]]] = {}
-    for stop_time in feed.rows["stop_times.txt"]:
-        trip_stops.setdefault(stop_time["trip_id"], []).append(
-            (int(stop_time["stop_sequence"]), parents[stop_time["stop_id"]])
-        )
-
-    # Each pair's color, as the first route in `routes.txt` running between them, and its shapes.
+    # Each pair's color, as the first route in `routes.txt` running between them, and its shapes,
+    # from `stop_times.txt`, read in Rust (`route/src/feed.rs`), as reading it in Python is slow.
     colors: dict[tuple[str, str], tuple[int, str]] = {}
     own_shapes: dict[tuple[str, str], set[str]] = {}
-    for trip, stops in trip_stops.items():
-        route = routes[trips[trip]["route_id"]]
-        stations = [station for _, station in sorted(stops)]
-        for a, b in zip(stations, stations[1:], strict=False):
-            if a == b:
-                continue
-            pair = (min(a, b), max(a, b))
-            colors[pair] = min(colors.get(pair, route), route)
-            if trips[trip].get("shape_id") in shapes:
-                own_shapes.setdefault(pair, set()).add(trips[trip]["shape_id"])
+    for a, b, pair_routes, pair_shapes in _route.station_pairs(feed_path):
+        colors[a, b] = min(routes[r] for r in pair_routes)
+        own_shapes[a, b] = {s for s in pair_shapes if s in shapes}
 
     neighbors: dict[str, dict[str, float]] = {}
     for a, b in colors:

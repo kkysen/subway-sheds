@@ -4,6 +4,7 @@
 //! with `mta-od-data`'s `streets` (see `walks.rs`), as R5 did.
 //! Python drives it through the `subway_sheds._route` module.
 
+mod feed;
 mod walks;
 
 use std::path::{Path, PathBuf};
@@ -229,10 +230,25 @@ fn py_travel_times(
     })
 }
 
+/// The stations some trip in `feed` stops at, as `(id, name, latitude, longitude)`.
+#[pyfunction]
+fn stations(py: Python<'_>, feed: PathBuf) -> Result<Vec<(String, String, f64, f64)>> {
+    py.detach(|| Ok(feed::stations(&Feed::open(&feed)?)))
+}
+
+/// Each pair of stations some trip in `feed` runs between without stopping,
+/// as `(station, station, routes, shapes)`.
+#[pyfunction]
+fn station_pairs(py: Python<'_>, feed: PathBuf) -> Result<Vec<feed::Pair>> {
+    py.detach(|| Ok(feed::station_pairs(&Feed::open(&feed)?)))
+}
+
 #[pymodule]
 #[pyo3(name = "_route")]
 fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_travel_times, m)?)?;
+    m.add_function(wrap_pyfunction!(stations, m)?)?;
+    m.add_function(wrap_pyfunction!(station_pairs, m)?)?;
     Ok(())
 }
 
