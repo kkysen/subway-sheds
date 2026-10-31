@@ -218,7 +218,9 @@ def compare_raptor(
     cells, stations = _compared_stations()
     destinations = len(cells) + len(stations)
     for scenario, day in itertools.product(scenario_ or list(Scenario), day_ or list(Day)):
-        rows, unknown = raptor_check.route(scenario, day, stations, destinations)
+        rows, unknown = raptor_check.route(
+            scenario, day, stations, destinations, raptor_check.walks_dir(scenario)
+        )
         echo(
             f"{scenario} {day}: RAPTOR wrote {rows} rows; "
             f"{len(unknown)} of R5's transfers are between stops it doesn't serve"
@@ -246,6 +248,68 @@ def compare_raptor(
                 f"    {from_.name} ({from_.id}) to {to.name} ({to.id}): "
                 f"R5 {r5:.0f}, RAPTOR {raptor:.0f} min"
             )
+
+
+@app.command(name="street-walks")
+def street_walks(
+    scenario_: Annotated[
+        list[Scenario] | None,
+        Option(
+            "--scenario", help="A scenario whose walks to write, repeatable; every one if none."
+        ),
+    ] = None,
+) -> None:
+    """Write the walks `r5-walks` reads from R5, computed by the `streets` crate instead."""
+    cells, stations = _compared_stations()
+    destinations = pd.concat(
+        [cells, travel_times.station_points(stations, len(cells))], ignore_index=True
+    )
+    for scenario in scenario_ or list(Scenario):
+        raptor_check.write_street_walks(scenario, Day.WEEKDAY, stations, destinations)
+        echo(f"wrote {raptor_check.street_walks_dir(scenario).relative_to(paths.ROOT)}")
+
+
+def _seconds_off(name: str, t: pd.DataFrame, a: str, b: str, unit: str, within: list[int]) -> None:
+    both = t.dropna(subset=[a, b])
+    off = (both[b] - both[a]).abs()
+    shares = ", ".join(f"{(off <= w).mean():.1%} within {w}" for w in within)
+    echo(
+        f"  {name}: {len(both)} in both: {shares} {unit}; "
+        f"mean {(both[b] - both[a]).mean():+.2f}; "
+        f"only {a}: {t[b].isna().sum()}, only {b}: {t[a].isna().sum()}"
+    )
+
+
+@app.command(name="compare-walks")
+def compare_walks(
+    scenario_: Annotated[
+        list[Scenario] | None,
+        Option("--scenario", help="A scenario to compare, repeatable; every one if none."),
+    ] = None,
+    day_: Annotated[
+        list[Day] | None,
+        Option("--day", help="A day to compare, repeatable; every one if none."),
+    ] = None,
+) -> None:
+    """
+    Compare the `streets` crate's walks from `street-walks` with R5's from `r5-walks`,
+    table by table, and RAPTOR's times walking each.
+    """
+    cells, stations = _compared_stations()
+    destinations = len(cells) + len(stations)
+    for scenario in scenario_ or list(Scenario):
+        echo(f"{scenario} walks, in seconds:")
+        for table, t in raptor_check.compare_walks(scenario).items():
+            _seconds_off(table, t, "r5", "streets", "s", [0, 1, 5, 30])
+        for day in day_ or list(Day):
+            raptor_check.route(
+                scenario, day, stations, destinations, raptor_check.street_walks_dir(scenario)
+            )
+            t = raptor_check.compare_raptors(scenario, day)
+            to_station = t["destination"] >= len(cells)
+            echo(f"{scenario} {day}, RAPTOR's minutes on each's walks:")
+            _seconds_off("to stations", t[to_station], "r5", "streets", "min", [0, 1, 2, 5])
+            _seconds_off("to cells", t[~to_station], "r5", "streets", "min", [0, 1, 2, 5])
 
 
 @app.command(name="export")

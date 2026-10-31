@@ -37,8 +37,38 @@ def walks_dir(scenario: Scenario) -> Path:
     return WALKS / str(scenario)
 
 
-def raptor_output_path(scenario: Scenario, day: Day) -> Path:
-    return walks_dir(scenario) / f"raptor-{day}.parquet"
+# Each scenario's walks computed by the `streets` crate instead, as R5 computes them,
+# and RAPTOR's times walking them.
+STREET_WALKS = paths.CACHE / "street_walks"
+
+
+def street_walks_dir(scenario: Scenario) -> Path:
+    return STREET_WALKS / str(scenario)
+
+
+def raptor_output_path(walks: Path, day: Day) -> Path:
+    return walks / f"raptor-{day}.parquet"
+
+
+# R5's walking speed in its own units, millimeters a second, rounded down:
+# r5py sets it in meters a second (`RegionalTask.speed_walking`).
+WALK_MM_PER_S = int(travel_times.WALKING_SPEED_KM_PER_H / 3600 * 1000 * 1000)
+
+
+def write_street_walks(
+    scenario: Scenario, day: Day, origins: list[gtfs.Station], destinations: gpd.GeoDataFrame
+) -> None:
+    """Write the walks `write_walks` reads from R5, computed by the `streets` crate instead."""
+    _route.street_walks(
+        paths.OSM_PBF,
+        scenario.gtfs,
+        gtfs.service_date(scenario.gtfs, day.weekday),
+        [(o.id, o.lat, o.lon) for o in origins],
+        list(zip(destinations.geometry.y, destinations.geometry.x, strict=True)),
+        WALK_MM_PER_S,
+        travel_times.MAX_TIME // datetime.timedelta(seconds=1),
+        street_walks_dir(scenario),
+    )
 
 
 def _java_ints(array: Any) -> np.ndarray:
@@ -198,9 +228,9 @@ def write_walks(
 
 
 def route(
-    scenario: Scenario, day: Day, origins: list[gtfs.Station], destinations: int
+    scenario: Scenario, day: Day, origins: list[gtfs.Station], destinations: int, walks: Path
 ) -> tuple[int, list[tuple[str, str, int]]]:
-    """RAPTOR's times from `origins` walking R5's walks, as R5 routes them."""
+    """RAPTOR's times from `origins` walking the walks in `walks`, as R5 routes them."""
     date = gtfs.service_date(scenario.gtfs, day.weekday)
     window = travel_times.DEPARTURE_WINDOW // datetime.timedelta(minutes=1)
     return _route.travel_times(
@@ -210,10 +240,10 @@ def route(
         window,
         R5_MAX_RIDES,
         travel_times.MAX_TIME // datetime.timedelta(minutes=1),
-        walks_dir(scenario),
+        walks,
         [o.id for o in origins],
         destinations,
-        raptor_output_path(scenario, day),
+        raptor_output_path(walks, day),
     )
 
 
@@ -253,7 +283,7 @@ def compare(scenario: Scenario, day: Day, cells: int, stations: list[gtfs.Statio
         }
     )
     del r5_cells, r5_stations
-    raptor = pd.read_parquet(raptor_output_path(scenario, day))
+    raptor = pd.read_parquet(raptor_output_path(walks_dir(scenario), day))
     raptor = pd.DataFrame(
         {
             "origin": origins(raptor["origin"]),
@@ -262,3 +292,38 @@ def compare(scenario: Scenario, day: Day, cells: int, stations: list[gtfs.Statio
         }
     )
     return r5.merge(raptor, on=["origin", "destination"], how="outer")
+
+
+def compare_walks(scenario: Scenario) -> dict[str, pd.DataFrame]:
+    """
+    R5's and the `streets` crate's walks side by side, table by table,
+    as `walks.rs` reads them, with `r5` and `streets` seconds, `NaN` where one lacks a walk.
+    """
+    keys = {
+        "access": ["origin", "stop"],
+        "direct": ["origin", "destination"],
+        "egress": ["stop", "destination"],
+        "transfers": ["from_stop", "to_stop"],
+    }
+    tables = {}
+    for table, on in keys.items():
+        r5 = pd.read_parquet(walks_dir(scenario) / f"{table}.parquet")
+        streets = pd.read_parquet(street_walks_dir(scenario) / f"{table}.parquet")
+        for t in (r5, streets):
+            for key in on:
+                if t[key].dtype == object:
+                    t[key] = t[key].astype("category")
+        tables[table] = r5.rename(columns={"secs": "r5"}).merge(
+            streets.rename(columns={"secs": "streets"}), on=on, how="outer"
+        )
+    return tables
+
+
+def compare_raptors(scenario: Scenario, day: Day) -> pd.DataFrame:
+    """RAPTOR's minutes walking R5's walks and the `streets` crate's, as `r5` and `streets`."""
+    on = ["origin", "destination"]
+    r5 = pd.read_parquet(raptor_output_path(walks_dir(scenario), day))
+    streets = pd.read_parquet(raptor_output_path(street_walks_dir(scenario), day))
+    return r5.rename(columns={"minutes": "r5"}).merge(
+        streets.rename(columns={"minutes": "streets"}), on=on, how="outer"
+    )

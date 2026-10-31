@@ -3,6 +3,7 @@
 //! walking at either end and between stops as the walks given say.
 //! Python drives it through the `subway_sheds._route` module.
 
+mod street_walks;
 mod walks;
 
 use std::path::{Path, PathBuf};
@@ -19,6 +20,8 @@ use raptor::gtfs::{Feed, Secs, parse_time};
 use raptor::raptor::Router;
 use raptor::timetable::Timetable;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use streets::osm::Osm;
+use streets::{Graph, Mm};
 
 use crate::walks::{Transfer, Walks};
 
@@ -186,10 +189,35 @@ fn py_travel_times(
     })
 }
 
+/// Writes the walks `travel_times` takes to `out`,
+/// computed on the streets in `osm`, an `.osm.pbf`, as R5 computes them (see `street_walks.rs`),
+/// from `origins`, as `(id, latitude, longitude)`, to `destinations`, as `(latitude, longitude)`,
+/// at `speed` millimeters a second, walking from origins for at most `max_secs`.
+#[pyfunction(name = "street_walks")]
+#[allow(clippy::too_many_arguments)]
+fn py_street_walks(
+    py: Python<'_>,
+    osm: PathBuf,
+    feed: PathBuf,
+    date: Date,
+    origins: Vec<(String, f64, f64)>,
+    destinations: Vec<(f64, f64)>,
+    speed: Mm,
+    max_secs: Secs,
+    out: PathBuf,
+) -> Result<()> {
+    py.detach(|| {
+        let graph = Graph::build(&Osm::read(&osm)?);
+        let tt = Timetable::build(&Feed::open(&feed)?, date)?;
+        street_walks::compute(&graph, &tt, &origins, &destinations, speed, max_secs).write(&out)
+    })
+}
+
 #[pymodule]
 #[pyo3(name = "_route")]
 fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_travel_times, m)?)?;
+    m.add_function(wrap_pyfunction!(py_street_walks, m)?)?;
     Ok(())
 }
 
