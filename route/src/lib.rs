@@ -879,9 +879,8 @@ mod tests {
             access: [("O".to_owned(), vec![(a, 120)])].into_iter().collect(),
             direct: [("O".to_owned(), vec![(1, 300)])].into_iter().collect(),
             egress,
-            transfers: Vec::new(),
-            complexes: Vec::new(),
             stations,
+            ..Walks::default()
         };
         let req = Request {
             tt: &tt,
@@ -922,7 +921,14 @@ mod tests {
             [(
                 vec![(0, 15), (1, 5)],
                 each_minute,
-                vec![(0, vec![]), (1, vec![to_b])]
+                // A's arrival changes every minute, walked to, so each minute's journey is read back;
+                // B's is the 08:05's each minute, read back only at the last.
+                vec![
+                    (0, 0, vec![]),
+                    (0, 1, vec![]),
+                    (0, 2, vec![]),
+                    (1, 2, vec![to_b])
+                ]
             )]
         );
     }
