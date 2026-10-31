@@ -569,8 +569,13 @@ async function selectStation(id: string): Promise<void> {
   }
   // Only a new station has an M, which would otherwise be drawn over the others' white too.
   map.setFilter("selected-station-m", ["all", ["get", "new"], ["==", ["get", "id"], id]]);
-  const only = station.scenarios.length === 1 ? " (QueensLink only)" : "";
-  stationName.textContent = `${station.name}${only}`;
+  stationName.textContent = station.name;
+  // QueensLink's M bullet after a new station's name, as the map draws it.
+  if (station.scenarios.length === 1) {
+    const m = document.createElement("span");
+    m.className = "legend-station legend-station-new";
+    stationName.append(" ", m);
+  }
   selectedName = station.name;
   showSummaryStatus();
   writeHash();
