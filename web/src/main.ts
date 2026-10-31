@@ -173,14 +173,12 @@ type Band = readonly [number, string];
 // Where bands of minutes, traveled or saved, start, the same for both,
 // so that, e.g., 15 minutes there and 15 minutes saved fall on the same edge.
 // Few of them, so that each band is easy to tell from the next.
-const BAND_STARTS = [15, 30, 45, 60, 75] as const;
+const BAND_STARTS = [15, 30, 45, 60, 75, 90, 105] as const;
 
-// The minutes travel times are drawn out to.
-const MAX_MINUTES = 90;
-
-// The minutes routed out to, past which a cell isn't reached: past `MAX_MINUTES`,
-// so that there's saying how much QueensLink saves places that take longer than that without it.
+// The minutes routed out to, past which a cell isn't reached, and travel times are drawn out to,
+// so that past it, there's no saying how much QueensLink saves places.
 const ROUTED_MINUTES = 120;
+const MAX_MINUTES = ROUTED_MINUTES;
 
 // Travel time in minutes, from light to dark through QueensLink's orange, `#f48335`, to red, as QueensLink's own maps are,
 // lighter to darker all the way, so that the order reads without telling hues apart.
@@ -191,6 +189,8 @@ const travelTimeBands: readonly Band[] = [
   [BAND_STARTS[2], "#f48335"],
   [BAND_STARTS[3], "#dc5f27"],
   [BAND_STARTS[4], "#c44027"],
+  [BAND_STARTS[5], "#a3292a"],
+  [BAND_STARTS[6], "#7f1d2b"],
 ];
 
 // Minutes saved, from a minute, from light teal to QueensLink's green, `#24685b`, as QueensLink's own maps are.
@@ -201,7 +201,7 @@ const savedBands: readonly Band[] = [
   [BAND_STARTS[2], "#449586"],
   [BAND_STARTS[3], "#3a8578"],
   [BAND_STARTS[4], "#31796c"],
-  [MAX_MINUTES, "#24685b"],
+  [BAND_STARTS[5], "#24685b"],
 ];
 
 // Places only QueensLink reaches within `ROUTED_MINUTES`, which there's no saying how much it saves.
