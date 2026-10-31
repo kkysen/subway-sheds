@@ -1249,8 +1249,15 @@ interface Train extends RouteInfo {
   readonly corner: string;
 }
 const SHUTTLE_CORNERS: Readonly<Record<string, string>> = { GS: "42", FS: "F", H: "R" };
+// The patterns `run` rides, listed by day, then scenario, as either fare's runs have the same.
+function patternsOf(run: number): readonly Pattern[] | undefined {
+  const day = Math.floor(run / 4);
+  const scenario = run % 2;
+  return patterns[2 * day + scenario];
+}
+
 function trainOf(leg: RouteLeg, run = currentRun()): Train {
-  const route = patterns[run]?.[leg.pattern]?.route ?? "";
+  const route = patternsOf(run)?.[leg.pattern]?.route ?? "";
   const info = routeInfo[route] ?? { name: route, color: "#808183", text: "#ffffff" };
   const express = /^.X$/.test(info.name);
   return {
@@ -1457,7 +1464,7 @@ function routeFeatures(
       at = leg.b;
       continue;
     }
-    const passed = patterns[run]?.[leg.pattern]?.stations.slice(leg.a, leg.b + 1) ?? [];
+    const passed = patternsOf(run)?.[leg.pattern]?.stations.slice(leg.a, leg.b + 1) ?? [];
     const first = passed[0] ?? at;
     walk(at, first);
     const train = trainOf(leg, run);

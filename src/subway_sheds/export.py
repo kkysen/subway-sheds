@@ -95,8 +95,8 @@ def write(grid: Grid) -> None:
       that some journey in `routes/` walks, by `{from}|{to}`, their IDs,
       as `[longitude, latitude]`s from the entrance walked out of to the one walked into.
     - `routes.json`: each route's name and colors, by its ID.
-    - `patterns.json`: in each run, by day, then fare, then scenario,
-      each pattern's route and its stops' stations, as `stations.json` lists them.
+    - `patterns.json`: by day, then scenario, as either fare's runs have the same,
+      each pattern some journey rides' route and its stops' stations, as `stations.json` lists them.
     - `routes/{station}.bin`: the journeys from the station to each station,
       each departing at the minute it was read back at and every minute before
       until the one before it, so that the page can show the one behind any trip it times,
@@ -261,21 +261,6 @@ def write(grid: Grid) -> None:
                     "text": f"#{route.get('route_text_color') or 'FFFFFF'}",
                 }
     (paths.WEB_DATA / "routes.json").write_text(json.dumps(routes, separators=(",", ":")))
-    patterns = []
-    for day, fare, scenario in runs:
-        stops = pd.read_parquet(travel_times.patterns_path(scenario, day, fare))
-        patterns.append(
-            [
-                {
-                    "route": str(group["route"].iloc[0]),
-                    "stations": [
-                        index.get(s, -1) for s in group.sort_values("position")["station"]
-                    ],
-                }
-                for _, group in stops.groupby("pattern", sort=True)
-            ]
-        )
-    (paths.WEB_DATA / "patterns.json").write_text(json.dumps(patterns, separators=(",", ":")))
     routes_dir = paths.WEB_DATA / "routes"
     routes_dir.mkdir(exist_ok=True)
     # Each run's legs, as `route` writes them: by origin, then destination, minute, and leg,
@@ -305,6 +290,35 @@ def write(grid: Grid) -> None:
             }
         )
         del table
+    # Each run's patterns, which are the same for either fare, as only paying differs,
+    # so one list for each day and scenario,
+    # of only the patterns some journey rides, renumbered in the routes to their place in it.
+    patterns = []
+    for day, scenario in itertools.product(Day, Scenario):
+        same = [r for r, (d, _, s) in enumerate(runs) if (d, s) == (day, scenario)]
+        stops = [
+            pd.read_parquet(travel_times.patterns_path(scenario, day, runs[r][1])) for r in same
+        ]
+        for other in stops[1:]:
+            assert other.reset_index(drop=True).equals(stops[0].reset_index(drop=True))
+        # In order, as routing numbers them.
+        listed = [
+            {
+                "route": str(group["route"].iloc[0]),
+                "stations": [index.get(s, -1) for s in group.sort_values("position")["station"]],
+            }
+            for _, group in stops[0].groupby("pattern", sort=True)
+        ]
+        ridden = np.unique(
+            np.concatenate([columns_of[r]["p"][columns_of[r]["p"] != WALK_LEG] for r in same])
+        )
+        renumbered = np.full(len(listed), WALK_LEG, dtype=np.uint16)
+        renumbered[ridden] = np.arange(len(ridden))
+        for r in same:
+            ride = columns_of[r]["p"] != WALK_LEG
+            columns_of[r]["p"][ride] = renumbered[columns_of[r]["p"][ride]]
+        patterns.append([listed[pattern] for pattern in ridden])
+    (paths.WEB_DATA / "patterns.json").write_text(json.dumps(patterns, separators=(",", ":")))
     # Only the walks between stations some journey walks, as most never are.
     walked: set[int] = set()
     for c in columns_of:
