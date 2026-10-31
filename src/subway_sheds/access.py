@@ -261,6 +261,7 @@ def build() -> pd.DataFrame:
         for gtfs_id in str(e["gtfs_stop_id"]).split("; ")
         for kind in [e["entrance_type"]]
     ]
+    rows = _drop_misattributed(pd.DataFrame(rows), by_id).to_dict("records")
     # Stations the MTA lists no entrances for, at their own coordinates.
     listed = {r["station"] for r in rows}
     rows += [
@@ -269,6 +270,42 @@ def build() -> pd.DataFrame:
         if gtfs_id not in listed
     ]
     return pd.DataFrame(rows)
+
+
+# How much nearer, as a fraction, another station sharing a street entrance must be
+# for it to be only that station's.
+MISATTRIBUTED_NEARER = 0.5
+
+
+def _drop_misattributed(rows: pd.DataFrame, by_id: dict[str, dict[Hashable, Any]]) -> pd.DataFrame:
+    """`rows` without street entrances the MTA lists under a station they aren't one of.
+
+    The MTA lists some entrances under stations of different complexes.
+    A station house or passage may really join them underground, as at Fulton St,
+    but a street entrance listed under both 50 Sts, at Broadway, is only the 1's:
+    the C and E's is at 8 Av, and routing changed between them through it in a minute and a half.
+    A shared street entrance is dropped from a station it's farther from than any of its own,
+    when another station sharing it is at most `MISATTRIBUTED_NEARER` as far.
+    """
+    lat = rows["station"].map(lambda s: float(by_id[s]["gtfs_latitude"]))
+    lon = rows["station"].map(lambda s: float(by_id[s]["gtfs_longitude"]))
+    meters_per_degree = 111_320
+    rows = rows.assign(
+        meters=meters_per_degree
+        * ((rows["lat"] - lat) ** 2 + ((rows["lon"] - lon) * math.cos(math.radians(40.7))) ** 2)
+        ** 0.5
+    )
+    at = rows.groupby(["lat", "lon"])
+    shared = at["complex"].transform("nunique") > 1
+    own_farthest = rows["station"].map(rows[~shared].groupby("station")["meters"].max())
+    nearest = at["meters"].transform("min")
+    misattributed = (
+        shared
+        & rows["kind"].eq("Easement - Street")
+        & (rows["meters"] > own_farthest)
+        & (nearest <= MISATTRIBUTED_NEARER * rows["meters"])
+    )
+    return rows[~misattributed].drop(columns="meters")
 
 
 def write() -> pd.DataFrame:
