@@ -164,8 +164,9 @@ def write(grid: Grid) -> None:
                 {
                     "id": station.id,
                     "name": station.name,
-                    "lon": station.lon,
-                    "lat": station.lat,
+                    # To about a meter, as the lines and walks are.
+                    "lon": round(station.lon, 5),
+                    "lat": round(station.lat, 5),
                     "complex": str(complexes.get(station.id, station.id)),
                     "scenarios": [],
                 },
