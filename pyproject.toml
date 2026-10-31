@@ -31,6 +31,15 @@ bindings = "pyo3"
 # Routing every station takes far longer unoptimized, even for an editable install.
 profile = "release"
 
+# Rebuild the extension when the crate changes, not just `pyproject.toml`.
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "route/Cargo.toml" },
+    { file = "route/Cargo.lock" },
+    { file = "route/src/**/*.rs" },
+]
+
 [dependency-groups]
 dev = [
     "pandas-stubs>=3.0.5.260914",
