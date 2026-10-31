@@ -179,7 +179,7 @@ jobs:
         id: routed
         with:
           path: |
-            .cache/travel_times
+            out/travel_times
             web/public/data
           key: ${{ steps.inputs.outputs.key }}
           lookup-only: true
@@ -190,7 +190,7 @@ jobs:
         with:
           name: inputs
           path: |
-            .cache/gtfs
+            out/gtfs
             .cache/nyc-streets.osm.pbf
             .cache/nyc-shoreline.json
             .cache/platforms
@@ -241,7 +241,8 @@ jobs:
       - uses: actions/download-artifact@v8.0.2
         with:
           name: inputs
-          path: .cache
+          # Where the artifact's root is: the repository's, as its files are in both `.cache/` and `out/`.
+          path: .
 
       - name: route
         run: uv run subway-sheds route
@@ -249,7 +250,7 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: travel-times
-          path: .cache/travel_times/*.parquet
+          path: out/travel_times/*.parquet
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
@@ -314,7 +315,7 @@ jobs:
         if: needs.prepare.outputs.routed == 'true'
         with:
           path: |
-            .cache/travel_times
+            out/travel_times
             web/public/data
           key: ${{ needs.prepare.outputs.key }}
           fail-on-cache-miss: true
@@ -323,13 +324,14 @@ jobs:
         if: needs.prepare.outputs.routed != 'true'
         with:
           name: inputs
-          path: .cache
+          # Where the artifact's root is: the repository's, as its files are in both `.cache/` and `out/`.
+          path: .
 
       - uses: actions/download-artifact@v8.0.2
         if: needs.prepare.outputs.routed != 'true'
         with:
           name: travel-times
-          path: .cache/travel_times
+          path: out/travel_times
 
       - name: export
         if: needs.prepare.outputs.routed != 'true'
@@ -339,7 +341,7 @@ jobs:
         if: needs.prepare.outputs.routed != 'true'
         with:
           path: |
-            .cache/travel_times
+            out/travel_times
             web/public/data
           key: ${{ needs.prepare.outputs.key }}
 

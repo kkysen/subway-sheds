@@ -84,8 +84,8 @@ npm --prefix web run dev
 
 `route` takes station IDs to route only those, e.g. `route H04 V02`,
 replacing only their times,
-and `--scenario` and `--day` to route only those, e.g. `route --scenario queenslink --day weekday`.
-Downloads and travel times go in `.cache/`.
+and `--scenario`, `--day`, and `--fare` to route only those, e.g. `route --scenario queenslink --day weekday`.
+Downloads go in `.cache/`, and what the pipeline computes, like the travel times, in `out/`.
 Neither they nor the export are committed:
 CI routes, exports, and publishes the page to GitHub Pages on every push to `main`.
 

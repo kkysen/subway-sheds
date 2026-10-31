@@ -7,8 +7,11 @@ __pycache__
 # Tooling Cache
 .ruff_cache/
 
-# Downloaded Sources and Pipeline Output
+# Downloaded Sources
 .cache/
+
+# Pipeline Output
+out/
 
 # Web
 node_modules/

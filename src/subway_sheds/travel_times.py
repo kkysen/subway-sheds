@@ -111,8 +111,8 @@ def from_stations(
     destinations = list(zip(cells.geometry.y, cells.geometry.x, strict=True)) + [
         (s.lat, s.lon) for s in stations
     ]
-    paths.CACHE.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=paths.CACHE) as tmp:
+    paths.OUT.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=paths.OUT) as tmp:
         outs = [Path(tmp) / f"{scenario}-{day}-{fare}.parquet" for scenario, day, fare in runs]
         _route.travel_times(
             paths.OSM_PBF,
