@@ -15,7 +15,7 @@ jiff = "0.2.38"
 parquet = { version = "60.0.0", default-features = false, features = ["arrow", "zstd"] }
 pyo3 = { version = "0.30.1", features = ["anyhow", "jiff-02"] }
 # Overridden by a local checkout in `.cargo/config.toml`, if there is one.
-raptor = { git = "https://github.com/kkysen/mta-od-data", branch = "main" }
+raptor = { git = "https://github.com/kkysen/mta-od-data", rev = "e3210989eba0c76adb629ea2b026959070a75247" }
 rayon = "1.12.0"
 rustc-hash = "2.1.3"
 
