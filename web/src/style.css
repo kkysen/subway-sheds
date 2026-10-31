@@ -9,10 +9,10 @@ body,
   position: absolute;
   top: 10px;
   left: 10px;
-  /* As wide open as collapsed, so that the marker stays put as it turns.
-     Short of the fullscreen button on narrow screens: its 29px, and 10px either side of it. */
+  /* As wide as the choices need, as `main.ts` measures it, open or collapsed, so that the marker stays put as it turns.
+     Short of the fullscreen button: its 29px, and 10px either side of it. */
   box-sizing: border-box;
-  width: min(380px, calc(100% - 59px));
+  max-width: calc(100% - 59px);
   /* No taller than the map, 10px from its bottom as from its top, scrolling if it's more,
      as on phones turned sideways, where it would otherwise be cut off. */
   max-height: calc(100% - 20px);
@@ -70,6 +70,8 @@ body,
 /* Under the heading, only while the controls are collapsed. */
 #summary-status {
   grid-column: 1;
+  /* Not widening the controls, only shortened or wrapped to the width the choices need. */
+  contain: inline-size;
   /* On one line, its words shortened to fit rather than it wrapping. */
   white-space: nowrap;
   font-size: 12px;
@@ -128,6 +130,11 @@ body,
 
 #controls p {
   margin: 0;
+}
+
+/* Not widening the controls, only wrapping to the width the choices need. */
+#intro {
+  contain: inline-size;
 }
 
 /* A choice of one, as a row of joined buttons, the chosen one filled in,
@@ -215,12 +222,22 @@ body,
   accent-color: #000000;
 }
 
+/* Each button only as wide as its words on larger screens, rather than all as wide as the widest. */
+@media not ((max-width: 600px) or (max-height: 500px)) {
+  .segmented label {
+    flex: 1 1 auto;
+    padding-inline: 8px;
+    white-space: nowrap;
+  }
+}
+
 @media (max-width: 600px), (max-height: 500px) {
   #controls {
     /* The full width, with the fullscreen button moved into the heading bar by `main.ts`,
        so that the line under the heading has room for long names,
        but no wider than the choices need, as on phones turned sideways. */
     width: min(560px, calc(100% - 20px));
+    max-width: none;
     font-size: 12px;
   }
 

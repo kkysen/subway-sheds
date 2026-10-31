@@ -406,8 +406,27 @@ function showSummaryStatus(): void {
   summaryStatus.classList.add("wraps");
 }
 
+// As wide as the choices need on larger screens, measured open, and kept collapsed,
+// so that the marker stays put as it turns. Small screens have their own width in `style.css`.
+function fitControls(): void {
+  controls.style.width = "";
+  if (smallScreen.matches) {
+    return;
+  }
+  const open = details.open;
+  details.open = true;
+  controls.style.width = "max-content";
+  controls.style.width = `${Math.ceil(controls.getBoundingClientRect().width)}px`;
+  details.open = open;
+}
+
 restoreControls();
 showControls();
+fitControls();
+// Again once the fonts are in, which are wider or narrower than what's shown until then.
+document.fonts.ready.then(fitControls);
+document.fonts.addEventListener("loadingdone", fitControls);
+smallScreen.addEventListener("change", fitControls);
 details.addEventListener("toggle", showSummaryStatus);
 window.addEventListener("resize", showSummaryStatus);
 
