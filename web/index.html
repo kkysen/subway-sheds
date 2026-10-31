@@ -42,7 +42,13 @@
           <h2>Station</h2>
           <p><span class="legend-station"></span> Existing</p>
           <p><span class="legend-station legend-station-new"></span> New</p>
+          <button type="button" id="station-key-hide" class="key-toggle" aria-label="Hide the station key">×</button>
         </div>
+        <!-- Put in the minutes' heading by `main.ts`, to bring the station key back without a line of its own. -->
+        <button type="button" id="station-key-show" class="key-toggle" aria-label="Show the station key"
+          title="Show the station key">
+          <span class="legend-station"></span><span class="legend-station legend-station-new"></span>
+        </button>
         <div class="section" id="legend"></div>
         <a id="full-map" href="./" target="_blank" hidden>Open in a new tab ↗</a>
       </details>

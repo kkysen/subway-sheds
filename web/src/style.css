@@ -377,6 +377,62 @@ body,
   vertical-align: -6px;
 }
 
+/* A plain button, as small as the line it's on. */
+.key-toggle {
+  border: none;
+  padding: 0 2px;
+  background: none;
+  color: #555555;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#station-key-hide {
+  margin-left: auto;
+  font-size: 18px;
+}
+
+/* The two kinds of station in small, at the right end of the minutes' heading. */
+#station-key-show {
+  display: none;
+  float: right;
+  /* Outlined as a button, so that it reads as one to tap rather than as part of the key. */
+  border: 1px solid #999999;
+  border-radius: 10px;
+  padding: 1px 3px;
+  background: #ffffff;
+}
+
+/* Only where pointing is, since a tap would otherwise leave it looking hovered. */
+@media (hover: hover) {
+  #station-key-show:hover {
+    background: #eeeeee;
+  }
+}
+
+#station-key-show .legend-station {
+  width: 9px;
+  height: 9px;
+  margin: 0 2px;
+  vertical-align: -1px;
+}
+
+#station-key-show .legend-station-new {
+  width: 15px;
+  height: 15px;
+  border-width: 1px;
+  vertical-align: -3px;
+}
+
+#controls.station-key-hidden .station-key {
+  display: none;
+}
+
+#controls.station-key-hidden #station-key-show {
+  display: inline-block;
+}
+
 #full-map {
   display: block;
   margin: 0 12px 8px;

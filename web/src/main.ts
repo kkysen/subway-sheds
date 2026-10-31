@@ -280,6 +280,9 @@ function legendItems(view: View): HTMLElement[] {
     note.className = "heading-note";
     note.textContent = ", walking at the end";
     heading.append(note);
+  }
+  heading.append(stationKeyShow);
+  if (view !== "saved") {
     return [heading, bar, labels];
   }
   const note = document.createElement("p");
@@ -310,6 +313,7 @@ const summaryStatus = element("#summary-status", HTMLElement);
 // Kept apart from the stations, which load after the controls are first shown.
 let selectedName = "…";
 const legend = element("#legend", HTMLElement);
+const stationKeyShow = element("#station-key-show", HTMLButtonElement);
 const fullMap = element("#full-map", HTMLAnchorElement);
 
 // Narrow screens, as on phones, where the controls and credits open would cover much of the map.
@@ -419,6 +423,21 @@ function fitControls(): void {
   controls.style.width = `${Math.ceil(controls.getBoundingClientRect().width)}px`;
   details.open = open;
 }
+
+// The station key hidden once it's been seen, if chosen, and kept hidden across reloads, as the controls are.
+function showStationKey(shown: boolean): void {
+  controls.classList.toggle("station-key-hidden", !shown);
+  try {
+    localStorage.setItem(storageKey("station-key"), shown ? "shown" : "hidden");
+  } catch {
+    // Not saved, as when storage is unavailable.
+  }
+}
+element("#station-key-hide", HTMLButtonElement).addEventListener("click", () =>
+  showStationKey(false),
+);
+stationKeyShow.addEventListener("click", () => showStationKey(true));
+controls.classList.toggle("station-key-hidden", savedValue("station-key") === "hidden");
 
 restoreControls();
 showControls();
@@ -775,7 +794,9 @@ function imageData(canvas: HTMLCanvasElement): ImageData {
 
 // The legend's new station, the same bullet as on the map.
 const legendM = queenslinkM();
-element(".legend-station-new", HTMLElement).style.backgroundImage = `url(${legendM.toDataURL()})`;
+for (const station of document.querySelectorAll<HTMLElement>(".legend-station-new")) {
+  station.style.backgroundImage = `url(${legendM.toDataURL()})`;
+}
 
 await loaded;
 {
