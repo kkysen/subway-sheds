@@ -74,7 +74,10 @@ interface Laid {
 
 const module = WebAssembly.instantiateStreaming(fetch(wasmUrl))
   .then(({ instance }) => instance.exports as unknown as Times)
-  .catch(() => undefined);
+  .catch((error: unknown) => {
+    console.warn("computing travel times in TypeScript, as WebAssembly failed:", error);
+    return undefined;
+  });
 
 // The walks out of stations, and how many cells and stations there are.
 let given: { readonly exits: Exits; readonly cells: number; readonly stations: number } | undefined;
