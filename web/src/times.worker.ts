@@ -30,7 +30,7 @@ export interface Response {
 interface Times {
   readonly memory: WebAssembly.Memory;
   alloc(bytes: number): number;
-  free(at: number, bytes: number): void;
+  dealloc(at: number, bytes: number): void;
   travel_times(
     arrivals: number,
     cell: number,
@@ -152,7 +152,7 @@ self.onmessage = async (event: MessageEvent<Request>): Promise<void> => {
     const { exits, cells, stations } = request;
     laid = Promise.all([module, laid]).then(([times, old]) => {
       for (const [place, bytes] of old?.allocated ?? []) {
-        times.free(place, bytes);
+        times.dealloc(place, bytes);
       }
       return layOut(times, exits, cells, stations);
     });

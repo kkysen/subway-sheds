@@ -43,10 +43,10 @@ repos:
         language: system
         files: ^route/
         pass_filenames: false
-      # Built for WebAssembly, so its `cargo test` can't run here, and it has no tests.
+      # Tested on this machine's own target, as it builds for WebAssembly, which can't run here.
       - id: web-times
-        name: web/times (rustfmt, clippy)
-        entry: bash -c 'cd web/times && cargo fmt --check && cargo clippy --all-targets -- -D warnings'
+        name: web/times (rustfmt, clippy, tests)
+        entry: bash -c 'cd web/times && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test --target "$(rustc -vV | sed -n "s/^host. //p")"'
         language: system
         files: ^web/times/
         pass_filenames: false

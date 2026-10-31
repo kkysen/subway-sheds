@@ -188,7 +188,7 @@ pub fn compute(
 ///
 /// # Safety
 ///
-/// Freed only with `free`, given the same `bytes`.
+/// Freed only with `dealloc`, given the same `bytes`.
 #[unsafe(no_mangle)]
 pub extern "C" fn alloc(bytes: usize) -> *mut u8 {
     let words = vec![0u32; bytes.div_ceil(4)];
@@ -201,7 +201,7 @@ pub extern "C" fn alloc(bytes: usize) -> *mut u8 {
 ///
 /// `at` must be what `alloc(bytes)` returned, not yet freed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn free(at: *mut u8, bytes: usize) {
+pub unsafe extern "C" fn dealloc(at: *mut u8, bytes: usize) {
     // SAFETY: `alloc` made it a boxed slice of as many words.
     drop(unsafe {
         Box::from_raw(ptr::slice_from_raw_parts_mut(
