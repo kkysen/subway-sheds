@@ -74,6 +74,25 @@ def used_exits(
     all little-endian, as `export` writes them.
     """
 
+def exit_trees(
+    osm: StrPath,
+    stations: list[tuple[str, str, list[tuple[float, float, int]]]],
+    destinations: list[tuple[float, float]],
+    speed: int,
+    limit: int,
+    wanted: list[tuple[int, int, bool]],
+) -> list[tuple[bytes, bytes, bytes, int, bytes, int]]:
+    """
+    Each of `stations`' walks out to destinations of `wanted`, `(station, destination, far)`,
+    by index into `stations` and `destinations`, as `exits` takes them,
+    from the entrance quickest at `speed` millimeters a second, walking at most `limit` millimeters,
+    as a tree (see `walks::ExitTree` in `route/src/walks.rs`),
+    with the walks to `far` ones after the rest:
+    `(parents, latitudes, longitudes, near, ends, near_ends)`,
+    the first three little-endian `int32`s,
+    and `ends` `(destination, point)` little-endian `uint32`s.
+    """
+
 def stations(feed: StrPath) -> list[tuple[str, str, float, float]]:
     """The stations some trip in `feed` stops at, as `(id, name, latitude, longitude)`."""
 

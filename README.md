@@ -102,6 +102,9 @@ and those farther than an hour at 3 mph, where the slider starts, only once it's
 and it takes each cell's median over the minutes, as routing does,
 in a worker, in WebAssembly with SIMD (`web/times/`).
 Walking to the first station and between stations stays at 3 mph.
+Pointing at a place draws the walk there along the streets, out of the entrance it takes,
+loading each station's walks out, simplified to within a meter, when a place's walk is from it,
+and the farther ones only once the slider's faster than 3 mph.
 
 ## Development
 

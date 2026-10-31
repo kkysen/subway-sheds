@@ -17,10 +17,13 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { BandsLayer, EARTH_CIRCUMFERENCE } from "./bands";
 import {
   type Arrivals,
+  type ExitWalks,
+  exitWalkTo,
   medianDeparture,
   mergeExits,
   NO_STATION,
   parseExits,
+  parseExitWalks,
   parseRoutes,
   type RouteLeg,
   type Routes,
@@ -765,6 +768,59 @@ function loadFastExits(): void {
     });
   }
 }
+// Each station's walks out to the cells, to draw, by station, as `stations.json` lists them,
+// those faster than the slider starts too once it is: the ones loaded, and those being loaded,
+// the least recently asked for first, so that pointing across the city doesn't keep all of them.
+const CACHED_EXIT_WALKS = 32;
+const exitWalks = new Map<number, ExitWalks>();
+const exitWalksLoading = new Map<number, Promise<void>>();
+
+// Loads `station`'s walks out, and if `fast`, the faster ones too, unless they're loaded or loading.
+function loadExitWalks(
+  station: number,
+  fast = currentSpeed() > Number(speedSlider.defaultValue),
+): Promise<void> {
+  const key = fast ? -1 - station : station;
+  const loading = exitWalksLoading.get(key);
+  if (loading !== undefined) {
+    exitWalksLoading.delete(key);
+    exitWalksLoading.set(key, loading);
+    return loading;
+  }
+  const id = encodeURIComponent(stations[station]?.id ?? "");
+  const load = (
+    fast
+      ? Promise.all([loadExitWalks(station, false), fetchBinary(`walks-out-fast/${id}.bin`)]).then(
+          ([, buffer]) => {
+            const before = exitWalks.get(station);
+            return before === undefined ? undefined : parseExitWalks(buffer, before);
+          },
+        )
+      : fetchBinary(`walks-out/${id}.bin`).then((buffer) => parseExitWalks(buffer))
+  ).then(
+    (walks) => {
+      if (walks !== undefined) {
+        exitWalks.delete(station);
+        exitWalks.set(station, walks);
+      }
+    },
+    // Forgotten if it fails, so that it's tried again next time.
+    () => {
+      exitWalksLoading.delete(key);
+    },
+  );
+  exitWalksLoading.set(key, load);
+  for (const [oldest] of exitWalks) {
+    if (exitWalks.size <= CACHED_EXIT_WALKS) {
+      break;
+    }
+    exitWalks.delete(oldest);
+    exitWalksLoading.delete(oldest);
+    exitWalksLoading.delete(-1 - oldest);
+  }
+  return load;
+}
+
 function addExits(part: ArrayBuffer): void {
   exitParts.push(parseExits(part, stations.length));
   exits = mergeExits(exitParts, stations.length);
@@ -1030,6 +1086,11 @@ highlightBand = (band: number): void => {
 // and where, for its popup, if on the map rather than in the legend.
 let pinned: { readonly band: number; readonly lngLat?: LngLat } | undefined;
 
+// The cell whose journey is shown, and the wait to load the walks out to draw it,
+// so that pointing across the city doesn't load every station's.
+let shownCell: number | undefined;
+let exitWalksWait: number | undefined;
+
 // Highlights a band and says what it is at a point, or shows the pinned one if there's none.
 function showBand(band: number, lngLat: LngLat): void {
   showRoute(undefined);
@@ -1038,13 +1099,31 @@ function showBand(band: number, lngLat: LngLat): void {
     return;
   }
   highlightBand(band);
-  // The journey there: the trains to the station walked out of, and the walk from it, drawn straight.
+  // The journey there: the trains to the station walked out of, and the walk from it,
+  // straight, then along the streets once the station's walks out are loaded.
   const cell = cellAt(lngLat);
-  showRoute(
-    (run) => stations[exitFromOf(cell, run)],
-    lngLat,
-    (run) => cellDepartureOf(cell, run),
-  );
+  const drawRoute = (): void =>
+    showRoute(
+      (run) => stations[exitFromOf(cell, run)],
+      lngLat,
+      (run) => cellDepartureOf(cell, run),
+      cell,
+    );
+  drawRoute();
+  shownCell = cell;
+  clearTimeout(exitWalksWait);
+  exitWalksWait = window.setTimeout(() => {
+    for (const run of shownRuns()) {
+      const from = exitFromOf(cell, run);
+      if (from !== NO_STATION) {
+        void loadExitWalks(from).then(() => {
+          if (shownCell === cell) {
+            drawRoute();
+          }
+        });
+      }
+    }
+  }, HOVER_PREFETCH_MS);
   const here = describeCell(cell);
   const label = document.createElement("span");
   // What the band is, wrapped at `BAND_TEXT_WIDTH`, or as wide as the journey under it.
@@ -1446,12 +1525,20 @@ const coordinatesOf = (i: number): GeoJSON.Position => {
 // How faint the journey without QueensLink is drawn, under the one with it, for minutes saved.
 const ROUTE_FADED_OPACITY = 0.4;
 
+// The walk out of station `to` to `cell` along the streets, if it's loaded, else none.
+function exitWalkOf(to: number, cell: number | undefined): GeoJSON.Position[] {
+  const walks = exitWalks.get(to);
+  return walks === undefined || cell === undefined ? [] : (exitWalkTo(walks, cell) ?? []);
+}
+
 // The journey to `to` on the map: each ride along its line, walks dashed, and a bullet where each ride boards.
-// Then, if given, walking on from `to` to `end`. In `run`, and if `faded`, drawn fainter.
+// Then, if given, walking on from `to` to `end`, in `cell`, along the streets once they're loaded.
+// In `run`, and if `faded`, drawn fainter.
 function routeFeatures(
   legs: readonly RouteLeg[],
   to: number,
   end: GeoJSON.Position | undefined,
+  cell: number | undefined,
   run: number,
   faded: boolean,
 ): GeoJSON.Feature[] {
@@ -1516,7 +1603,10 @@ function routeFeatures(
   if (end !== undefined) {
     features.push({
       type: "Feature",
-      geometry: { type: "LineString", coordinates: [coordinatesOf(to), end] },
+      geometry: {
+        type: "LineString",
+        coordinates: [coordinatesOf(to), ...exitWalkOf(to, cell), end],
+      },
       properties: { kind: "walk" },
     });
   }
@@ -1532,7 +1622,7 @@ function reachedIn(station: Station, run: number): boolean {
   return selectedTimes !== undefined && (selectedTimes[at] ?? UNREACHED) !== UNREACHED;
 }
 
-// The journey to `station` on the map, or none, walking on to `end` if given,
+// The journey to `station` on the map, or none, walking on to `end` if given, in `cell`,
 // in each run shown, the station for which `station` says if it differs between them,
 // departing at the minute `minute` says, or else the median trip to the station itself does.
 // For minutes saved, the one without QueensLink is fainter, under the one with it.
@@ -1540,6 +1630,7 @@ function showRoute(
   station: Station | undefined | ((run: number) => Station | undefined),
   end?: LngLat,
   minute?: (run: number) => number | undefined,
+  cell?: number,
 ): void {
   const source = map.getSource("route");
   if (source !== undefined && "setData" in source && typeof source.setData === "function") {
@@ -1555,7 +1646,7 @@ function showRoute(
       const faded = runs.length > 1 && run !== currentRun();
       const departs = minute === undefined ? departureOf(to, run) : minute(run);
       const legs = departs === undefined ? [] : routeLegs(to, departs, run);
-      return routeFeatures(legs, stations.indexOf(to), position, run, faded);
+      return routeFeatures(legs, stations.indexOf(to), position, cell, run, faded);
     });
     source.setData({ type: "FeatureCollection", features });
   }

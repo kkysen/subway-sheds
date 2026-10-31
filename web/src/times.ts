@@ -275,3 +275,57 @@ export function routeTo(
   }
   return legs;
 }
+
+// A station's walks out to cells, to draw, as a tree (see `walks-out/` in `src/subway_sheds/export.py`):
+// each point's parent, -1 for an entrance, and where it is, in 100,000ths of a degree,
+// and the point each cell's walk ends at.
+export interface ExitWalks {
+  readonly parent: Int32Array;
+  readonly lat: Int32Array;
+  readonly lon: Int32Array;
+  readonly ends: ReadonlyMap<number, number>;
+}
+
+// A station's walks out, from `walks-out/`, or with `before`, those from `walks-out-fast/` added to them.
+export function parseExitWalks(buffer: ArrayBuffer, before?: ExitWalks): ExitWalks {
+  const view = new DataView(buffer);
+  const n = view.getUint32(0, true);
+  const offset = before?.parent.length ?? 0;
+  const parent = new Int32Array(offset + n);
+  const lat = new Int32Array(offset + n);
+  const lon = new Int32Array(offset + n);
+  if (before !== undefined) {
+    parent.set(before.parent);
+    lat.set(before.lat);
+    lon.set(before.lon);
+  }
+  for (let k = 0; k < n; k++) {
+    const at = offset + k;
+    const up = at - view.getUint32(4 + 4 * k, true);
+    parent[at] = up;
+    lat[at] = (up >= 0 ? (lat[up] ?? 0) : 0) + view.getInt32(4 + 4 * (n + k), true);
+    lon[at] = (up >= 0 ? (lon[up] ?? 0) : 0) + view.getInt32(4 + 4 * (2 * n + k), true);
+  }
+  const ends = new Map(before?.ends);
+  const walksAt = 4 + 12 * n;
+  const walks = view.getUint32(walksAt, true);
+  let cell = 0;
+  for (let k = 0; k < walks; k++) {
+    cell += view.getUint16(walksAt + 4 + 2 * k, true);
+    ends.set(cell, view.getUint32(walksAt + 4 + 2 * walks + 4 * k, true));
+  }
+  return { parent, lat, lon, ends };
+}
+
+// The walk out to `cell`, from the entrance, or `undefined` if it has none.
+export function exitWalkTo(walks: ExitWalks, cell: number): GeoJSON.Position[] | undefined {
+  let at = walks.ends.get(cell);
+  if (at === undefined) {
+    return undefined;
+  }
+  const points: GeoJSON.Position[] = [];
+  for (; at >= 0; at = walks.parent[at] ?? -1) {
+    points.push([(walks.lon[at] ?? 0) / 1e5, (walks.lat[at] ?? 0) / 1e5]);
+  }
+  return points.reverse();
+}

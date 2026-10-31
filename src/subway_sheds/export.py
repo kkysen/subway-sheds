@@ -81,6 +81,52 @@ def _deltas(values: np.ndarray, first: np.ndarray) -> np.ndarray:
     return np.where(first, values, values - before)
 
 
+def _write_exit_walks(
+    files: _BrotliFiles, grid: Grid, stations: list[gtfs.Station], exits: pd.DataFrame
+) -> None:
+    """
+    Each station's walks out to the cells of `exits`, by station, as `stations` lists them,
+    to `walks-out/{station}.bin`, those within `travel_times.DEFAULT_EXIT_WALK_M`,
+    and `walks-out-fast/{station}.bin`, the rest, as `write` describes them.
+    """
+    cells = grid.points()
+    far = exits["meters"].to_numpy() > travel_times.DEFAULT_EXIT_WALK_M
+    trees = _route.exit_trees(
+        paths.OSM_PBF,
+        travel_times._entrances(stations),
+        list(zip(cells.geometry.y, cells.geometry.x, strict=True)),
+        travel_times.WALKING_SPEED_MM_PER_S,
+        travel_times.EXIT_WALK_MM,
+        list(zip(exits["station"].tolist(), exits["cell"].tolist(), far.tolist(), strict=True)),
+    )
+    for name in ["walks-out", "walks-out-fast"]:
+        (paths.WEB_DATA / name).mkdir(exist_ok=True)
+    for station, (parent, lat, lon, near, ends, near_ends) in zip(stations, trees, strict=True):
+        parent = np.frombuffer(parent, dtype="<i4").astype(np.int64)
+        lat_lon = np.column_stack(
+            [np.frombuffer(lat, dtype="<i4"), np.frombuffer(lon, dtype="<i4")]
+        ).astype(np.int64)
+        ends = np.frombuffer(ends, dtype="<u4").reshape(-1, 2)
+        # From the point before, its parent, as the walks there are near it.
+        from_parent = lat_lon - np.where(parent[:, np.newaxis] >= 0, lat_lon[parent], 0)
+        point = np.arange(len(parent))
+        for name, points, walks in [
+            ("walks-out", slice(0, near), ends[:near_ends]),
+            ("walks-out-fast", slice(near, None), ends[near_ends:]),
+        ]:
+            walks = walks[np.argsort(walks[:, 0], kind="stable")]
+            files.write(
+                paths.WEB_DATA / name / f"{station.id}.bin",
+                np.array([len(point[points])], dtype="<u4").tobytes()
+                + (point[points] - parent[points]).astype("<u4").tobytes()
+                + from_parent[points, 0].astype("<i4").tobytes()
+                + from_parent[points, 1].astype("<i4").tobytes()
+                + np.array([len(walks)], dtype="<u4").tobytes()
+                + _deltas(walks[:, 0], np.arange(len(walks)) == 0).astype("<u2").tobytes()
+                + walks[:, 1].astype("<u4").tobytes(),
+            )
+
+
 def write(grid: Grid) -> None:
     """
     Write the grid, the stations, and each station's times to `paths.WEB_DATA`.
@@ -133,6 +179,20 @@ def write(grid: Grid) -> None:
     - `exits-fast.bin`: the rest, which the page loads only once its slider is faster
       than it starts, as most of the walks are these, but only walking faster reaches them.
 
+    - `walks-out/{station}.bin`: the street walk out of the station to each cell
+      it has a walk to in `exits.bin` or `exits-far.bin`, to draw, as a tree,
+      as walks out of an entrance start the same, simplified to within a meter:
+      its count of points, a little-endian `uint32`, then for each, as little-endian arrays,
+      how many points before it its parent is, a `uint32`, past it for an entrance's,
+      then its latitude and its longitude, in 100,000ths of a degree,
+      as the change from its parent's, each an `int32`;
+      then its count of walks, a little-endian `uint32`, then each walk's cell,
+      as `grid.json` lists them, ascending, as the change from the one before,
+      a little-endian `uint16`, then each's last point, a little-endian `uint32`.
+    - `walks-out-fast/{station}.bin`: the walks to the cells in `exits-fast.bin`,
+      as `walks-out/` has them, but only the points it doesn't have, numbered on from its,
+      continuing its tree.
+
     The `.bin` files are each compressed with Brotli (see `_BrotliFiles`).
     """
     # Only the files, keeping the directories, which a running `vite` watches:
@@ -162,8 +222,11 @@ def write(grid: Grid) -> None:
         .set_index("station")["complex"]
     )
     stations: dict[str, dict[str, object]] = {}
+    # And each as routing has it, in the same order.
+    station_list: dict[str, gtfs.Station] = {}
     for scenario in Scenario:
         for station in gtfs.stations(scenario.gtfs):
+            station_list.setdefault(station.id, station)
             entry = stations.setdefault(
                 station.id,
                 {
@@ -276,6 +339,7 @@ def write(grid: Grid) -> None:
             paths.WEB_DATA / name,
             np.array([len(part)], dtype="<u4").tobytes() + b"".join(c.tobytes() for c in columns),
         )
+    _write_exit_walks(files, grid, list(station_list.values()), exits)
 
     routes: dict[str, dict[str, str]] = {}
     for scenario in Scenario:
