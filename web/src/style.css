@@ -558,6 +558,13 @@ body,
   margin-top: 0.3em;
 }
 
+/* For minutes saved, which journey it is, without QueensLink or with it. */
+.journey-scenario {
+  align-self: center;
+  min-width: 3.5em;
+  font-weight: 700;
+}
+
 /* A train, change, or walk, with its minutes in small text under it. */
 .journey-step {
   display: inline-flex;

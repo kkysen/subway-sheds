@@ -849,11 +849,11 @@ function cellAt(lngLat: LngLat): number {
     : (cellOfPixel[Math.round(at.row) * width + Math.round(at.col)] ?? -1);
 }
 
-// The station walked out of to `cell`, in the run shown, or `NO_STATION`.
-function exitFromOf(cell: number): number {
+// The station walked out of to `cell`, in the run shown or `run`, or `NO_STATION`.
+function exitFromOf(cell: number, run = currentRun()): number {
   return cell < 0 || selectedExitFrom === undefined
     ? NO_STATION
-    : (selectedExitFrom[currentRun() * grid.cols.length + cell] ?? NO_STATION);
+    : (selectedExitFrom[run * grid.cols.length + cell] ?? NO_STATION);
 }
 
 // How long the trip to `cell` takes, walking out included, in the view shown, as said in its popup.
@@ -870,7 +870,7 @@ function describeCell(cell: number): string {
   const view = currentView();
   const trip =
     view === "saved"
-      ? `${say(baseline)} without QueensLink, ${say(queenslink)} with it`
+      ? `${say(baseline)} without, ${say(queenslink)} with`
       : say(view === "baseline" ? baseline : queenslink);
   return `Here: ${trip}`;
 }
@@ -933,7 +933,7 @@ function showBand(band: number, lngLat: LngLat): void {
   highlightBand(band);
   // The journey there: the trains to the station walked out of, and the walk from it, drawn straight.
   const cell = cellAt(lngLat);
-  showRoute(stations[exitFromOf(cell)], lngLat);
+  showRoute((run) => stations[exitFromOf(cell, run)], lngLat);
   const here = describeCell(cell);
   const label = document.createElement("span");
   // What the band is, wrapped at `BAND_TEXT_WIDTH`, or as wide as the journey under it.
@@ -946,25 +946,28 @@ function showBand(band: number, lngLat: LngLat): void {
   }
   label.append(text);
   // The trains there, and the walk out of the last station at the speed chosen.
-  const exitFrom = exitFromOf(cell);
-  const from = stations[exitFrom];
-  if (from !== undefined) {
+  for (const run of shownRuns()) {
+    const exitFrom = exitFromOf(cell, run);
+    const from = stations[exitFrom];
+    if (from === undefined) {
+      continue;
+    }
     const origin = stations.findIndex((station) => station.id === selected);
     const walk = walkOutSeconds(exits, exitFrom, cell, currentSpeed(), exitFrom === origin);
     const line =
       exitFrom === origin
-        ? journeyLine([], undefined, walk)
-        : journeyLine(routeLegs(from), departureOf(from), walk);
+        ? journeyLine([], undefined, walk, run)
+        : journeyLine(routeLegs(from, run), departureOf(from, run), walk, run);
     if (line !== undefined) {
       label.append(line);
     }
   }
   bandPopup.setLngLat(lngLat).setMaxWidth(BAND_POPUP_WIDTH).setDOMContent(label).addTo(map);
-  // The journey kept on one line, as far as the map has room for, and the text as wide.
-  const journey = label.querySelector<HTMLElement>(".route-trains");
-  if (journey !== null) {
-    text.style.maxWidth = `${Math.max(BAND_TEXT_WIDTH, journey.offsetWidth)}px`;
-  }
+  // The journeys kept on one line, as far as the map has room for, and the text as wide as the widest.
+  const widths = [...label.querySelectorAll<HTMLElement>(".route-trains")].map(
+    (j) => j.offsetWidth,
+  );
+  text.style.maxWidth = `${Math.max(BAND_TEXT_WIDTH, ...widths)}px`;
 }
 
 restorePinnedBand = (): void => {
@@ -1080,22 +1083,28 @@ function currentRun(): number {
   return 2 * days.indexOf(currentDay()) + (currentView() === "baseline" ? 0 : 1);
 }
 
+// The runs whose journeys are shown: the one shown, or for minutes saved, the day's without QueensLink, then with it.
+function shownRuns(): number[] {
+  const run = currentRun();
+  return currentView() === "saved" ? [run - 1, run] : [run];
+}
+
 // When, in seconds into the window, the journey to `station` the page shows departs.
-function departureOf(station: Station): number | undefined {
+function departureOf(station: Station, run = currentRun()): number | undefined {
   if (selectedArrivals === undefined) {
     return undefined;
   }
   const at = stations.indexOf(station);
-  const minute = medianDeparture(selectedArrivals, currentRun(), at, stations.length);
+  const minute = medianDeparture(selectedArrivals, run, at, stations.length);
   return minute === undefined ? undefined : 60 * minute;
 }
 
-// The journey from the selected station to `station`, in the run shown.
-function routeLegs(station: Station): RouteLeg[] {
+// The journey from the selected station to `station`, in the run shown or `run`.
+function routeLegs(station: Station, run = currentRun()): RouteLeg[] {
   if (selectedRoutes === undefined) {
     return [];
   }
-  return routeTo(selectedRoutes, currentRun(), stations.indexOf(station), stations.length);
+  return routeTo(selectedRoutes, run, stations.indexOf(station), stations.length);
 }
 
 // A ride's train, and whether it's an express variant, as the FX, 6X and 7X are,
@@ -1106,8 +1115,8 @@ interface Train extends RouteInfo {
   readonly corner: string;
 }
 const SHUTTLE_CORNERS: Readonly<Record<string, string>> = { GS: "42", FS: "F", H: "R" };
-function trainOf(leg: RouteLeg): Train {
-  const route = patterns[currentRun()]?.[leg.pattern]?.route ?? "";
+function trainOf(leg: RouteLeg, run = currentRun()): Train {
+  const route = patterns[run]?.[leg.pattern]?.route ?? "";
   const info = routeInfo[route] ?? { name: route, color: "#808183", text: "#ffffff" };
   const express = /^.X$/.test(info.name);
   return {
@@ -1199,10 +1208,12 @@ function paysBetween(legs: readonly RouteLeg[], from: RouteLeg, to: RouteLeg): b
 // the minutes changing, walking and waiting, then, if given, the walk out at the end, an arrow too.
 // Before them, as an arrow with its minutes as a change's are, from departing at `departs`
 // seconds into the window: going in and waiting for the first, or walking to another station for it.
+// In `run`, which, for minutes saved, it starts by saying, without QueensLink or with it.
 function journeyLine(
   legs: readonly RouteLeg[],
   departs: number | undefined,
   walkOut?: number,
+  run = currentRun(),
 ): HTMLElement | undefined {
   const rides = legs.filter((leg) => leg.pattern !== WALK_LEG);
   if (rides.length === 0 && walkOut === undefined) {
@@ -1210,6 +1221,12 @@ function journeyLine(
   }
   const line = document.createElement("span");
   line.className = "route-trains";
+  if (currentView() === "saved") {
+    const scenario = document.createElement("span");
+    scenario.className = "journey-scenario";
+    scenario.textContent = run % 2 === 0 ? "Without" : "With";
+    line.append(scenario);
+  }
   // Whether a step that enters the system pays there, as the fare chosen has it.
   const fare = currentFare();
   let paid = false;
@@ -1237,7 +1254,7 @@ function journeyLine(
         ),
       );
     }
-    line.append(journeyStep(bullet(trainOf(leg)), leg.end - leg.start, "journey-ride"));
+    line.append(journeyStep(bullet(trainOf(leg, run)), leg.end - leg.start, "journey-ride"));
     last = leg;
   }
   if (walkOut !== undefined) {
@@ -1265,13 +1282,18 @@ const coordinatesOf = (i: number): GeoJSON.Position => {
   return station === undefined ? [0, 0] : [station.lon, station.lat];
 };
 
+// How faint the journey without QueensLink is drawn, under the one with it, for minutes saved.
+const ROUTE_FADED_OPACITY = 0.4;
+
 // The journey to `to` on the map: each ride along its line, walks dashed, and a bullet where each ride boards.
-// Then, if given, walking on from `to` to `end`.
+// Then, if given, walking on from `to` to `end`. In `run`, and if `faded`, drawn fainter.
 function routeFeatures(
   legs: readonly RouteLeg[],
   to: number,
-  end?: GeoJSON.Position,
-): GeoJSON.FeatureCollection {
+  end: GeoJSON.Position | undefined,
+  run: number,
+  faded: boolean,
+): GeoJSON.Feature[] {
   const features: GeoJSON.Feature[] = [];
   const origin = stations.findIndex((station) => station.id === selected);
   let at = origin;
@@ -1291,10 +1313,10 @@ function routeFeatures(
       at = leg.b;
       continue;
     }
-    const passed = patterns[currentRun()]?.[leg.pattern]?.stations.slice(leg.a, leg.b + 1) ?? [];
+    const passed = patterns[run]?.[leg.pattern]?.stations.slice(leg.a, leg.b + 1) ?? [];
     const first = passed[0] ?? at;
     walk(at, first);
-    const train = trainOf(leg);
+    const train = trainOf(leg, run);
     const coordinates: GeoJSON.Position[] = [];
     for (let k = 0; k + 1 < passed.length; k++) {
       const a = stations[passed[k] ?? -1]?.id;
@@ -1332,25 +1354,40 @@ function routeFeatures(
       properties: { kind: "walk" },
     });
   }
-  return { type: "FeatureCollection", features };
+  for (const feature of features) {
+    feature.properties = { ...feature.properties, faded };
+  }
+  return features;
 }
 
-// The journey to `station` on the map, or none, walking on to `end` if given.
-function showRoute(station: Station | undefined, end?: LngLat): void {
+// Whether trains from the selected station reach `station` in `run`.
+function reachedIn(station: Station, run: number): boolean {
+  const at = run * timesStride(grid) + grid.cols.length + stations.indexOf(station);
+  return selectedTimes !== undefined && (selectedTimes[at] ?? UNREACHED) !== UNREACHED;
+}
+
+// The journey to `station` on the map, or none, walking on to `end` if given,
+// in each run shown, the station for which `station` says if it differs between them.
+// For minutes saved, the one without QueensLink is fainter, under the one with it.
+function showRoute(
+  station: Station | undefined | ((run: number) => Station | undefined),
+  end?: LngLat,
+): void {
   const source = map.getSource("route");
   if (source !== undefined && "setData" in source && typeof source.setData === "function") {
-    // Walked out of to a cell, it's reached, if only on foot from the origin.
-    const reached =
-      station !== undefined && (end !== undefined || stationMinutes(station) !== NOTHING);
-    source.setData(
-      reached
-        ? routeFeatures(
-            routeLegs(station),
-            stations.indexOf(station),
-            end === undefined ? undefined : [end.lng, end.lat],
-          )
-        : { type: "FeatureCollection", features: [] },
-    );
+    const runs = shownRuns();
+    const features = runs.flatMap((run) => {
+      const to = typeof station === "function" ? station(run) : station;
+      // Walked out of to a cell, it's reached, if only on foot from the origin.
+      if (to === undefined || (end === undefined && !reachedIn(to, run))) {
+        return [];
+      }
+      const position: GeoJSON.Position | undefined =
+        end === undefined ? undefined : [end.lng, end.lat];
+      const faded = runs.length > 1 && run !== currentRun();
+      return routeFeatures(routeLegs(to, run), stations.indexOf(to), position, run, faded);
+    });
+    source.setData({ type: "FeatureCollection", features });
   }
 }
 
@@ -1385,6 +1422,7 @@ await loaded;
     paint: {
       "line-color": "#ffffff",
       "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 14, 12],
+      "line-opacity": ["case", ["get", "faded"], ROUTE_FADED_OPACITY, 1],
     },
   });
   map.addLayer({
@@ -1396,6 +1434,7 @@ await loaded;
     paint: {
       "line-color": ["get", "color"],
       "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4, 14, 8],
+      "line-opacity": ["case", ["get", "faded"], ROUTE_FADED_OPACITY, 1],
     },
   });
   map.addLayer({
@@ -1404,7 +1443,12 @@ await loaded;
     source: "route",
     filter: ["==", ["get", "kind"], "walk"],
     layout: { "line-cap": "round" },
-    paint: { "line-color": "#333333", "line-width": 2.5, "line-dasharray": [1, 2] },
+    paint: {
+      "line-color": "#333333",
+      "line-width": 2.5,
+      "line-dasharray": [1, 2],
+      "line-opacity": ["case", ["get", "faded"], ROUTE_FADED_OPACITY, 1],
+    },
   });
 
   map.addSource("stations", {
@@ -1446,6 +1490,8 @@ await loaded;
       "circle-color": ["get", "color"],
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 2,
+      "circle-opacity": ["case", ["get", "faded"], ROUTE_FADED_OPACITY, 1],
+      "circle-stroke-opacity": ["case", ["get", "faded"], ROUTE_FADED_OPACITY, 1],
     },
   });
   // An express variant's, as a diamond, outlined in white as the circles are.
@@ -1460,7 +1506,12 @@ await loaded;
       "icon-allow-overlap": true,
       "icon-ignore-placement": true,
     },
-    paint: { "icon-color": ["get", "color"], "icon-halo-color": "#ffffff", "icon-halo-width": 2 },
+    paint: {
+      "icon-color": ["get", "color"],
+      "icon-halo-color": "#ffffff",
+      "icon-halo-width": 2,
+      "icon-opacity": ["case", ["get", "faded"], ROUTE_FADED_OPACITY, 1],
+    },
   });
   map.addLayer({
     id: "route-bullet-names",
@@ -1474,7 +1525,10 @@ await loaded;
       "text-allow-overlap": true,
       "text-ignore-placement": true,
     },
-    paint: { "text-color": ["get", "text"] },
+    paint: {
+      "text-color": ["get", "text"],
+      "text-opacity": ["case", ["get", "faded"], ROUTE_FADED_OPACITY, 1],
+    },
   });
   // A shuttle's which, small in its bullet's upper right, outlined in its color to stand off the map.
   map.addLayer({
@@ -1494,6 +1548,7 @@ await loaded;
       "text-color": ["get", "text"],
       "text-halo-color": ["get", "color"],
       "text-halo-width": 2,
+      "text-opacity": ["case", ["get", "faded"], ROUTE_FADED_OPACITY, 1],
     },
   });
   // The white M in each new station's bullet, in bold Helvetica as the MTA's is.
@@ -1589,11 +1644,15 @@ await loaded;
     } else if (minutes !== NOTHING) {
       label.append(`: ${minutes} min${currentView() === "saved" ? " saved" : ""}`);
     }
-    const route = routeLegs(station);
     showRoute(station);
-    const line = journeyLine(route, departureOf(station));
-    if (line !== undefined) {
-      label.append(line);
+    for (const run of shownRuns()) {
+      if (!reachedIn(station, run)) {
+        continue;
+      }
+      const line = journeyLine(routeLegs(station, run), departureOf(station, run), undefined, run);
+      if (line !== undefined) {
+        label.append(line);
+      }
     }
     bandPopup
       .setLngLat([station.lon, station.lat])
