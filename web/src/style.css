@@ -119,6 +119,10 @@ body,
 /* A fieldset's legend sits on its border unless it's floated. */
 #controls legend {
   float: left;
+}
+
+#controls legend,
+#controls .station-key h2 {
   margin: 0;
 }
 
@@ -316,8 +320,12 @@ body,
   vertical-align: -2px;
 }
 
-#controls .station-key p + p {
-  margin-top: 4px;
+/* The two kinds of station side by side, headed "Station" beside them as the choices are. */
+#controls .station-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 16px;
 }
 
 /* The MTA's M bullet, its white M put in by `main.ts`. */
