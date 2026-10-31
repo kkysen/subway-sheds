@@ -9,7 +9,9 @@
 
 use raptor::gtfs::Secs;
 use raptor::timetable::{StopIdx, Timetable};
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use streets::{Graph, Mm, Search, Split};
 
@@ -276,6 +278,174 @@ pub fn exits(
     exits
 }
 
+/// The street walk out of a station to a destination for each of `wanted`,
+/// `(station, destination)` by index, as `exits` takes it:
+/// out of whichever entrance is quickest at `speed` millimeters a second,
+/// from the entrance to the destination, walking at most `limit` millimeters.
+pub fn exit_paths(
+    graph: &Graph,
+    stations: &[Station],
+    destinations: &[(f64, f64)],
+    speed: Mm,
+    limit: Mm,
+    wanted: &[(u32, u32)],
+) -> Vec<Path> {
+    let mut by_station: HashMap<u32, Vec<u32>> = HashMap::default();
+    for &(s, d) in wanted {
+        by_station.entry(s).or_default().push(d);
+    }
+    let mut stations_wanted: Vec<(u32, Vec<u32>)> = by_station.into_iter().collect();
+    stations_wanted.sort_unstable();
+    stations_wanted
+        .par_iter()
+        .map_init(
+            || Search::new(graph),
+            |search, (s, dests)| {
+                let (_, _, entrances) = &stations[*s as usize];
+                let linked: Vec<(Linked, Secs)> = entrances
+                    .iter()
+                    .filter_map(|&(lat, lon, secs)| {
+                        Some((((lat, lon), graph.snap(lat, lon)?, 0), secs))
+                    })
+                    .collect();
+                let splits: Vec<Option<Split>> = dests
+                    .iter()
+                    .map(|&d| {
+                        let (lat, lon) = destinations[d as usize];
+                        graph.snap(lat, lon)
+                    })
+                    .collect();
+                // Each destination's quickest entrance, as `exits` picks it, and its path.
+                let mut best: Vec<Option<(Mm, Points)>> = vec![None; dests.len()];
+                for (entrance, secs) in &linked {
+                    search.run(&entrance.1, limit);
+                    for (k, split) in splits.iter().enumerate() {
+                        let Some(split) = split else { continue };
+                        let Some(mm) = search.to(split).filter(|&mm| mm <= limit) else {
+                            continue;
+                        };
+                        let cost = *secs as Mm * speed + mm;
+                        if best[k].as_ref().is_some_and(|(c, _)| *c <= cost) {
+                            continue;
+                        }
+                        let Some(edges) = search.path(split) else {
+                            continue;
+                        };
+                        let to = destinations[dests[k] as usize];
+                        let points =
+                            chain(graph, std::slice::from_ref(entrance), &edges, to, split);
+                        best[k] = Some((cost, points));
+                    }
+                }
+                dests
+                    .iter()
+                    .zip(best)
+                    .filter_map(|(&d, best)| Some((*s, d, best?.1)))
+                    .collect::<Vec<_>>()
+            },
+        )
+        .flatten()
+        .collect()
+}
+
+/// How far a point may be from the line between its neighbors to leave it out of a walk to draw,
+/// less than a sidewalk is wide.
+const SIMPLIFY_MM: f64 = 1000.0;
+
+/// Millimeters north per 100,000th of a degree of latitude, on a sphere as big as the Earth.
+const MM_PER_E5_DEGREE: f64 = 6_371_000_000.0 * std::f64::consts::PI / 180.0 / 1.0e5;
+
+/// `points`, as `(latitude, longitude)`s in 100,000ths of a degree, without those within
+/// `SIMPLIFY_MM` of the line from the last one kept to the next, nor repeats,
+/// so that walks that start the same keep the same points until they part.
+fn simplify(points: &[(i32, i32)]) -> Vec<(i32, i32)> {
+    let mut kept: Vec<(i32, i32)> = Vec::with_capacity(points.len());
+    for (k, &p) in points.iter().enumerate() {
+        if kept.last() == Some(&p) {
+            continue;
+        }
+        let (Some(&a), Some(&b)) = (kept.last(), points.get(k + 1)) else {
+            kept.push(p);
+            continue;
+        };
+        // Millimeters per 100,000th of a degree, north and east.
+        let ky = MM_PER_E5_DEGREE;
+        let kx = ky * (f64::from(a.0) / 1.0e5).to_radians().cos();
+        let (ax, ay) = (f64::from(b.1 - a.1) * kx, f64::from(b.0 - a.0) * ky);
+        let (px, py) = (f64::from(p.1 - a.1) * kx, f64::from(p.0 - a.0) * ky);
+        let length = ax.hypot(ay);
+        let off = if length > 0.0 {
+            (ax * py - ay * px).abs() / length
+        } else {
+            px.hypot(py)
+        };
+        if off > SIMPLIFY_MM {
+            kept.push(p);
+        }
+    }
+    kept
+}
+
+/// A station's walks out to destinations as a tree, to draw any one of them:
+/// each point's parent, `-1` for an entrance, and its latitude and longitude,
+/// in 100,000ths of a degree, the near walks' points first, `near` of them,
+/// and `(destination, point)` where each walk ends, near ones first.
+#[derive(Debug, Default)]
+pub struct ExitTree {
+    pub parent: Vec<i32>,
+    pub lat: Vec<i32>,
+    pub lon: Vec<i32>,
+    pub near: usize,
+    pub ends: Vec<(u32, u32)>,
+    pub near_ends: usize,
+}
+
+/// Each station's `ExitTree` of `paths`, simplified, with those to `far` destinations, by station,
+/// after the rest, so that the near ones' points are all there is to draw them.
+pub fn exit_trees(paths: Vec<Path>, far: &HashSet<(u32, u32)>, stations: usize) -> Vec<ExitTree> {
+    let mut by_station: Vec<Vec<(bool, u32, Points)>> = vec![Vec::new(); stations];
+    for (s, d, points) in paths {
+        by_station[s as usize].push((far.contains(&(s, d)), d, points));
+    }
+    by_station
+        .into_par_iter()
+        .map(|mut walks| {
+            walks.sort_by_key(|&(far, d, _)| (far, d));
+            let mut tree = ExitTree::default();
+            let mut node: HashMap<(i32, i32, i32), u32> = HashMap::default();
+            let mut near = true;
+            for (far, d, points) in walks {
+                if far && near {
+                    near = false;
+                    tree.near = tree.parent.len();
+                    tree.near_ends = tree.ends.len();
+                }
+                let quantized: Vec<(i32, i32)> = points
+                    .iter()
+                    .map(|&(lat, lon)| ((lat * 1.0e5).round() as i32, (lon * 1.0e5).round() as i32))
+                    .collect();
+                let mut at = -1;
+                for (lat, lon) in simplify(&quantized) {
+                    at = *node.entry((at, lat, lon)).or_insert_with(|| {
+                        tree.parent.push(at);
+                        tree.lat.push(lat);
+                        tree.lon.push(lon);
+                        (tree.parent.len() - 1) as u32
+                    }) as i32;
+                }
+                if at >= 0 {
+                    tree.ends.push((d, at as u32));
+                }
+            }
+            if near {
+                tree.near = tree.parent.len();
+                tree.near_ends = tree.ends.len();
+            }
+            tree
+        })
+        .collect()
+}
+
 /// Of `reached` stops, only the closest on each of `tts`' patterns, as R5 keeps
 /// (`TransferFinder.retainClosestStopsOnPatterns`), the first stop of any tie:
 /// walking on to another of a pattern's stops is never quicker than riding to it.
@@ -372,7 +542,10 @@ impl Walks {
 
 /// A walk between stations to draw: `(from, to, points)`, by station index,
 /// the points as `(latitude, longitude)`s.
-pub type Path = (u32, u32, Vec<(f64, f64)>);
+pub type Path = (u32, u32, Points);
+
+/// A walk's points, as `(latitude, longitude)`s.
+pub type Points = Vec<(f64, f64)>;
 
 /// An entrance to walk from or to: where it is, where it links, and its time to the platforms.
 type Linked = ((f64, f64), Split, Mm);
@@ -552,4 +725,34 @@ fn chain(
     points.push(point);
     points.dedup();
     points
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simplify_keeps_corners_and_drops_straight_points_and_repeats() {
+        // East along a street, about 8 m a step, then a turn north.
+        let points = [
+            (0, 0),
+            (0, 10),
+            (0, 10),
+            (0, 20),
+            (0, 30),
+            (10, 30),
+            (20, 30),
+        ];
+        assert_eq!(simplify(&points), [(0, 0), (0, 30), (20, 30)]);
+    }
+
+    #[test]
+    fn simplify_keeps_a_bend_of_more_than_a_meter() {
+        // About 2 m off the line from the first to the last.
+        let points = [(0, 0), (2, 10), (0, 20)];
+        assert_eq!(simplify(&points), points);
+        // And less than one.
+        let points = [(0, 0), (0, 10), (0, 20)];
+        assert_eq!(simplify(&points), [(0, 0), (0, 20)]);
+    }
 }

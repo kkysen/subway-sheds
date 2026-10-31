@@ -17,7 +17,7 @@ use arrow_array::{
 use arrow_schema::{Field, Schema};
 use jiff::civil::Date;
 use parquet::arrow::ArrowWriter;
-use pyo3::types::{PyModule, PyModuleMethods};
+use pyo3::types::{PyBytes, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pyfunction, pymodule, wrap_pyfunction};
 use raptor::assign::{DEFAULT_STACKED_SECS_PER_LEVEL, DEFAULT_UP_AND_OVER_SECS};
 use raptor::gtfs::{Feed, Secs, parse_time};
@@ -910,6 +910,67 @@ fn used_exits(
     })
 }
 
+/// Each of `stations`' walks out to destinations of `wanted`, `(station, destination, far)`,
+/// by index into `stations` and `destinations`, as `exits` takes them,
+/// from the entrance quickest at `speed` millimeters a second, walking at most `limit` millimeters,
+/// as a tree (see `walks::ExitTree`), with the walks to `far` ones after the rest:
+/// `(parents, latitudes, longitudes, near, ends, near_ends)`,
+/// the first three little-endian `int32`s and `ends` `(destination, point)` little-endian `uint32`s.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn exit_trees<'py>(
+    py: Python<'py>,
+    osm: PathBuf,
+    stations: Vec<Station>,
+    destinations: Vec<(f64, f64)>,
+    speed: Mm,
+    limit: Mm,
+    wanted: Vec<(u32, u32, bool)>,
+) -> Result<Vec<ExitTreeBytes<'py>>> {
+    let trees = py.detach(|| -> Result<_> {
+        let graph = Graph::build(&Osm::read(&osm)?);
+        let pairs: Vec<(u32, u32)> = wanted.iter().map(|&(s, d, _)| (s, d)).collect();
+        let far = wanted
+            .iter()
+            .filter(|w| w.2)
+            .map(|&(s, d, _)| (s, d))
+            .collect();
+        let paths = walks::exit_paths(&graph, &stations, &destinations, speed, limit, &pairs);
+        Ok(walks::exit_trees(paths, &far, stations.len()))
+    })?;
+    let bytes =
+        |values: &[i32]| -> Vec<u8> { values.iter().flat_map(|v| v.to_le_bytes()).collect() };
+    Ok(trees
+        .into_iter()
+        .map(|tree| {
+            let ends: Vec<u8> = tree
+                .ends
+                .iter()
+                .flat_map(|&(d, at)| [d.to_le_bytes(), at.to_le_bytes()])
+                .flatten()
+                .collect();
+            (
+                PyBytes::new(py, &bytes(&tree.parent)),
+                PyBytes::new(py, &bytes(&tree.lat)),
+                PyBytes::new(py, &bytes(&tree.lon)),
+                tree.near,
+                PyBytes::new(py, &ends),
+                tree.near_ends,
+            )
+        })
+        .collect())
+}
+
+/// `exit_trees`' trees, as Python has them.
+type ExitTreeBytes<'py> = (
+    Bound<'py, PyBytes>,
+    Bound<'py, PyBytes>,
+    Bound<'py, PyBytes>,
+    usize,
+    Bound<'py, PyBytes>,
+    usize,
+);
+
 #[pymodule]
 #[pyo3(name = "_route")]
 fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -919,6 +980,7 @@ fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(stations, m)?)?;
     m.add_function(wrap_pyfunction!(station_pairs, m)?)?;
     m.add_function(wrap_pyfunction!(used_exits, m)?)?;
+    m.add_function(wrap_pyfunction!(exit_trees, m)?)?;
     Ok(())
 }
 
