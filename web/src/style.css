@@ -13,7 +13,10 @@ body,
      Short of the fullscreen button on narrow screens: its 29px, and 10px either side of it. */
   box-sizing: border-box;
   width: min(300px, calc(100% - 59px));
-  overflow: hidden;
+  /* No taller than the map, 10px from its bottom as from its top, scrolling if it's more,
+     as on phones turned sideways, where it would otherwise be cut off. */
+  max-height: calc(100% - 20px);
+  overflow: hidden auto;
   background: white;
   border-radius: 4px;
   font-size: 14px;
