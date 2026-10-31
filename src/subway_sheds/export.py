@@ -33,9 +33,10 @@ def write(grid: Grid) -> None:
     - `routes/{station}.bin`: the journey from the station to each station at the minute
       its arrival there is the median of, in each run, by day and then scenario,
       then station, as `stations.json` lists them:
-      a `uint8` count of legs for each, then every leg, as three little-endian `uint16`s,
+      a `uint8` count of legs for each, then every leg, as five little-endian `uint16`s,
       a ride's pattern and the positions in it it boards and gets off at,
-      or `WALK_LEG` and the stations a walk between stations is from and to.
+      or `WALK_LEG` and the stations a walk between stations is from and to,
+      then when it starts and ends, in seconds from the window's start.
     - `exits.bin`: every walk out of a station to a cell, to time at the reader's walking speed,
       as four little-endian `uint16` arrays of equal length after their length, a `uint32`:
       the station, as `stations.json` lists them, the cell, as `grid.json` lists them,
@@ -197,9 +198,9 @@ def write(grid: Grid) -> None:
         legs = (
             pd.concat(by_origin[i]).sort_values(["run", "dest", "leg"])
             if i in by_origin
-            else pd.DataFrame({"p": [], "a": [], "b": []})
+            else pd.DataFrame({"p": [], "a": [], "b": [], "start": [], "end": []})
         )
-        fields = legs[["p", "a", "b"]].to_numpy(dtype="<u2")
+        fields = legs[["p", "a", "b", "start", "end"]].to_numpy(dtype="<u2")
         (routes_dir / f"{station}.bin").write_bytes(counts[i].tobytes() + fields.tobytes())
 
     # When, from the window's start, rather than how long after each departure.

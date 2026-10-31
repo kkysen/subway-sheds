@@ -86,7 +86,8 @@ pub fn travel_times(req: &Request, origins: &[String]) -> Vec<OriginTimes> {
 pub type Arrivals = Vec<(u32, u8, u16)>;
 
 /// A leg of a journey: a ride on `pattern` from its stop at `board` to its stop at `alight`,
-/// or with `pattern` `WALK`, a walk between stations, by their indices in `StreetWalks`.
+/// or with `pattern` `WALK`, a walk between stations, by their indices in `StreetWalks`,
+/// from `start` to `end`, in seconds from the window's start.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RouteLeg {
     pub pattern: u32,
@@ -94,6 +95,8 @@ pub struct RouteLeg {
     pub alight: u16,
     pub from: u32,
     pub to: u32,
+    pub start: u16,
+    pub end: u16,
 }
 
 /// `RouteLeg::pattern` for a walk.
@@ -196,12 +199,15 @@ fn origin_times(
                 if let Some((stop, to)) = walked {
                     let of = |s: StopIdx| walks.stations[s as usize].unwrap_or(u32::MAX);
                     if of(stop) != of(to) {
+                        let start = legs.last().map_or(0, |leg| leg.end);
                         legs.push(RouteLeg {
                             pattern: WALK,
                             board: 0,
                             alight: 0,
                             from: of(stop),
                             to: of(to),
+                            start,
+                            end: start.saturating_add(footpath(req.tt, stop, to) as u16),
                         });
                     }
                 }
@@ -280,6 +286,14 @@ fn origin_times(
     (cells, arrivals, routes)
 }
 
+/// The seconds `tt`'s footpath from `from` to `to` takes, or 0 if there's none.
+fn footpath(tt: &Timetable, from: StopIdx, to: StopIdx) -> Secs {
+    tt.footpaths[from as usize]
+        .iter()
+        .find(|&&(t, _)| t == to)
+        .map_or(0, |&(_, walk)| walk)
+}
+
 /// The legs of the earliest arriving journey `labels` has to any of `targets`.
 fn fastest_journey(req: &Request, labels: &Labels, targets: &[StopIdx]) -> Vec<RouteLeg> {
     let (legs, journeys) = labels.journeys(targets);
@@ -287,23 +301,35 @@ fn fastest_journey(req: &Request, labels: &Labels, targets: &[StopIdx]) -> Vec<R
         return Vec::new();
     };
     let station = |stop: StopIdx| req.walks.stations[stop as usize].unwrap_or(u32::MAX);
+    // From the window's start, as the arrivals are.
+    let since = |t: Secs| t.saturating_sub(req.depart).min(u16::MAX.into()) as u16;
+    let mut at = 0;
     legs.of(journey)
         .iter()
-        .map(|leg| match leg {
-            Leg::Ride(ride) => RouteLeg {
-                pattern: ride.pattern,
-                board: ride.board_pos,
-                alight: ride.alight_pos,
-                from: station(ride.board_stop(req.tt)),
-                to: station(ride.alight_stop(req.tt)),
-            },
-            Leg::Walk { from, to, .. } => RouteLeg {
-                pattern: WALK,
-                board: 0,
-                alight: 0,
-                from: station(*from),
-                to: station(*to),
-            },
+        .map(|leg| {
+            let leg = match leg {
+                Leg::Ride(ride) => RouteLeg {
+                    pattern: ride.pattern,
+                    board: ride.board_pos,
+                    alight: ride.alight_pos,
+                    from: station(ride.board_stop(req.tt)),
+                    to: station(ride.alight_stop(req.tt)),
+                    start: since(ride.depart(req.tt)),
+                    end: since(ride.arrive(req.tt)),
+                },
+                // Walked as soon as off the train before.
+                Leg::Walk { from, to, duration } => RouteLeg {
+                    pattern: WALK,
+                    board: 0,
+                    alight: 0,
+                    from: station(*from),
+                    to: station(*to),
+                    start: at,
+                    end: at.saturating_add(*duration as u16),
+                },
+            };
+            at = leg.end;
+            leg
         })
         .collect()
 }
@@ -537,6 +563,18 @@ fn write_routes(
                 "to",
                 Arc::new(StringArray::from_iter_values(
                     rows.iter().map(|r| name(r.3.to)),
+                )),
+            ),
+            (
+                "start",
+                Arc::new(UInt16Array::from_iter_values(
+                    rows.iter().map(|r| r.3.start),
+                )),
+            ),
+            (
+                "end",
+                Arc::new(UInt16Array::from_iter_values(
+                    rows.iter().map(|r| r.3.end),
                 )),
             ),
         ],
@@ -804,13 +842,16 @@ mod tests {
             (1, 1, 14 * 60),
             (1, 2, 13 * 60),
         ];
-        // To B on the one pattern, from A, its first stop, to B, its second.
+        // To B on the one pattern, from A, its first stop, to B, its second,
+        // on the 08:05, arriving 08:15.
         let to_b = RouteLeg {
             pattern: 0,
             board: 0,
             alight: 1,
             from: 0,
             to: 1,
+            start: 5 * 60,
+            end: 15 * 60,
         };
         assert_eq!(
             times,

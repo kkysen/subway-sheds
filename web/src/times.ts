@@ -185,13 +185,43 @@ export function travelTimes(
   return { times, exitFrom };
 }
 
+// The seconds walking out of `station` to `cell` takes at `mph`, as `travelTimes` counts it,
+// or from `origin` itself, without going in to its platforms; `undefined` if it's not walked.
+export function walkOutSeconds(
+  exits: Exits,
+  station: number,
+  cell: number,
+  mph: number,
+  fromOrigin: boolean,
+): number | undefined {
+  const speed = mph * METERS_PER_SECOND_PER_MPH;
+  let best: number | undefined;
+  for (let k = exits.starts[station] ?? 0; k < (exits.starts[station + 1] ?? 0); k++) {
+    if (exits.cell[k] !== cell) {
+      continue;
+    }
+    const walk = Math.floor((exits.meters[k] ?? 0) / speed);
+    if (walk > MAX_EXIT_WALK_SECONDS) {
+      continue;
+    }
+    const seconds = fromOrigin ? walk : walk + (exits.exitSeconds[k] ?? 0);
+    best = Math.min(best ?? seconds, seconds);
+  }
+  return best;
+}
+
 // A leg of a journey: a ride on `pattern`, boarding at its stop `a` and getting off at its stop `b`,
-// or with `pattern` `WALK_LEG`, a walk from station `a` to station `b`.
+// or with `pattern` `WALK_LEG`, a walk from station `a` to station `b`,
+// from `start` to `end`, in seconds from the window's start.
 export interface RouteLeg {
   readonly pattern: number;
   readonly a: number;
   readonly b: number;
+  readonly start: number;
+  readonly end: number;
 }
+// Each leg's fields in `Routes.legs`.
+const LEG_FIELDS = 5;
 export const WALK_LEG = 0xffff;
 
 // The journeys from a station to every station, at the minute each is timed by, in each run.
@@ -208,7 +238,7 @@ export function parseRoutes(buffer: ArrayBuffer, stations: number): Routes {
     starts[i + 1] = (starts[i] ?? 0) + (counts[i] ?? 0);
   }
   const view = new DataView(buffer, RUNS * stations);
-  const legs = new Uint16Array(3 * (starts[RUNS * stations] ?? 0));
+  const legs = new Uint16Array(LEG_FIELDS * (starts[RUNS * stations] ?? 0));
   for (let k = 0; k < legs.length; k++) {
     legs[k] = view.getUint16(2 * k, true);
   }
@@ -225,10 +255,13 @@ export function routeTo(
   const i = run * stations + station;
   const legs: RouteLeg[] = [];
   for (let k = routes.starts[i] ?? 0; k < (routes.starts[i + 1] ?? 0); k++) {
+    const at = LEG_FIELDS * k;
     legs.push({
-      pattern: routes.legs[3 * k] ?? WALK_LEG,
-      a: routes.legs[3 * k + 1] ?? 0,
-      b: routes.legs[3 * k + 2] ?? 0,
+      pattern: routes.legs[at] ?? WALK_LEG,
+      a: routes.legs[at + 1] ?? 0,
+      b: routes.legs[at + 2] ?? 0,
+      start: routes.legs[at + 3] ?? 0,
+      end: routes.legs[at + 4] ?? 0,
     });
   }
   return legs;
