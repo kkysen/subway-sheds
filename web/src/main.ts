@@ -857,9 +857,7 @@ function describeCell(cell: number): string {
     view === "saved"
       ? `${say(baseline)} without QueensLink, ${say(queenslink)} with it`
       : say(view === "baseline" ? baseline : queenslink);
-  const from = stations[exitFromOf(cell)];
-  const out = from === undefined ? "" : `, walking out of ${from.name}`;
-  return `Here: ${trip}${out}`;
+  return `Here: ${trip}`;
 }
 
 function bandAt(lngLat: LngLat): number {
@@ -1131,9 +1129,9 @@ function journeyStep(top: Node | string, seconds: number, className: string): HT
 }
 
 // A journey's trains, each with its ride's minutes under it, and between them,
-// the minutes changing, walking and waiting, then, if given, the walk out at the end.
-// Before them, departing at `departs` seconds into the window, going in and waiting for the first,
-// or walking to another station for it.
+// the minutes changing, walking and waiting, then, if given, the walk out at the end, an arrow too.
+// Before them, as an arrow with its minutes as a change's are, from departing at `departs`
+// seconds into the window: going in and waiting for the first, or walking to another station for it.
 function journeyLine(
   legs: readonly RouteLeg[],
   departs: number | undefined,
@@ -1147,10 +1145,7 @@ function journeyLine(
   line.className = "route-trains";
   const first = rides[0];
   if (first !== undefined && departs !== undefined) {
-    const boards = patterns[currentRun()]?.[first.pattern]?.stations[first.a];
-    const origin = stations.findIndex((station) => station.id === selected);
-    const start = boards === origin ? "wait" : "walk";
-    line.append(journeyStep(start, first.start - departs, "journey-start"), "→");
+    line.append(journeyStep("→", first.start - departs, "journey-change"));
   }
   let last: RouteLeg | undefined;
   for (const leg of legs) {
@@ -1164,10 +1159,7 @@ function journeyLine(
     last = leg;
   }
   if (walkOut !== undefined) {
-    if (last !== undefined) {
-      line.append(journeyStep("→", 0, "journey-change journey-untimed"));
-    }
-    line.append(journeyStep("walk", walkOut, "journey-walk"));
+    line.append(journeyStep("→", walkOut, "journey-change"));
   }
   return line;
 }

@@ -542,8 +542,3 @@ body,
   opacity: 0.75;
   white-space: nowrap;
 }
-
-/* The arrow before the walk at the end, whose time is the walk's own. */
-.journey-untimed .journey-time {
-  visibility: hidden;
-}
