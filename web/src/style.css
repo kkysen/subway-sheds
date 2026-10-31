@@ -67,6 +67,12 @@ body,
   font-weight: 700;
 }
 
+/* QueensLink's logo after its name, as tall as the heading's capitals. */
+#controls h1 .logo {
+  height: 1.2em;
+  vertical-align: -0.25em;
+}
+
 /* Under the heading, only while the controls are collapsed. */
 #summary-status {
   grid-column: 1;
