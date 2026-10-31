@@ -3,6 +3,7 @@ import itertools
 from pathlib import Path
 from typing import Annotated
 
+import geopandas as gpd
 import httpx
 import pandas as pd
 from typer import Argument, Option, Typer, echo
@@ -179,6 +180,29 @@ def _differences(name: str, both: pd.DataFrame) -> None:
     echo(f"  {name}: {len(both)} reached by both: {shares} min")
 
 
+def _compared_stations() -> tuple[gpd.GeoDataFrame, list[gtfs.Station]]:
+    """The cells and every scenario's stations, as `route` routes from and to them."""
+    cells = land_grid().points()
+    return cells, list({s.id: s for sc in Scenario for s in gtfs.stations(sc.gtfs)}.values())
+
+
+@app.command(name="r5-walks")
+def r5_walks(
+    scenario: Annotated[Scenario, Option(help="The scenario whose walks to write.")],
+) -> None:
+    """
+    Write R5's own walks, in seconds, for `compare-raptor`.
+
+    One scenario at a time, since each loads R5's network into the JVM for good.
+    """
+    cells, stations = _compared_stations()
+    destinations = pd.concat(
+        [cells, travel_times.station_points(stations, len(cells))], ignore_index=True
+    )
+    raptor_check.write_walks(scenario, Day.WEEKDAY, stations, destinations)
+    echo(f"wrote {raptor_check.walks_dir(scenario).relative_to(paths.ROOT)}")
+
+
 @app.command(name="compare-raptor")
 def compare_raptor(
     scenario_: Annotated[
@@ -190,47 +214,38 @@ def compare_raptor(
         Option("--day", help="A day to compare, repeatable; every one if none."),
     ] = None,
 ) -> None:
-    """Route with RAPTOR walking R5's own walks, and compare its times with R5's `route`."""
-    cells = land_grid().points()
-    every_station = list({s.id: s for sc in Scenario for s in gtfs.stations(sc.gtfs)}.values())
-    names = {s.id: s.name for s in every_station}
-    destinations = pd.concat(
-        [cells, travel_times.station_points(every_station, len(cells))], ignore_index=True
-    )
-    for scenario in scenario_ or list(Scenario):
-        days = day_ or list(Day)
-        max_rides = raptor_check.write_walks(scenario, days[0], every_station, destinations)
-        for day in days:
-            rows, unknown = raptor_check.route(
-                scenario, day, every_station, len(destinations), max_rides
-            )
+    """Route with RAPTOR walking R5's own walks from `r5-walks`, and compare with R5's `route`."""
+    cells, stations = _compared_stations()
+    destinations = len(cells) + len(stations)
+    for scenario, day in itertools.product(scenario_ or list(Scenario), day_ or list(Day)):
+        rows, unknown = raptor_check.route(scenario, day, stations, destinations)
+        echo(
+            f"{scenario} {day}: RAPTOR wrote {rows} rows; "
+            f"{len(unknown)} of R5's transfers are between stops it doesn't serve"
+        )
+        times = raptor_check.compare(scenario, day, len(cells), stations)
+        both = times.dropna(subset=["r5", "raptor"])
+        to_station = both["destination"] >= len(cells)
+        _differences("to stations", both[to_station])
+        _differences("to cells", both[~to_station])
+        echo(
+            f"  reached by R5 only: {times['raptor'].isna().sum()}, "
+            f"by RAPTOR only: {times['r5'].isna().sum()}"
+        )
+        worst = both[to_station].assign(off=lambda t: t["raptor"] - t["r5"])
+        worst = worst.reindex(worst["off"].abs().sort_values(ascending=False).index).head(10)
+        for origin, destination, r5, raptor in zip(
+            worst["origin"].tolist(),
+            worst["destination"].tolist(),
+            worst["r5"].tolist(),
+            worst["raptor"].tolist(),
+            strict=True,
+        ):
+            from_, to = stations[origin], stations[destination - len(cells)]
             echo(
-                f"{scenario} {day}: RAPTOR wrote {rows} rows; "
-                f"{len(unknown)} of R5's transfers are between stops it doesn't serve"
+                f"    {from_.name} ({from_.id}) to {to.name} ({to.id}): "
+                f"R5 {r5:.0f}, RAPTOR {raptor:.0f} min"
             )
-            times = raptor_check.compare(scenario, day, len(cells), every_station)
-            both = times.dropna(subset=["r5", "raptor"])
-            to_station = both["destination"] >= len(cells)
-            _differences("to stations", both[to_station])
-            _differences("to cells", both[~to_station])
-            echo(
-                f"  reached by R5 only: {times['raptor'].isna().sum()}, "
-                f"by RAPTOR only: {times['r5'].isna().sum()}"
-            )
-            worst = both[to_station].assign(off=lambda t: t["raptor"] - t["r5"])
-            worst = worst.reindex(worst["off"].abs().sort_values(ascending=False).index).head(10)
-            for origin, destination, r5, raptor in zip(
-                worst["origin"].tolist(),
-                worst["destination"].tolist(),
-                worst["r5"].tolist(),
-                worst["raptor"].tolist(),
-                strict=True,
-            ):
-                to = every_station[destination - len(cells)]
-                echo(
-                    f"    {names[origin]} ({origin}) to {to.name} ({to.id}): "
-                    f"R5 {r5:.0f}, RAPTOR {raptor:.0f} min"
-                )
 
 
 @app.command(name="export")

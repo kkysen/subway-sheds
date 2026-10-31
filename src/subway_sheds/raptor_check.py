@@ -26,6 +26,9 @@ from subway_sheds.scenarios import Day, Scenario
 # Each scenario's walks, and RAPTOR's times walking them.
 WALKS = paths.CACHE / "r5_walks"
 
+# Most rides in a journey, as r5py has R5 route (`ProfileRequest.maxRides`).
+R5_MAX_RIDES = 8
+
 # R5's integers for "not reached".
 _UNREACHED = 2**31 - 1
 
@@ -55,13 +58,11 @@ def write_walks(
     day: Day,
     origins: list[gtfs.Station],
     destinations: gpd.GeoDataFrame,
-) -> int:
+) -> None:
     """
     Write R5's walks from `origins` and to `destinations` in `scenario`,
     as `route/src/walks.rs` reads them,
     with R5's request set as `travel_times.from_stations` sets it.
-
-    Returns R5's most rides, for RAPTOR to take too.
     """
     date = gtfs.service_date(scenario.gtfs, day.weekday)
     network = r5py.TransportNetwork(paths.OSM_PBF, [scenario.gtfs])
@@ -192,11 +193,12 @@ def write_walks(
             "secs": (pa.int32(), direct_secs),
         },
     )
-    return int(request.maxRides)
+    if request.maxRides != R5_MAX_RIDES:
+        raise ValueError(f"R5 routes {request.maxRides} rides at most, not {R5_MAX_RIDES}")
 
 
 def route(
-    scenario: Scenario, day: Day, origins: list[gtfs.Station], destinations: int, max_rides: int
+    scenario: Scenario, day: Day, origins: list[gtfs.Station], destinations: int
 ) -> tuple[int, list[tuple[str, str, int]]]:
     """RAPTOR's times from `origins` walking R5's walks, as R5 routes them."""
     date = gtfs.service_date(scenario.gtfs, day.weekday)
@@ -206,7 +208,7 @@ def route(
         date,
         day.departure.isoformat(),
         window,
-        max_rides,
+        R5_MAX_RIDES,
         travel_times.MAX_TIME // datetime.timedelta(minutes=1),
         walks_dir(scenario),
         [o.id for o in origins],
@@ -219,29 +221,44 @@ def compare(scenario: Scenario, day: Day, cells: int, stations: list[gtfs.Statio
     """
     R5's and RAPTOR's minutes side by side, as `origin`, `destination`, `r5`, and `raptor`,
     with `NaN` where one doesn't reach it,
-    destinations numbered as RAPTOR's: the cells, then `stations`.
+    origins as their index in `stations`,
+    and destinations numbered as RAPTOR's: the cells, then `stations`.
+
+    Keyed by integers, not station IDs, since there are millions of rows.
     """
-    station_index = {s.id: cells + i for i, s in enumerate(stations)}
+    index = {s.id: i for i, s in enumerate(stations)}
+
+    def origins(ids: pd.Series) -> np.ndarray:
+        return ids.astype(str).map(index).to_numpy(dtype=np.int16)
+
     r5_cells = pd.read_parquet(travel_times.output_path(scenario, day))
     r5_stations = pd.read_parquet(travel_times.stations_output_path(scenario, day))
-    r5 = pd.concat(
-        [
-            pd.DataFrame(
-                {
-                    "origin": r5_cells["station"].astype(str),
-                    "destination": r5_cells["cell"].astype("int64"),
-                    "r5": r5_cells["minutes"],
-                }
+    r5 = pd.DataFrame(
+        {
+            "origin": np.concatenate(
+                [origins(r5_cells["station"]), origins(r5_stations["station"])]
             ),
-            pd.DataFrame(
-                {
-                    "origin": r5_stations["station"].astype(str),
-                    "destination": r5_stations["to_station"].astype(str).map(station_index),
-                    "r5": r5_stations["minutes"],
-                }
+            "destination": np.concatenate(
+                [
+                    r5_cells["cell"].to_numpy(dtype=np.int32),
+                    cells + origins(r5_stations["to_station"]).astype(np.int32),
+                ]
             ),
-        ]
+            "r5": np.concatenate(
+                [
+                    r5_cells["minutes"].to_numpy(np.float32),
+                    r5_stations["minutes"].to_numpy(np.float32),
+                ]
+            ),
+        }
     )
+    del r5_cells, r5_stations
     raptor = pd.read_parquet(raptor_output_path(scenario, day))
-    raptor = raptor.rename(columns={"minutes": "raptor"}).astype({"destination": "int64"})
+    raptor = pd.DataFrame(
+        {
+            "origin": origins(raptor["origin"]),
+            "destination": raptor["destination"].to_numpy(dtype=np.int32),
+            "raptor": raptor["minutes"].to_numpy(np.float32),
+        }
+    )
     return r5.merge(raptor, on=["origin", "destination"], how="outer")
