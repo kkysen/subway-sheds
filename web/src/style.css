@@ -485,3 +485,19 @@ body,
   color: inherit;
   text-decoration: underline;
 }
+
+/* A train's bullet in a station's popup, as the MTA draws them. */
+.route-bullet {
+  display: inline-block;
+  min-width: 1.4em;
+  height: 1.4em;
+  border-radius: 0.7em;
+  line-height: 1.4em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.route-trains {
+  display: inline-block;
+  margin-top: 0.3em;
+}

@@ -4,6 +4,7 @@ import datetime
 import itertools
 import json
 import shutil
+import zipfile
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,8 @@ from subway_sheds.scenarios import Day, Scenario
 
 # In a station's arrivals, a station not reached by train within `travel_times.MAX_TIME`.
 UNREACHED = 0xFFFF
+# In a station's routes, a leg that walks between stations.
+WALK_LEG = 0xFFFF
 
 
 def write(grid: Grid) -> None:
@@ -25,6 +28,15 @@ def write(grid: Grid) -> None:
     - `stations.json`: each station in either scenario, and which.
     - `lines.json`: GeoJSON of the lines between stations, each with its color
       and which scenarios run on it.
+    - `routes.json`: each route's name and colors, by its ID.
+    - `patterns.json`: in each run, by day and then scenario,
+      each pattern's route and its stops' stations, as `stations.json` lists them.
+    - `routes/{station}.bin`: the journey from the station to each station at the minute
+      its arrival there is the median of, in each run, by day and then scenario,
+      then station, as `stations.json` lists them:
+      a `uint8` count of legs for each, then every leg, as three little-endian `uint16`s,
+      a ride's pattern and the positions in it it boards and gets off at,
+      or `WALK_LEG` and the stations a walk between stations is from and to.
     - `exits.bin`: every walk out of a station to a cell, to time at the reader's walking speed,
       as four little-endian `uint16` arrays of equal length after their length, a `uint32`:
       the station, as `stations.json` lists them, the cell, as `grid.json` lists them,
@@ -85,7 +97,11 @@ def write(grid: Grid) -> None:
                 {
                     "type": "Feature",
                     "geometry": {"type": "LineString", "coordinates": segment.coordinates},
-                    "properties": {"color": segment.color},
+                    "properties": {
+                        "color": segment.color,
+                        "from": segment.stations[0],
+                        "to": segment.stations[1],
+                    },
                 },
             )
             properties = feature["properties"]
@@ -127,6 +143,61 @@ def write(grid: Grid) -> None:
             arrivals["minute"].to_numpy(),
             rows_of(arrivals["to_station"]),
         ] = arrivals["seconds"].to_numpy()
+    routes: dict[str, dict[str, str]] = {}
+    for scenario in Scenario:
+        with zipfile.ZipFile(scenario.gtfs) as feed:
+            for route in gtfs.read_csv(feed, "routes.txt"):
+                routes[route["route_id"]] = {
+                    "name": route["route_short_name"],
+                    "color": f"#{route.get('route_color') or '808183'}",
+                    "text": f"#{route.get('route_text_color') or 'FFFFFF'}",
+                }
+    (paths.WEB_DATA / "routes.json").write_text(json.dumps(routes, separators=(",", ":")))
+    runs = list(itertools.product(Day, Scenario))
+    patterns = []
+    for day, scenario in runs:
+        stops = pd.read_parquet(travel_times.patterns_path(scenario, day))
+        patterns.append(
+            [
+                {
+                    "route": str(group["route"].iloc[0]),
+                    "stations": [
+                        index.get(s, -1) for s in group.sort_values("position")["station"]
+                    ],
+                }
+                for _, group in stops.groupby("pattern", sort=True)
+            ]
+        )
+    (paths.WEB_DATA / "patterns.json").write_text(json.dumps(patterns, separators=(",", ":")))
+    routes_dir = paths.WEB_DATA / "routes"
+    routes_dir.mkdir()
+    counts = np.zeros((len(stations), len(runs), len(stations)), dtype=np.uint8)
+    legs_of: list[list[pd.DataFrame]] = []
+    for r, (day, scenario) in enumerate(runs):
+        legs = pd.read_parquet(travel_times.routes_path(scenario, day))
+        legs = legs.assign(origin=rows_of(legs["station"]), dest=rows_of(legs["to_station"]), run=r)
+        walk = legs["pattern"] == travel_times.WALK
+        legs["a"] = np.where(walk, [index.get(str(s), 0) for s in legs["from"]], legs["board"])
+        legs["b"] = np.where(walk, [index.get(str(s), 0) for s in legs["to"]], legs["alight"])
+        legs["p"] = np.where(walk, WALK_LEG, legs["pattern"])
+        legs_of.append([g for _, g in legs.groupby("origin")])
+        sizes = legs.groupby(["origin", "dest"]).size()
+        counts[sizes.index.get_level_values(0), r, sizes.index.get_level_values(1)] = (
+            sizes.to_numpy()
+        )
+    by_origin: dict[int, list[pd.DataFrame]] = {}
+    for groups in legs_of:
+        for g in groups:
+            by_origin.setdefault(int(g["origin"].iloc[0]), []).append(g)
+    for station, i in index.items():
+        legs = (
+            pd.concat(by_origin[i]).sort_values(["run", "dest", "leg"])
+            if i in by_origin
+            else pd.DataFrame({"p": [], "a": [], "b": []})
+        )
+        fields = legs[["p", "a", "b"]].to_numpy(dtype="<u2")
+        (routes_dir / f"{station}.bin").write_bytes(counts[i].tobytes() + fields.tobytes())
+
     # When, from the window's start, rather than how long after each departure.
     reached = seconds != UNREACHED
     offsets = (np.arange(minutes, dtype=np.uint32) * 60)[:, np.newaxis]

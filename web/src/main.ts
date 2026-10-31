@@ -15,7 +15,18 @@ import {
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { BandsLayer, EARTH_CIRCUMFERENCE } from "./bands";
-import { type Arrivals, parseArrivals, parseExits, travelTimes, UNREACHED } from "./times";
+import {
+  type Arrivals,
+  parseArrivals,
+  parseExits,
+  parseRoutes,
+  type RouteLeg,
+  type Routes,
+  routeTo,
+  travelTimes,
+  UNREACHED,
+  WALK_LEG,
+} from "./times";
 
 // MapLibre loads its worker from a file of its own, which it looks for next to the bundle;
 // importing it with `?url` is what gets Vite to emit it at all.
@@ -96,9 +107,23 @@ async function fetchBinary(path: string): Promise<ArrayBuffer> {
   return response.arrayBuffer();
 }
 
-async function fetchTimesUncached(station: string): Promise<Arrivals> {
-  const buffer = await fetchBinary(`arrivals/${encodeURIComponent(station)}.bin`);
-  return parseArrivals(buffer, (await stationList).length);
+// What a station's times and routes are made from.
+interface FromStation {
+  readonly arrivals: Arrivals;
+  readonly routes: Routes;
+}
+
+async function fetchTimesUncached(station: string): Promise<FromStation> {
+  const id = encodeURIComponent(station);
+  const [arrivals, routes, list] = await Promise.all([
+    fetchBinary(`arrivals/${id}.bin`),
+    fetchBinary(`routes/${id}.bin`),
+    stationList,
+  ]);
+  return {
+    arrivals: parseArrivals(arrivals, list.length),
+    routes: parseRoutes(routes, list.length),
+  };
 }
 
 // How many stations' arrivals are kept, about 240 KB each unpacked,
@@ -107,9 +132,9 @@ const CACHED_STATIONS = 64;
 
 // The times fetched or being fetched, least recently asked for first,
 // so that a click on a station already fetched for being pointed at waits on that fetch.
-const timesCache = new Map<string, Promise<Arrivals>>();
+const timesCache = new Map<string, Promise<FromStation>>();
 
-function fetchTimes(station: string): Promise<Arrivals> {
+function fetchTimes(station: string): Promise<FromStation> {
   let times = timesCache.get(station);
   timesCache.delete(station);
   if (times === undefined) {
@@ -597,11 +622,24 @@ if (fullscreenGroup !== null && fullscreenCorner !== null && fullscreenCorner !=
 // Listened for before awaiting the data, which the map can finish loading before.
 const loaded = new Promise((resolve) => map.once("load", resolve));
 
-const [grid, stations, lines, exits] = await Promise.all([
+// As the pipeline writes them; see `src/subway_sheds/export.py`.
+interface RouteInfo {
+  readonly name: string;
+  readonly color: string;
+  readonly text: string;
+}
+interface Pattern {
+  readonly route: string;
+  readonly stations: readonly number[];
+}
+
+const [grid, stations, lines, exits, routeInfo, patterns] = await Promise.all([
   fetchJson<Grid>("grid.json"),
   stationList,
   fetchJson<GeoJSON.FeatureCollection>("lines.json"),
   stationList.then(async (list) => parseExits(await fetchBinary("exits.bin"), list.length)),
+  fetchJson<Record<string, RouteInfo>>("routes.json"),
+  fetchJson<Pattern[][]>("patterns.json"),
 ]);
 const { width, height } = rasterSize(grid);
 const bandsLayer = new BandsLayer("bands", grid, width, height);
@@ -614,6 +652,8 @@ const DEFAULT_STATION = "H04";
 let selected = "";
 // When trains from the station shown reach every station.
 let selectedArrivals: Arrivals | undefined;
+// The journeys from the station shown.
+let selectedRoutes: Routes | undefined;
 // The times from the station shown, at the walking speed chosen.
 let selectedTimes: Uint8Array | undefined;
 // Each cell's class, as drawn.
@@ -683,11 +723,12 @@ async function selectStation(id: string): Promise<void> {
   selectedName = station.name;
   showSummaryStatus();
   writeHash();
-  const arrivals = await fetchTimes(id);
+  const { arrivals, routes } = await fetchTimes(id);
   if (selected !== id) {
     return;
   }
   selectedArrivals = arrivals;
+  selectedRoutes = routes;
   computeTimes();
   drawCells();
 }
@@ -814,6 +855,7 @@ let pinned: { readonly band: number; readonly lngLat?: LngLat } | undefined;
 
 // Highlights a band and says what it is at a point, or shows the pinned one if there's none.
 function showBand(band: number, lngLat: LngLat): void {
+  showRoute(undefined);
   if (band === NOTHING) {
     restorePinnedBand();
     return;
@@ -827,6 +869,7 @@ function showBand(band: number, lngLat: LngLat): void {
 }
 
 restorePinnedBand = (): void => {
+  showRoute(undefined);
   if (pinned?.lngLat === undefined) {
     highlightBand(pinned?.band ?? NOTHING);
     bandPopup.remove();
@@ -933,6 +976,119 @@ const legendM = queenslinkM();
 // As a variable for `style.css`, for the legend's bullets made since, too.
 document.documentElement.style.setProperty("--queenslink-m", `url(${legendM.toDataURL()})`);
 
+// The run shown: the day's, with QueensLink unless only without it is.
+function currentRun(): number {
+  return 2 * days.indexOf(currentDay()) + (currentView() === "baseline" ? 0 : 1);
+}
+
+// The journey from the selected station to `station`, in the run shown.
+function routeLegs(station: Station): RouteLeg[] {
+  if (selectedRoutes === undefined) {
+    return [];
+  }
+  return routeTo(selectedRoutes, currentRun(), stations.indexOf(station), stations.length);
+}
+
+// A ride's train.
+function trainOf(leg: RouteLeg): RouteInfo {
+  const route = patterns[currentRun()]?.[leg.pattern]?.route ?? "";
+  return routeInfo[route] ?? { name: route, color: "#808183", text: "#ffffff" };
+}
+
+// A train's bullet, as the MTA draws it.
+function bullet(train: RouteInfo): HTMLElement {
+  const b = document.createElement("span");
+  b.className = "route-bullet";
+  b.textContent = train.name;
+  b.style.background = train.color;
+  b.style.color = train.text;
+  return b;
+}
+
+// The lines between consecutive stations, from the first to the second, by `from|to`.
+const segmentsBetween = new Map<string, GeoJSON.Position[]>();
+for (const feature of lines.features) {
+  const { from, to } = feature.properties ?? {};
+  if (
+    feature.geometry.type === "LineString" &&
+    typeof from === "string" &&
+    typeof to === "string"
+  ) {
+    segmentsBetween.set(`${from}|${to}`, feature.geometry.coordinates);
+    segmentsBetween.set(`${to}|${from}`, [...feature.geometry.coordinates].reverse());
+  }
+}
+
+const coordinatesOf = (i: number): GeoJSON.Position => {
+  const station = stations[i];
+  return station === undefined ? [0, 0] : [station.lon, station.lat];
+};
+
+// The journey to `to` on the map: each ride along its line, walks dashed, and a bullet where each ride boards.
+function routeFeatures(legs: readonly RouteLeg[], to: number): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = [];
+  const origin = stations.findIndex((station) => station.id === selected);
+  let at = origin;
+  const walk = (from: number, to: number): void => {
+    if (from !== to && from >= 0 && to >= 0) {
+      features.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [coordinatesOf(from), coordinatesOf(to)] },
+        properties: { kind: "walk" },
+      });
+    }
+  };
+  for (const leg of legs) {
+    if (leg.pattern === WALK_LEG) {
+      walk(at, leg.a);
+      walk(leg.a, leg.b);
+      at = leg.b;
+      continue;
+    }
+    const passed = patterns[currentRun()]?.[leg.pattern]?.stations.slice(leg.a, leg.b + 1) ?? [];
+    const first = passed[0] ?? at;
+    walk(at, first);
+    const train = trainOf(leg);
+    const coordinates: GeoJSON.Position[] = [];
+    for (let k = 0; k + 1 < passed.length; k++) {
+      const a = stations[passed[k] ?? -1]?.id;
+      const b = stations[passed[k + 1] ?? -1]?.id;
+      const between = segmentsBetween.get(`${a}|${b}`) ?? [
+        coordinatesOf(passed[k] ?? 0),
+        coordinatesOf(passed[k + 1] ?? 0),
+      ];
+      coordinates.push(...between);
+    }
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates },
+      properties: { kind: "ride", color: train.color },
+    });
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: coordinatesOf(first) },
+      properties: { name: train.name, color: train.color, text: train.text },
+    });
+    at = passed[passed.length - 1] ?? at;
+  }
+  // Walking the rest of the way, or all of it, from a station as near as the origin.
+  walk(at, to);
+  return { type: "FeatureCollection", features };
+}
+
+// The journey to `station` on the map, or none.
+function showRoute(station: Station | undefined): void {
+  const source = map.getSource("route");
+  if (source !== undefined && "setData" in source && typeof source.setData === "function") {
+    const reached = station !== undefined && stationMinutes(station) !== NOTHING;
+    source.setData(
+      reached
+        ? routeFeatures(routeLegs(station), stations.indexOf(station))
+        : { type: "FeatureCollection", features: [] },
+    );
+  }
+}
+
 await loaded;
 {
   const view = currentView();
@@ -951,6 +1107,39 @@ await loaded;
       "line-color": ["get", "color"],
       "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 14, 4],
     },
+  });
+
+  // The journey to the station pointed at, over the lines and under the stations.
+  map.addSource("route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({
+    id: "route-casing",
+    type: "line",
+    source: "route",
+    filter: ["==", ["get", "kind"], "ride"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": "#ffffff",
+      "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 14, 12],
+    },
+  });
+  map.addLayer({
+    id: "route",
+    type: "line",
+    source: "route",
+    filter: ["==", ["get", "kind"], "ride"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4, 14, 8],
+    },
+  });
+  map.addLayer({
+    id: "route-walk",
+    type: "line",
+    source: "route",
+    filter: ["==", ["get", "kind"], "walk"],
+    layout: { "line-cap": "round" },
+    paint: { "line-color": "#333333", "line-width": 2.5, "line-dasharray": [1, 2] },
   });
 
   map.addSource("stations", {
@@ -981,6 +1170,33 @@ await loaded;
     "circle-stroke-width": ["case", ["get", "new"], NEW_STATION_OUTLINE, STATION_OUTLINE],
   };
   map.addLayer({ id: "stations", type: "circle", source: "stations", paint: stationPaint });
+  // Each ride's train, as its bullet, where it boards.
+  map.addLayer({
+    id: "route-bullets",
+    type: "circle",
+    source: "route",
+    filter: ["==", ["geometry-type"], "Point"],
+    paint: {
+      "circle-radius": 10,
+      "circle-color": ["get", "color"],
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 2,
+    },
+  });
+  map.addLayer({
+    id: "route-bullet-names",
+    type: "symbol",
+    source: "route",
+    filter: ["==", ["geometry-type"], "Point"],
+    layout: {
+      "text-field": ["get", "name"],
+      "text-font": ["Noto Sans Bold"],
+      "text-size": 13,
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: { "text-color": ["get", "text"] },
+  });
   // The white M in each new station's bullet, in bold Helvetica as the MTA's is.
   map.addImage("queenslink-m", imageData(legendM), { pixelRatio: devicePixelRatio });
   const mLayout: SymbolLayerSpecification["layout"] = {
@@ -1073,6 +1289,20 @@ await loaded;
       label.append(": only with QueensLink");
     } else if (minutes !== NOTHING) {
       label.append(`: ${minutes} min${currentView() === "saved" ? " saved" : ""}`);
+    }
+    const route = routeLegs(station);
+    showRoute(station);
+    const trains = route.filter((leg) => leg.pattern !== WALK_LEG).map(trainOf);
+    if (trains.length > 0) {
+      const line = document.createElement("span");
+      line.className = "route-trains";
+      for (const [i, train] of trains.entries()) {
+        if (i > 0) {
+          line.append(" → ");
+        }
+        line.append(bullet(train));
+      }
+      label.append(document.createElement("br"), line);
     }
     bandPopup
       .setLngLat([station.lon, station.lat])
