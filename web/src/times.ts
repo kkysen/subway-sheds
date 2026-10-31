@@ -62,14 +62,20 @@ export function parseArrivals(buffer: ArrayBuffer, stations: number): Arrivals {
   let minuteAt = RUNS * stations;
   let clockAt = minuteAt + changes;
   const arrivals = new Uint16Array(RUNS * MINUTES * stations);
+  // Each change's minute, from those since the one before.
+  const minutes = new Uint8Array(MINUTES);
   for (let run = 0; run < RUNS; run++) {
     for (let s = 0; s < stations; s++) {
       const count = counts[run * stations + s] ?? 0;
       for (let c = 0; c < count; c++) {
-        const from = bytes[minuteAt + c] ?? 0;
-        const to = c + 1 < count ? (bytes[minuteAt + c + 1] ?? MINUTES) : MINUTES;
-        const clock = view.getUint16(clockAt + 2 * c, true);
-        for (let m = from; m < to; m++) {
+        minutes[c] = (c > 0 ? (minutes[c - 1] ?? 0) : 0) + (bytes[minuteAt + c] ?? 0);
+      }
+      // Its time, from the change since the one before, wrapping around.
+      let clock = 0;
+      for (let c = 0; c < count; c++) {
+        clock = (clock + view.getUint16(clockAt + 2 * c, true)) & 0xffff;
+        const to = c + 1 < count ? (minutes[c + 1] ?? MINUTES) : MINUTES;
+        for (let m = minutes[c] ?? 0; m < to; m++) {
           arrivals[(run * MINUTES + m) * stations + s] = clock;
         }
       }
@@ -260,6 +266,18 @@ export function parseRoutes(buffer: ArrayBuffer, stations: number): Routes {
   const legs = new Uint16Array(LEG_FIELDS * (starts[RUNS * stations] ?? 0));
   for (let k = 0; k < legs.length; k++) {
     legs[k] = view.getUint16(2 * k, true);
+  }
+  // When each leg starts and ends, from when it starts after the leg before, or the window for the first,
+  // and how long it takes.
+  for (let i = 0; i < RUNS * stations; i++) {
+    let end = 0;
+    for (let k = starts[i] ?? 0; k < (starts[i + 1] ?? 0); k++) {
+      const at = LEG_FIELDS * k;
+      const start = (k > (starts[i] ?? 0) ? end : 0) + (legs[at + 3] ?? 0);
+      end = start + (legs[at + 4] ?? 0);
+      legs[at + 3] = start;
+      legs[at + 4] = end;
+    }
   }
   return { starts, legs };
 }

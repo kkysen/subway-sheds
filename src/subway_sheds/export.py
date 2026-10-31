@@ -18,6 +18,13 @@ UNREACHED = 0xFFFF
 WALK_LEG = 0xFFFF
 
 
+def _deltas(values: np.ndarray, first: np.ndarray) -> np.ndarray:
+    """Each of `values` less the one before it, but where `first`, which starts a series."""
+    values = values.astype(np.int64)
+    before = np.concatenate([[0], values[:-1]])
+    return np.where(first, values, values - before)
+
+
 def write(grid: Grid) -> None:
     """
     Write the grid, the stations, and each station's times to `paths.WEB_DATA`.
@@ -37,7 +44,9 @@ def write(grid: Grid) -> None:
       a `uint8` count of legs for each, then every leg, as five little-endian `uint16`s,
       a ride's pattern and the positions in it it boards and gets off at,
       or `WALK_LEG` and the stations a walk between stations is from and to,
-      then when it starts and ends, in seconds from the window's start.
+      then when it starts, in seconds from the window's start for a journey's first leg
+      and after the leg before for the rest, and how long it takes,
+      as those are small and alike, which compresses better.
     - `exits.bin`: every walk out of a station to a cell, to time at the reader's walking speed,
       as four little-endian `uint16` arrays of equal length after their length, a `uint32`:
       the station, as `stations.json` lists them, the cell, as `grid.json` lists them,
@@ -50,7 +59,9 @@ def write(grid: Grid) -> None:
       by day, then fare, then scenario, in the order `Day`, `Fare`, and `Scenario` list them,
       then station, as `stations.json` lists them,
       a `uint8` count of changes for each, then each change's minute, a `uint8`,
-      then each change's time, a little-endian `uint16`, all in that order.
+      then each change's time, a little-endian `uint16`, all in that order,
+      each minute and time but a station's first as the change from the one before,
+      wrapping around, as those are small and alike, which compresses better.
       The page adds each departure's walk out to each cell and takes the median, as routing does.
     """
     # Only the files, keeping the directories, which a running `vite` watches:
@@ -218,7 +229,17 @@ def write(grid: Grid) -> None:
             if i in by_origin
             else pd.DataFrame({"p": [], "a": [], "b": [], "start": [], "end": []})
         )
-        fields = legs[["p", "a", "b", "start", "end"]].to_numpy(dtype="<u2")
+        first = legs["leg"].to_numpy() == 0 if len(legs) else np.zeros(0, dtype=bool)
+        start = legs["start"].to_numpy(dtype=np.int64)
+        end = legs["end"].to_numpy(dtype=np.int64)
+        before = np.concatenate([[0], end[:-1]])
+        fields = np.column_stack(
+            [
+                legs[["p", "a", "b"]].to_numpy(dtype=np.int64),
+                np.where(first, start, start - before),
+                end - start,
+            ]
+        ).astype("<u2")
         (routes_dir / f"{station}.bin").write_bytes(counts[i].tobytes() + fields.tobytes())
 
     # When, from the window's start, rather than how long after each departure.
@@ -233,6 +254,10 @@ def write(grid: Grid) -> None:
     counts = changed.sum(axis=-1, dtype=np.uint8)
     minute_of = np.broadcast_to(np.arange(minutes, dtype=np.uint8), clock.shape[1:])
     for station, i in index.items():
+        minute = minute_of[changed[i]]
+        first = minute == 0
         (arrivals_dir / f"{station}.bin").write_bytes(
-            counts[i].tobytes() + minute_of[changed[i]].tobytes() + clock[i][changed[i]].tobytes()
+            counts[i].tobytes()
+            + _deltas(minute, first).astype(np.uint8).tobytes()
+            + (_deltas(clock[i][changed[i]], first) % 0x10000).astype("<u2").tobytes(),
         )
