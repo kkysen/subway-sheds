@@ -893,8 +893,10 @@ function bandAt(lngLat: LngLat): number {
   return most;
 }
 
-// MapLibre's own, which a band's description wraps in, but a station's name and minutes are kept on one line past.
-const BAND_POPUP_WIDTH = "240px";
+// MapLibre's own, which a band's description wraps in, unless the journey under it is wider.
+const BAND_TEXT_WIDTH = 240;
+// Wide enough for a journey on one line, but not past the edges of a phone's screen.
+const BAND_POPUP_WIDTH = "calc(100vw - 32px)";
 const bandPopup = new Popup({ closeButton: false, closeOnClick: false, className: "band-popup" });
 
 highlightBand = (band: number): void => {
@@ -921,10 +923,15 @@ function showBand(band: number, lngLat: LngLat): void {
   showRoute(stations[exitFromOf(cell)], lngLat);
   const here = describeCell(cell);
   const label = document.createElement("span");
-  label.append(describeBand(band, currentView()));
+  // What the band is, wrapped at `BAND_TEXT_WIDTH`, or as wide as the journey under it.
+  const text = document.createElement("span");
+  text.className = "band-text";
+  text.style.maxWidth = `${BAND_TEXT_WIDTH}px`;
+  text.append(describeBand(band, currentView()));
   if (here !== "") {
-    label.append(document.createElement("br"), here);
+    text.append(document.createElement("br"), here);
   }
+  label.append(text);
   // The trains there, and the walk out of the last station at the speed chosen.
   const exitFrom = exitFromOf(cell);
   const from = stations[exitFrom];
@@ -936,10 +943,15 @@ function showBand(band: number, lngLat: LngLat): void {
         ? journeyLine([], undefined, walk)
         : journeyLine(routeLegs(from), departureOf(from), walk);
     if (line !== undefined) {
-      label.append(document.createElement("br"), line);
+      label.append(line);
     }
   }
   bandPopup.setLngLat(lngLat).setMaxWidth(BAND_POPUP_WIDTH).setDOMContent(label).addTo(map);
+  // The journey kept on one line, as far as the map has room for, and the text as wide.
+  const journey = label.querySelector<HTMLElement>(".route-trains");
+  if (journey !== null) {
+    text.style.maxWidth = `${Math.max(BAND_TEXT_WIDTH, journey.offsetWidth)}px`;
+  }
 }
 
 restorePinnedBand = (): void => {
@@ -1555,7 +1567,7 @@ await loaded;
     showRoute(station);
     const line = journeyLine(route, departureOf(station));
     if (line !== undefined) {
-      label.append(document.createElement("br"), line);
+      label.append(line);
     }
     bandPopup
       .setLngLat([station.lon, station.lat])

@@ -545,8 +545,13 @@ body,
   transform: rotate(45deg);
 }
 
+/* What a band is, over the journey there. */
+.band-text {
+  display: block;
+}
+
 .route-trains {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.15em 0.3em;
