@@ -1232,18 +1232,15 @@ function diamond(): ImageData {
   return context.getImageData(0, 0, DIAMOND_PX, DIAMOND_PX);
 }
 
-// Whole minutes, as said under a journey's trains, rounded up from any part of one.
-const legMinutes = (seconds: number): string => `${Math.max(Math.ceil(seconds / 60), 0)} min`;
-
 // The fare, said over each step a journey pays it at, entering the system, whatever the card.
 // Neither feed has GTFS fares yet; once one does, it should come from them.
 const FARE = "$3";
 
-// One step of a journey in its popup: `top`, with how long it takes in small text under it,
+// One step of a journey in its popup: `top`, with its whole minutes in small text under it,
 // and the fare over it if it's paid there.
 function journeyStep(
   top: Node | string,
-  seconds: number,
+  minutes: number,
   className: string,
   pays = false,
 ): HTMLElement {
@@ -1254,7 +1251,7 @@ function journeyStep(
   fare.textContent = pays ? FARE : "";
   const time = document.createElement("span");
   time.className = "journey-time";
-  time.textContent = legMinutes(seconds);
+  time.textContent = `${minutes} min`;
   step.append(fare, top, time);
   return step;
 }
@@ -1293,8 +1290,13 @@ function journeyLine(
     line.append(scenario);
   }
   const first = rides[0];
+  // Each step's whole minutes, as those of the whole trip at its end less those at its start,
+  // so that they add up to the trip's, which is rounded down, as `travelTimes` does.
+  const since = departs ?? first?.start ?? 0;
+  const minutes = (from: number, to: number): number =>
+    Math.max(Math.floor((to - since) / 60) - Math.floor((from - since) / 60), 0);
   if (first !== undefined && departs !== undefined) {
-    line.append(journeyStep("→", first.start - departs, "journey-change", true));
+    line.append(journeyStep("→", minutes(departs, first.start), "journey-change", true));
   }
   let last: RouteLeg | undefined;
   for (const leg of legs) {
@@ -1303,14 +1305,22 @@ function journeyLine(
     }
     if (last !== undefined) {
       line.append(
-        journeyStep("→", leg.start - last.end, "journey-change", paysBetween(legs, last, leg)),
+        journeyStep(
+          "→",
+          minutes(last.end, leg.start),
+          "journey-change",
+          paysBetween(legs, last, leg),
+        ),
       );
     }
-    line.append(journeyStep(bullet(trainOf(leg, run)), leg.end - leg.start, "journey-ride"));
+    line.append(
+      journeyStep(bullet(trainOf(leg, run)), minutes(leg.start, leg.end), "journey-ride"),
+    );
     last = leg;
   }
   if (walkOut !== undefined) {
-    line.append(journeyStep("→", walkOut, "journey-change"));
+    const end = last?.end ?? since;
+    line.append(journeyStep("→", minutes(end, end + walkOut), "journey-change"));
   }
   return line;
 }
