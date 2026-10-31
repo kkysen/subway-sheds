@@ -25,6 +25,12 @@ def travel_times(
     The streets are read and walked once, for every feed's stops.
     """
 
+def near_streets(osm: StrPath, points: list[tuple[float, float]], meters: float) -> list[bool]:
+    """
+    Whether each of `points`, as `(latitude, longitude)`,
+    links to the streets in `osm`, an `.osm.pbf`, within `meters`, as routing links it.
+    """
+
 def stations(feed: StrPath) -> list[tuple[str, str, float, float]]:
     """The stations some trip in `feed` stops at, as `(id, name, latitude, longitude)`."""
 

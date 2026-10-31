@@ -5,12 +5,10 @@ from dataclasses import dataclass
 import geopandas as gpd
 import numpy as np
 import numpy.typing as npt
-import osmium
-import osmium.osm
 import shapely
 from pyproj import Transformer
 
-from subway_sheds import paths
+from subway_sheds import _route, paths
 
 WGS84 = "EPSG:4326"
 # Web Mercator, which the map is drawn in, so each cell is a square on it
@@ -21,14 +19,12 @@ WEB_MERCATOR = "EPSG:3857"
 # so cells are about 190 meters across.
 SPACING = 250
 
-# How far, on the ground, a cell's center can be from anywhere walked on
+# How far, on the ground, a cell's center can be from a street routing would link it to
 # for the cell to count: well past a cell's half-diagonal, about 135 meters,
 # so that parks and the like with paths through them count,
 # but marsh islands in Jamaica Bay, with none, don't.
 # Routing would otherwise link them to a street up to 1600 m away, and give them times.
 MAX_STREET_DISTANCE = 250
-# Web Mercator meters per meter on the ground at NYC's latitude.
-MERCATOR_SCALE = 1 / 0.758
 
 
 @dataclass(frozen=True)
@@ -49,22 +45,6 @@ class Grid:
         ).to_crs(WGS84)
 
 
-def _streets() -> shapely.STRtree:
-    """What routing walks on, as lines in Web Mercator."""
-    to_mercator = Transformer.from_crs(WGS84, WEB_MERCATOR, always_xy=True)
-    lines: list[shapely.LineString] = []
-    for way in osmium.FileProcessor(
-        paths.OSM_PBF, osmium.osm.NODE | osmium.osm.WAY
-    ).with_locations():
-        if not isinstance(way, osmium.osm.Way):
-            continue
-        lons = [node.location.lon for node in way.nodes if node.location.valid()]
-        lats = [node.location.lat for node in way.nodes if node.location.valid()]
-        if len(lons) >= 2:
-            lines.append(shapely.LineString(np.column_stack(to_mercator.transform(lons, lats))))
-    return shapely.STRtree(lines)
-
-
 def land_grid() -> Grid:
     """The cells whose centers are on the city's land, near something to walk on."""
     land = gpd.read_file(paths.SHORELINE).to_crs(WEB_MERCATOR).union_all()
@@ -81,10 +61,10 @@ def land_grid() -> Grid:
     on_land = shapely.contains_xy(land, x0 + cols * SPACING, y0 + rows * SPACING)
     cols = cols[on_land]
     rows = rows[on_land]
-    centers = shapely.points(x0 + cols * SPACING, y0 + rows * SPACING)
-    near, _ = _streets().query(
-        centers, predicate="dwithin", distance=MAX_STREET_DISTANCE * MERCATOR_SCALE
+    to_wgs84 = Transformer.from_crs(WEB_MERCATOR, WGS84, always_xy=True)
+    lons, lats = to_wgs84.transform(x0 + cols * SPACING, y0 + rows * SPACING)
+    walkable = np.array(
+        _route.near_streets(paths.OSM_PBF, list(zip(lats, lons, strict=True)), MAX_STREET_DISTANCE),
+        dtype=bool,
     )
-    walkable = np.zeros(len(centers), dtype=bool)
-    walkable[near] = True
     return Grid(x0=float(x0), y0=float(y0), cols=cols[walkable], rows=rows[walkable])

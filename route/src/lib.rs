@@ -230,6 +230,25 @@ fn py_travel_times(
     })
 }
 
+/// Whether each of `points`, as `(latitude, longitude)`,
+/// links to the streets in `osm`, an `.osm.pbf`, within `meters`, as routing links it.
+#[pyfunction]
+fn near_streets(
+    py: Python<'_>,
+    osm: PathBuf,
+    points: Vec<(f64, f64)>,
+    meters: f64,
+) -> Result<Vec<bool>> {
+    py.detach(|| {
+        let graph = Graph::build(&Osm::read(&osm)?);
+        let within = (meters * 1000.0) as Mm;
+        Ok(points
+            .par_iter()
+            .map(|&(lat, lon)| graph.snap(lat, lon).is_some_and(|s| s.to_edge <= within))
+            .collect())
+    })
+}
+
 /// The stations some trip in `feed` stops at, as `(id, name, latitude, longitude)`.
 #[pyfunction]
 fn stations(py: Python<'_>, feed: PathBuf) -> Result<Vec<(String, String, f64, f64)>> {
@@ -247,6 +266,7 @@ fn station_pairs(py: Python<'_>, feed: PathBuf) -> Result<Vec<feed::Pair>> {
 #[pyo3(name = "_route")]
 fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_travel_times, m)?)?;
+    m.add_function(wrap_pyfunction!(near_streets, m)?)?;
     m.add_function(wrap_pyfunction!(stations, m)?)?;
     m.add_function(wrap_pyfunction!(station_pairs, m)?)?;
     Ok(())
