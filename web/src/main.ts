@@ -560,8 +560,8 @@ function showSpeed(): void {
   speedValue.textContent = `${currentSpeed()} mph`;
 }
 
-// How a journey's fares are paid: at each entry to the system, at most once, or never, with an unlimited card.
-const fares = ["each", "capped", "unlimited"] as const;
+// How a journey's fare is paid: once, going in, or never, with an unlimited card.
+const fares = ["single", "unlimited"] as const;
 type Fare = (typeof fares)[number];
 
 function currentFare(): Fare {
@@ -1194,16 +1194,6 @@ function journeyStep(
   return step;
 }
 
-// Whether changing from ride `from` to ride `to` of `legs` pays again:
-// if it walks between stations of different complexes, out of the system.
-function paysBetween(legs: readonly RouteLeg[], from: RouteLeg, to: RouteLeg): boolean {
-  return legs
-    .slice(legs.indexOf(from) + 1, legs.indexOf(to))
-    .some(
-      (leg) => leg.pattern === WALK_LEG && stations[leg.a]?.complex !== stations[leg.b]?.complex,
-    );
-}
-
 // A journey's trains, each with its ride's minutes under it, and between them,
 // the minutes changing, walking and waiting, then, if given, the walk out at the end, an arrow too.
 // Before them, as an arrow with its minutes as a change's are, from departing at `departs`
@@ -1227,17 +1217,11 @@ function journeyLine(
     scenario.textContent = run % 2 === 0 ? "Without" : "With";
     line.append(scenario);
   }
-  // Whether a step that enters the system pays there, as the fare chosen has it.
-  const fare = currentFare();
-  let paid = false;
-  const pays = (enters: boolean): boolean => {
-    const paying = enters && (fare === "each" || (fare === "capped" && !paid));
-    paid ||= paying;
-    return paying;
-  };
   const first = rides[0];
   if (first !== undefined && departs !== undefined) {
-    line.append(journeyStep("→", first.start - departs, "journey-change", pays(true)));
+    line.append(
+      journeyStep("→", first.start - departs, "journey-change", currentFare() === "single"),
+    );
   }
   let last: RouteLeg | undefined;
   for (const leg of legs) {
@@ -1245,14 +1229,7 @@ function journeyLine(
       continue;
     }
     if (last !== undefined) {
-      line.append(
-        journeyStep(
-          "→",
-          leg.start - last.end,
-          "journey-change",
-          pays(paysBetween(legs, last, leg)),
-        ),
-      );
+      line.append(journeyStep("→", leg.start - last.end, "journey-change"));
     }
     line.append(journeyStep(bullet(trainOf(leg, run)), leg.end - leg.start, "journey-ride"));
     last = leg;
