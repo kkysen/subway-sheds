@@ -27,6 +27,7 @@ import {
   travelTimes,
   UNREACHED,
   WALK_LEG,
+  walkOutSeconds,
 } from "./times";
 
 // MapLibre loads its worker from a file of its own, which it looks for next to the bundle;
@@ -918,11 +919,20 @@ function showBand(band: number, lngLat: LngLat): void {
   const cell = cellAt(lngLat);
   showRoute(stations[exitFromOf(cell)], lngLat);
   const here = describeCell(cell);
-  bandPopup
-    .setLngLat(lngLat)
-    .setMaxWidth(BAND_POPUP_WIDTH)
-    .setText(`${describeBand(band, currentView())}${here === "" ? "" : `. ${here}`}`)
-    .addTo(map);
+  const label = document.createElement("span");
+  label.append(`${describeBand(band, currentView())}${here === "" ? "" : `. ${here}`}`);
+  // The trains there, and the walk out of the last station at the speed chosen.
+  const exitFrom = exitFromOf(cell);
+  const from = stations[exitFrom];
+  if (from !== undefined) {
+    const origin = stations.findIndex((station) => station.id === selected);
+    const walk = walkOutSeconds(exits, exitFrom, cell, currentSpeed(), exitFrom === origin);
+    const line = journeyLine(exitFrom === origin ? [] : routeLegs(from), walk);
+    if (line !== undefined) {
+      label.append(document.createElement("br"), line);
+    }
+  }
+  bandPopup.setLngLat(lngLat).setMaxWidth(BAND_POPUP_WIDTH).setDOMContent(label).addTo(map);
 }
 
 restorePinnedBand = (): void => {
@@ -1060,6 +1070,49 @@ function bullet(train: RouteInfo): HTMLElement {
   b.style.background = train.color;
   b.style.color = train.text;
   return b;
+}
+
+// Whole minutes, as said under a journey's trains, rounded up from any part of one.
+const legMinutes = (seconds: number): string => `${Math.max(Math.ceil(seconds / 60), 0)} min`;
+
+// One step of a journey in its popup: `top`, with how long it takes in small text under it.
+function journeyStep(top: Node | string, seconds: number, className: string): HTMLElement {
+  const step = document.createElement("span");
+  step.className = `journey-step ${className}`;
+  const time = document.createElement("span");
+  time.className = "journey-time";
+  time.textContent = legMinutes(seconds);
+  step.append(top, time);
+  return step;
+}
+
+// A journey's trains, each with its ride's minutes under it, and between them,
+// the minutes changing, walking and waiting, then, if given, the walk out at the end.
+function journeyLine(legs: readonly RouteLeg[], walkOut?: number): HTMLElement | undefined {
+  const rides = legs.filter((leg) => leg.pattern !== WALK_LEG);
+  if (rides.length === 0 && walkOut === undefined) {
+    return undefined;
+  }
+  const line = document.createElement("span");
+  line.className = "route-trains";
+  let last: RouteLeg | undefined;
+  for (const leg of legs) {
+    if (leg.pattern === WALK_LEG) {
+      continue;
+    }
+    if (last !== undefined) {
+      line.append(journeyStep("→", leg.start - last.end, "journey-change"));
+    }
+    line.append(journeyStep(bullet(trainOf(leg)), leg.end - leg.start, "journey-ride"));
+    last = leg;
+  }
+  if (walkOut !== undefined) {
+    if (last !== undefined) {
+      line.append(journeyStep("→", 0, "journey-change journey-untimed"));
+    }
+    line.append(journeyStep("walk", walkOut, "journey-walk"));
+  }
+  return line;
 }
 
 // The lines between consecutive stations, from the first to the second, by `from|to`.
@@ -1367,16 +1420,8 @@ await loaded;
     }
     const route = routeLegs(station);
     showRoute(station);
-    const trains = route.filter((leg) => leg.pattern !== WALK_LEG).map(trainOf);
-    if (trains.length > 0) {
-      const line = document.createElement("span");
-      line.className = "route-trains";
-      for (const [i, train] of trains.entries()) {
-        if (i > 0) {
-          line.append(" → ");
-        }
-        line.append(bullet(train));
-      }
+    const line = journeyLine(route);
+    if (line !== undefined) {
       label.append(document.createElement("br"), line);
     }
     bandPopup
