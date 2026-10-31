@@ -97,8 +97,7 @@ The page times walking out of stations itself, at the speed its slider is set to
 and every station's walks out to the cells, up to an hour at 5 mph,
 the farther half of them loaded after the page first draws,
 and it takes each cell's median over the minutes, as routing does,
-in a worker, in WebAssembly with SIMD (`web/times/`),
-or in TypeScript (`web/src/times.ts`) where that can't run.
+in a worker, in WebAssembly with SIMD (`web/times/`).
 Walking to the first station and between stations stays at 3 mph.
 
 ## Development

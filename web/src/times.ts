@@ -3,9 +3,8 @@
 // See `src/subway_sheds/export.py` for the files.
 
 // As `src/subway_sheds/travel_times.py` routes: departing each minute of an hour,
-// keeping trips of up to 2 hours, walking out of a station for up to an hour.
+// walking out of a station for up to an hour.
 const MINUTES = 60;
-const MAX_SECONDS = 120 * 60;
 const MAX_EXIT_WALK_SECONDS = 60 * 60;
 // The median over the window's departures, as routing picks it.
 const MEDIAN = Math.ceil(0.5 * MINUTES) - 1;
@@ -109,7 +108,8 @@ export function parseArrivals(buffer: ArrayBuffer, stations: number): Arrivals {
   return arrivals;
 }
 
-// Minutes from station `origin` to every cell, then every station, in each of `runs`,
+// What the worker computes in WebAssembly (`web/times/src/lib.rs`):
+// minutes from station `origin` to every cell, then every station, in each of the runs asked for,
 // each `cells + stations` long, in the order they're in the arrivals,
 // walking out of stations at `mph`: each cell's median over the minutes of its quickest trip,
 // by train and walking out of a station, or walking from `origin` itself.
@@ -123,104 +123,6 @@ export interface TravelTimes {
   readonly exitMinute: Uint8Array;
 }
 export const NO_STATION = 0xffff;
-
-export function travelTimes(
-  arrivals: Arrivals,
-  exits: Exits,
-  origin: number,
-  cells: number,
-  stations: number,
-  mph: number,
-  runs: readonly number[],
-): TravelTimes {
-  const speed = mph * METERS_PER_SECOND_PER_MPH;
-  // Each walk out's seconds, through the station's entrance and on the streets.
-  const out = new Uint16Array(exits.meters.length);
-  for (let k = 0; k < out.length; k++) {
-    const walk = Math.floor((exits.meters[k] ?? 0) / speed);
-    out[k] = walk <= MAX_EXIT_WALK_SECONDS ? walk + (exits.exitSeconds[k] ?? 0) : UNREACHED_SECONDS;
-  }
-  // Walking straight there from `origin`, out of its entrances without its time to the platforms.
-  const direct = new Uint16Array(cells).fill(UNREACHED_SECONDS);
-  for (let k = exits.starts[origin] ?? 0; k < (exits.starts[origin + 1] ?? 0); k++) {
-    const walk = Math.floor((exits.meters[k] ?? 0) / speed);
-    const cell = exits.cell[k] ?? 0;
-    if (walk <= MAX_EXIT_WALK_SECONDS && walk < (direct[cell] ?? UNREACHED_SECONDS)) {
-      direct[cell] = walk;
-    }
-  }
-  const stride = cells + stations;
-  const times = new Uint8Array(RUNS * stride).fill(UNREACHED);
-  const exitFrom = new Uint16Array(RUNS * cells).fill(NO_STATION);
-  const exitMinute = new Uint8Array(RUNS * cells);
-  // The earliest time, from the window's start, each cell is reached by train this minute,
-  // and the station walked out of to it.
-  const best = new Uint16Array(cells);
-  const bestFrom = new Uint16Array(cells);
-  // Each cell's trip each minute, cell-major, in the high half, and its station in the low,
-  // so that sorting them sorts by trip and keeps each's station with it.
-  const trips = new Uint32Array(cells * MINUTES);
-  const eachTrip = new Uint32Array(MINUTES);
-  const each = new Uint16Array(MINUTES);
-  const minutes = (seconds: number): number =>
-    seconds <= MAX_SECONDS ? Math.floor(seconds / 60) : UNREACHED;
-  for (const run of runs) {
-    best.fill(UNREACHED_SECONDS);
-    // Latest departure first: departing earlier, every station is reached at the same time or
-    // earlier, so each minute's earliest are the next minute's, lowered by the stations that changed.
-    for (let m = MINUTES - 1; m >= 0; m--) {
-      const at = (run * MINUTES + m) * stations;
-      const next = m + 1 < MINUTES ? at + stations : -1;
-      for (let s = 0; s < stations; s++) {
-        const clock = arrivals[at + s] ?? UNREACHED_SECONDS;
-        if (clock === UNREACHED_SECONDS || (next >= 0 && arrivals[next + s] === clock)) {
-          continue;
-        }
-        for (let k = exits.starts[s] ?? 0; k < (exits.starts[s + 1] ?? 0); k++) {
-          const t = clock + (out[k] ?? UNREACHED_SECONDS);
-          const cell = exits.cell[k] ?? 0;
-          if (t < (best[cell] ?? UNREACHED_SECONDS)) {
-            best[cell] = t;
-            bestFrom[cell] = s;
-          }
-        }
-      }
-      const departs = 60 * m;
-      for (let cell = 0; cell < cells; cell++) {
-        const reached = best[cell] ?? UNREACHED_SECONDS;
-        const byTrain = reached >= UNREACHED_SECONDS ? reached : reached - departs;
-        const walked = direct[cell] ?? UNREACHED_SECONDS;
-        trips[cell * MINUTES + m] =
-          walked <= byTrain
-            ? walked * 0x10000 + origin
-            : byTrain * 0x10000 + (bestFrom[cell] ?? NO_STATION);
-      }
-    }
-    const first = run * stride;
-    for (let cell = 0; cell < cells; cell++) {
-      eachTrip.set(trips.subarray(cell * MINUTES, (cell + 1) * MINUTES));
-      const median = eachTrip.sort()[MEDIAN] ?? 0xffffffff;
-      const trip = Math.floor(median / 0x10000);
-      times[first + cell] = minutes(trip);
-      if (trip !== UNREACHED_SECONDS) {
-        exitFrom[run * cells + cell] = median % 0x10000;
-        // The first minute of the median trip, as `route` sorts ties.
-        exitMinute[run * cells + cell] = Math.max(
-          trips.subarray(cell * MINUTES, (cell + 1) * MINUTES).indexOf(median),
-          0,
-        );
-      }
-    }
-    for (let s = 0; s < stations; s++) {
-      for (let m = 0; m < MINUTES; m++) {
-        const clock = arrivals[(run * MINUTES + m) * stations + s] ?? UNREACHED_SECONDS;
-        each[m] = clock === UNREACHED_SECONDS ? clock : clock - 60 * m;
-      }
-      times[first + cells + s] = minutes(each.sort()[MEDIAN] ?? UNREACHED_SECONDS);
-    }
-  }
-  return { times, exitFrom, exitMinute };
-}
 
 // The minute of the window departing at which `station` is reached at its median in `run`,
 // whose journey `Routes` has, or `undefined` if it's not reached.
@@ -241,7 +143,7 @@ export function medianDeparture(
   return trip === UNREACHED_SECONDS ? undefined : minute;
 }
 
-// The seconds walking out of `station` to `cell` takes at `mph`, as `travelTimes` counts it,
+// The seconds walking out of `station` to `cell` takes at `mph`, as the worker counts it,
 // or from `origin` itself, without going in to its platforms; `undefined` if it's not walked.
 export function walkOutSeconds(
   exits: Exits,

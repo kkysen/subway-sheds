@@ -3,7 +3,7 @@ name = "subway-sheds-times"
 version = "0.1.0"
 edition = "2024"
 
-# Travel times from a station, as `src/times.ts` computes them, for the page in WebAssembly.
+# Travel times from a station, for the page in WebAssembly (`src/times.worker.ts`).
 [lib]
 name = "times"
 crate-type = ["cdylib", "rlib"]

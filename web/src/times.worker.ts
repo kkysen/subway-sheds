@@ -1,7 +1,7 @@
-// Computes travel times off the page's thread, in WebAssembly from `web/times/`,
-// or with `travelTimes` here if the browser can't run it, as without WebAssembly SIMD.
+// Computes travel times off the page's thread, in WebAssembly with SIMD from `web/times/`,
+// which every browser has run since 2023.
 import wasmUrl from "../times/target/wasm32-unknown-unknown/release/times.wasm?url";
-import { type Arrivals, type Exits, type TravelTimes, travelTimes } from "./times";
+import type { Arrivals, Exits, TravelTimes } from "./times";
 
 // What the page asks: first the walks out of stations, once, then a station's times each time.
 export type Request =
@@ -20,7 +20,7 @@ export type Request =
       readonly runs: readonly [number, number];
     };
 
-// And what it's told: the times asked for by `id`, as `travelTimes` gives them.
+// And what it's told: the times asked for by `id`.
 export interface Response {
   readonly id: number;
   readonly times: TravelTimes;
@@ -72,15 +72,10 @@ interface Laid {
   readonly allocated: readonly (readonly [number, number])[];
 }
 
-const module = WebAssembly.instantiateStreaming(fetch(wasmUrl))
-  .then(({ instance }) => instance.exports as unknown as Times)
-  .catch((error: unknown) => {
-    console.warn("computing travel times in TypeScript, as WebAssembly failed:", error);
-    return undefined;
-  });
+const module = WebAssembly.instantiateStreaming(fetch(wasmUrl)).then(
+  ({ instance }) => instance.exports as unknown as Times,
+);
 
-// The walks out of stations, and how many cells and stations there are.
-let given: { readonly exits: Exits; readonly cells: number; readonly stations: number } | undefined;
 let laid: Promise<Laid | undefined> = Promise.resolve(undefined);
 
 function layOut(times: Times, given: Exits, cells: number, stations: number): Laid {
@@ -155,11 +150,7 @@ self.onmessage = async (event: MessageEvent<Request>): Promise<void> => {
   const request = event.data;
   if (request.kind === "exits") {
     const { exits, cells, stations } = request;
-    given = { exits, cells, stations };
     laid = Promise.all([module, laid]).then(([times, old]) => {
-      if (times === undefined) {
-        return undefined;
-      }
       for (const [place, bytes] of old?.allocated ?? []) {
         times.free(place, bytes);
       }
@@ -169,21 +160,10 @@ self.onmessage = async (event: MessageEvent<Request>): Promise<void> => {
   }
   const times = await module;
   const at = await laid;
-  if (given === undefined) {
+  if (at === undefined) {
     return;
   }
-  const result =
-    times === undefined || at === undefined
-      ? travelTimes(
-          request.arrivals,
-          given.exits,
-          request.origin,
-          given.cells,
-          given.stations,
-          request.mph,
-          request.runs,
-        )
-      : compute(times, at, request);
+  const result = compute(times, at, request);
   const response: Response = { id: request.id, times: result };
   self.postMessage(response, {
     transfer: [result.times.buffer, result.exitFrom.buffer, result.exitMinute.buffer],

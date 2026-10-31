@@ -1330,7 +1330,7 @@ function journeyLine(
   }
   const first = rides[0];
   // Each step's whole minutes, as those of the whole trip at its end less those at its start,
-  // so that they add up to the trip's, which is rounded down, as `travelTimes` does.
+  // so that they add up to the trip's, which is rounded down, as the worker does.
   const since = departs ?? first?.start ?? 0;
   const minutes = (from: number, to: number): number =>
     Math.max(Math.floor((to - since) / 60) - Math.floor((from - since) / 60), 0);

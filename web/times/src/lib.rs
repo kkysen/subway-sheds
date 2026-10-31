@@ -1,6 +1,6 @@
 //! Travel times from a station, from when its trains reach every station each minute
-//! and the walks out of stations, so that walking out of them can be at any speed:
-//! `travelTimes` in `web/src/times.ts`, which calls this in a worker, compiled to WebAssembly.
+//! and the walks out of stations, so that walking out of them can be at any speed,
+//! for the page, which calls this in a worker (`web/src/times.worker.ts`), compiled to WebAssembly.
 //! See `src/subway_sheds/export.py` for the data.
 //!
 //! It has no bindings: the page puts the data in this module's memory
@@ -36,7 +36,7 @@ pub struct Exits<'a> {
     pub starts: &'a [u32],
 }
 
-/// What `travel_times` computes, each as `travelTimes` documents it.
+/// What `travel_times` computes, each as `TravelTimes` in `web/src/times.ts` documents it.
 pub struct TravelTimes<'a> {
     /// Each run's minutes to every cell, then every station, `UNREACHED` if not within `MAX_SECONDS`.
     pub times: &'a mut [u8],
