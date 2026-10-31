@@ -187,7 +187,9 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: travel-times-${{ matrix.scenario }}-${{ matrix.day }}
-          path: .cache/travel_times/${{ matrix.scenario }}-${{ matrix.day }}.parquet
+          path: |
+            .cache/travel_times/${{ matrix.scenario }}-${{ matrix.day }}.parquet
+            .cache/travel_times/${{ matrix.scenario }}-${{ matrix.day }}-stations.parquet
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
