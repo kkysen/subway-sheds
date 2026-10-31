@@ -27,12 +27,6 @@ use streets::{Graph, Mm};
 
 use crate::walks::{StreetWalks, Walks};
 
-/// R5's RAPTOR boards only a train leaving more than 60 s
-/// after the rider reaches its stop, whether on foot or by train
-/// (`FastRaptorWorker.MINIMUM_BOARD_WAIT_SEC`),
-/// so one leaving at least 61 s after.
-const BOARD_SLACK: Secs = 61;
-
 /// The percentile R5 reports: the median.
 const PERCENTILE: f64 = 50.0;
 
@@ -54,7 +48,7 @@ pub struct Request<'a> {
 /// its `PERCENTILE`th journey over a departure each minute of the window,
 /// in whole minutes rounded down, to each destination reached within `max_secs`.
 pub fn travel_times(req: &Request, origins: &[String]) -> Vec<Vec<(u32, u8)>> {
-    let router = Router::with_max_rides(req.tt, req.max_rides).with_board_slack(BOARD_SLACK);
+    let router = Router::with_max_rides(req.tt, req.max_rides);
     origins
         .par_iter()
         .map(|origin| origin_times(req, &router, origin))
@@ -106,7 +100,7 @@ fn percentile_index(n: usize, percentile: f64) -> usize {
 }
 
 /// `tt`, changing trains as R5 does: walking between stops by `walks`' transfers,
-/// not `transfers.txt`'s, and with no time to change trains at a stop but `BOARD_SLACK`.
+/// not `transfers.txt`'s, and with no time to change trains at a stop.
 fn change_as_r5(tt: &mut Timetable, walks: &Walks) {
     tt.min_change.fill(0);
     for paths in &mut tt.footpaths {
@@ -320,10 +314,9 @@ mod tests {
             max_secs: 120 * 60,
             destinations: 3,
         };
-        // Leaving at 08:00 and 08:01, the walk and wait make the 08:05: 16 and 15 minutes.
-        // Leaving at 08:02, it leaves just as the wait ends, so it's the 08:20: 29 minutes.
+        // Leaving at 08:00, 08:01, and 08:02, the walk makes the 08:05: 16, 15, and 14 minutes.
         // Destination 2 is never reached.
         let times = travel_times(&req, &["O".to_owned()]);
-        assert_eq!(times, [[(0, 16), (1, 5)]]);
+        assert_eq!(times, [[(0, 15), (1, 5)]]);
     }
 }

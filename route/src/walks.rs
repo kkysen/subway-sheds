@@ -14,8 +14,9 @@ use streets::{Graph, Mm, Search, Split};
 /// How far R5 walks between stops (`TransitLayer.TRANSFER_DISTANCE_LIMIT_METERS`).
 const TRANSFER_LIMIT: Mm = 1_000_000;
 
-/// How far R5 walks from stops (`TransitLayer.WALK_DISTANCE_LIMIT_METERS`).
-const EGRESS_LIMIT: Mm = 2_000_000;
+/// How long a walk from the last stop may take: past what almost anyone walks from a station,
+/// while keeping each stop's search to a few kilometers.
+const EGRESS_LIMIT: Secs = 30 * 60;
 
 /// Every walk, from origins and stops by their IDs, whatever feed has them.
 pub struct StreetWalks {
@@ -91,7 +92,7 @@ impl StreetWalks {
                     search.run(split, TRANSFER_LIMIT);
                     let others = to_stops().filter(|&(o, _)| o != s);
                     let near = reach(search, others, TRANSFER_LIMIT);
-                    search.run(split, EGRESS_LIMIT);
+                    search.run(split, speed.saturating_mul(EGRESS_LIMIT as Mm));
                     let egress: Vec<(u32, Secs)> = reach(search, to_destinations(), Mm::MAX)
                         .into_iter()
                         .map(|(d, mm)| (d, secs(mm)))
