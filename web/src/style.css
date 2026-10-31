@@ -501,6 +501,23 @@ body,
   line-height: 1.4em;
   text-align: center;
   font-weight: 700;
+  background: var(--bullet-color);
+}
+
+/* An express variant's, a diamond: a square turned behind the name, as wide as the circle is. */
+.route-bullet-express {
+  position: relative;
+  isolation: isolate;
+  background: none;
+}
+
+.route-bullet-express::before {
+  content: "";
+  position: absolute;
+  inset: 0.2em;
+  z-index: -1;
+  background: var(--bullet-color);
+  transform: rotate(45deg);
 }
 
 .route-trains {

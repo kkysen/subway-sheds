@@ -1056,20 +1056,50 @@ function routeLegs(station: Station): RouteLeg[] {
   return routeTo(selectedRoutes, currentRun(), stations.indexOf(station), stations.length);
 }
 
-// A ride's train.
-function trainOf(leg: RouteLeg): RouteInfo {
+// A ride's train, and whether it's an express variant, as the FX, 6X and 7X are,
+// which the MTA draws as a diamond with the line's own name, without the X.
+interface Train extends RouteInfo {
+  readonly express: boolean;
+}
+function trainOf(leg: RouteLeg): Train {
   const route = patterns[currentRun()]?.[leg.pattern]?.route ?? "";
-  return routeInfo[route] ?? { name: route, color: "#808183", text: "#ffffff" };
+  const info = routeInfo[route] ?? { name: route, color: "#808183", text: "#ffffff" };
+  const express = /^.X$/.test(info.name);
+  return { ...info, name: express ? info.name.slice(0, -1) : info.name, express };
 }
 
 // A train's bullet, as the MTA draws it.
-function bullet(train: RouteInfo): HTMLElement {
+function bullet(train: Train): HTMLElement {
   const b = document.createElement("span");
-  b.className = "route-bullet";
+  b.className = train.express ? "route-bullet route-bullet-express" : "route-bullet";
   b.textContent = train.name;
-  b.style.background = train.color;
+  b.style.setProperty("--bullet-color", train.color);
   b.style.color = train.text;
   return b;
+}
+
+// An express train's diamond on the map, white, for MapLibre to color as a signed distance field.
+const DIAMOND_PX = 28;
+function diamond(): ImageData {
+  const canvas = document.createElement("canvas");
+  canvas.width = DIAMOND_PX;
+  canvas.height = DIAMOND_PX;
+  const context = canvas.getContext("2d");
+  if (context === null) {
+    throw new Error("no 2D canvas context");
+  }
+  const half = DIAMOND_PX / 2;
+  // Leaving room for the halo drawn as its outline.
+  const reach = half - 3;
+  context.fillStyle = "#ffffff";
+  context.beginPath();
+  context.moveTo(half, half - reach);
+  context.lineTo(half + reach, half);
+  context.lineTo(half, half + reach);
+  context.lineTo(half - reach, half);
+  context.closePath();
+  context.fill();
+  return context.getImageData(0, 0, DIAMOND_PX, DIAMOND_PX);
 }
 
 // Whole minutes, as said under a journey's trains, rounded up from any part of one.
@@ -1182,7 +1212,12 @@ function routeFeatures(
     features.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: coordinatesOf(first) },
-      properties: { name: train.name, color: train.color, text: train.text },
+      properties: {
+        name: train.name,
+        color: train.color,
+        text: train.text,
+        express: train.express,
+      },
     });
     at = passed[passed.length - 1] ?? at;
   }
@@ -1303,13 +1338,27 @@ await loaded;
     id: "route-bullets",
     type: "circle",
     source: "route",
-    filter: ["==", ["geometry-type"], "Point"],
+    filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["get", "express"]]],
     paint: {
       "circle-radius": 10,
       "circle-color": ["get", "color"],
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 2,
     },
+  });
+  // An express variant's, as a diamond, outlined in white as the circles are.
+  map.addImage("express-diamond", diamond(), { sdf: true });
+  map.addLayer({
+    id: "route-diamonds",
+    type: "symbol",
+    source: "route",
+    filter: ["all", ["==", ["geometry-type"], "Point"], ["get", "express"]],
+    layout: {
+      "icon-image": "express-diamond",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+    },
+    paint: { "icon-color": ["get", "color"], "icon-halo-color": "#ffffff", "icon-halo-width": 2 },
   });
   map.addLayer({
     id: "route-bullet-names",
