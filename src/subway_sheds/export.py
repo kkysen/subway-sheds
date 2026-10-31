@@ -91,9 +91,13 @@ def write(grid: Grid) -> None:
       and the complexes changed to free from it out of the system, if any.
     - `lines.json`: GeoJSON of the lines between stations, each with its color
       and which scenarios run on it.
-    - `walks.json`: the street walk between each pair of stations of different complexes
-      that some journey in `routes/` walks, by `{from}|{to}`, their IDs,
-      as `[longitude, latitude]`s from the entrance walked out of to the one walked into.
+    - `walks.bin`: the street walk between each pair of stations of different complexes
+      that some journey in `routes/` walks,
+      from the entrance walked out of to the one walked into:
+      their count, a little-endian `uint16`, then as `uint16` arrays that long,
+      the stations each is from and to, as `stations.json` lists them, and its count of points,
+      then every point's longitude and latitude, in 100,000ths of a degree,
+      each a little-endian `int32` change from the point before.
     - `routes.json`: each route's name and colors, by its ID.
     - `patterns.json`: by day, then scenario, as either fare's runs have the same,
       each pattern some journey rides' route and its stops' stations, as `stations.json` lists them.
@@ -333,17 +337,23 @@ def write(grid: Grid) -> None:
     }
     walks = pd.read_parquet(travel_times.WALK_PATHS)
     walks = walks[[(a, b) in walked_ids for a, b in zip(walks["from"], walks["to"], strict=True)]]
-    (paths.WEB_DATA / "walks.json").write_text(
-        json.dumps(
-            {
-                f"{a}|{b}": [
-                    [round(lon, 5), round(lat, 5)]
-                    for lat, lon in zip(walk["latitude"], walk["longitude"], strict=True)
-                ]
-                for (a, b), walk in walks.groupby(["from", "to"], sort=False)
-            },
-            separators=(",", ":"),
-        )
+    groups = list(walks.groupby(["from", "to"], sort=False))
+    ends = np.array([[index[str(a)], index[str(b)]] for (a, b), _ in groups], dtype="<u2").reshape(
+        -1, 2
+    )
+    points = np.array([len(walk) for _, walk in groups], dtype="<u2")
+    # In 100,000ths of a degree, in the order grouped, which keeps each walk's points in order.
+    lon_lat = np.concatenate(
+        [np.zeros((0, 2))]
+        + [np.round(walk[["longitude", "latitude"]].to_numpy() * 1e5) for _, walk in groups]
+    ).astype(np.int64)
+    files.write(
+        paths.WEB_DATA / "walks.bin",
+        np.array([len(groups)], dtype="<u2").tobytes()
+        + ends[:, 0].tobytes()
+        + ends[:, 1].tobytes()
+        + points.tobytes()
+        + np.diff(lon_lat, axis=0, prepend=0).astype("<i4").tobytes(),
     )
 
     for station, i in index.items():

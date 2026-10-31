@@ -1404,9 +1404,24 @@ function journeyLine(
 // The street walks between stations that changing trains may walk, by `from|to`,
 // from the entrance walked out of to the one walked into, fetched after the page is drawn,
 // as they're only for drawing journeys, which walk straight until then.
-let walksBetween: Record<string, GeoJSON.Position[]> = {};
-void fetchJson<Record<string, GeoJSON.Position[]>>("walks.json").then((walks) => {
-  walksBetween = walks;
+const walksBetween: Record<string, GeoJSON.Position[]> = {};
+void Promise.all([fetchBinary("walks.bin"), stationList]).then(([buffer, list]) => {
+  const view = new DataView(buffer);
+  const n = view.getUint16(0, true);
+  const column = (i: number, k: number): number => view.getUint16(2 + 2 * (i * n + k), true);
+  let at = 2 + 6 * n;
+  let lon = 0;
+  let lat = 0;
+  for (let k = 0; k < n; k++) {
+    const walk: GeoJSON.Position[] = [];
+    for (let p = column(2, k); p > 0; p--) {
+      lon += view.getInt32(at, true);
+      lat += view.getInt32(at + 4, true);
+      at += 8;
+      walk.push([lon / 1e5, lat / 1e5]);
+    }
+    walksBetween[`${list[column(0, k)]?.id}|${list[column(1, k)]?.id}`] = walk;
+  }
 });
 
 // The lines between consecutive stations, from the first to the second, by `from|to`.
