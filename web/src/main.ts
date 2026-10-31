@@ -4,8 +4,7 @@ import {
   type CircleLayerSpecification,
   type ExpressionSpecification,
   FullscreenControl,
-  LngLat,
-  type LngLatLike,
+  type LngLat,
   Map as MapLibreMap,
   type MapMouseEvent,
   type MapTouchEvent,
@@ -199,16 +198,19 @@ function bandOf(value: number, bands: readonly Band[]): number {
   return band;
 }
 
+// In a station's times, each scenario's: every cell's, then every station's, as `stations.json` lists them.
+const timesStride = (grid: Grid): number => grid.cols.length + stations.length;
+
 // Each cell of the raster's class: the index of its color in `classColors`, or `NOTHING`.
 function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8Array {
   const { width, height } = rasterSize(grid);
-  const count = grid.cols.length;
-  // Each day's times are every cell's in the baseline, then every cell's with QueensLink.
-  const start = days.indexOf(day) * 2 * count;
+  const stride = timesStride(grid);
+  // Each day's times are every cell's and station's in the baseline, then with QueensLink.
+  const start = days.indexOf(day) * 2 * stride;
   const classes = new Int8Array(width * height).fill(NOTHING);
   grid.cols.forEach((col, i) => {
     const baseline = times[start + i] ?? UNREACHED;
-    const queenslink = times[start + count + i] ?? UNREACHED;
+    const queenslink = times[start + stride + i] ?? UNREACHED;
     const at = (grid.rows[i] ?? 0) * width + col;
     if (view !== "saved") {
       const minutes = view === "baseline" ? baseline : queenslink;
@@ -221,28 +223,28 @@ function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8A
   return classes;
 }
 
-// In a cell's minutes saved, a place only QueensLink reaches, which there's no saying how much it saves.
+// In a station's minutes saved, one only QueensLink reaches, which there's no saying how much it saves.
 const ONLY_QUEENSLINK = -2;
 
-// Each cell's minutes, as in `cellClasses`: the trip's, or those saved,
-// `ONLY_QUEENSLINK`, or `NOTHING` where there's none to say.
-function cellMinutes(grid: Grid, times: Uint8Array, day: Day, view: View): Int16Array {
-  const { width, height } = rasterSize(grid);
-  const count = grid.cols.length;
-  const start = days.indexOf(day) * 2 * count;
-  const minutes = new Int16Array(width * height).fill(NOTHING);
-  grid.cols.forEach((col, i) => {
-    const baseline = times[start + i] ?? UNREACHED;
-    const queenslink = times[start + count + i] ?? UNREACHED;
-    const at = (grid.rows[i] ?? 0) * width + col;
-    if (view !== "saved") {
-      const trip = view === "baseline" ? baseline : queenslink;
-      minutes[at] = trip === UNREACHED ? NOTHING : trip;
-    } else if (queenslink !== UNREACHED) {
-      minutes[at] = baseline === UNREACHED ? ONLY_QUEENSLINK : Math.max(baseline - queenslink, 0);
-    }
-  });
-  return minutes;
+// The minutes from the selected station to `station` itself, in the view shown:
+// the trip's, or those saved, `ONLY_QUEENSLINK`, or `NOTHING` where there's none to say.
+function stationMinutes(station: Station): number {
+  if (selectedTimes === undefined) {
+    return NOTHING;
+  }
+  const stride = timesStride(grid);
+  const at = days.indexOf(currentDay()) * 2 * stride + grid.cols.length + stations.indexOf(station);
+  const baseline = selectedTimes[at] ?? UNREACHED;
+  const queenslink = selectedTimes[at + stride] ?? UNREACHED;
+  const view = currentView();
+  if (view !== "saved") {
+    const trip = view === "baseline" ? baseline : queenslink;
+    return trip === UNREACHED ? NOTHING : trip;
+  }
+  if (queenslink === UNREACHED) {
+    return NOTHING;
+  }
+  return baseline === UNREACHED ? ONLY_QUEENSLINK : Math.max(baseline - queenslink, 0);
 }
 
 // What the cells of class `band` are, as said when they're pointed at or tapped.
@@ -594,14 +596,11 @@ let selected = "";
 let selectedTimes: Uint8Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
-// And their minutes, to say a station's.
-let selectedMinutes: Int16Array | undefined;
 
 function drawCells(): void {
   if (selectedTimes !== undefined) {
     const view = currentView();
     selectedClasses = cellClasses(grid, selectedTimes, currentDay(), view);
-    selectedMinutes = cellMinutes(grid, selectedTimes, currentDay(), view);
     bandsLayer.setClasses(selectedClasses, classColors(view));
     clearBand();
   }
@@ -706,38 +705,17 @@ const blurWeights = (t: number): readonly number[] => [
 
 // The class drawn at a point on the map, or `NOTHING`,
 // weighing the cells around it as the bands' shader does, so that it's the band seen there.
-// Where a point on the map is in the grid, in cells, fractions of them included.
-function gridPosition(lngLat: LngLatLike): { readonly col: number; readonly row: number } {
-  const { lng, lat } = LngLat.convert(lngLat);
-  // In Web Mercator meters, as the grid is, then in cells.
-  const x = (lng / 360) * EARTH_CIRCUMFERENCE;
-  const y =
-    (Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI)) * EARTH_CIRCUMFERENCE;
-  return { col: (x - grid.x0) / grid.spacing, row: (y - grid.y0) / grid.spacing };
-}
-
-// The minutes of the cell a station's in, from the selected station, as `cellMinutes` says them.
-function minutesAt(station: Station): number {
-  const { col, row } = gridPosition([station.lon, station.lat]);
-  const atCol = Math.round(col);
-  const atRow = Math.round(row);
-  if (
-    selectedMinutes === undefined ||
-    atCol < 0 ||
-    atCol >= width ||
-    atRow < 0 ||
-    atRow >= height
-  ) {
-    return NOTHING;
-  }
-  return selectedMinutes[atRow * width + atCol] ?? NOTHING;
-}
-
 function bandAt(lngLat: LngLat): number {
   if (selectedClasses === undefined) {
     return NOTHING;
   }
-  const { col, row } = gridPosition(lngLat);
+  // In Web Mercator meters, as the grid is, then in cells.
+  const x = (lngLat.lng / 360) * EARTH_CIRCUMFERENCE;
+  const y =
+    (Math.log(Math.tan(Math.PI / 4 + (lngLat.lat * Math.PI) / 360)) / (2 * Math.PI)) *
+    EARTH_CIRCUMFERENCE;
+  const col = (x - grid.x0) / grid.spacing;
+  const row = (y - grid.y0) / grid.spacing;
   if (col < -0.5 || col > width - 0.5 || row < -0.5 || row > height - 0.5) {
     return NOTHING;
   }
@@ -1026,7 +1004,7 @@ await loaded;
     const label = document.createElement("span");
     label.append(...stationLabel(station));
     // How far it is, or how much is saved getting there, in the view shown.
-    const minutes = minutesAt(station);
+    const minutes = stationMinutes(station);
     if (minutes === ONLY_QUEENSLINK) {
       label.append(": only with QueensLink");
     } else if (minutes !== NOTHING) {

@@ -39,6 +39,8 @@ the weekday morning peak, 7:30 to 8:30, or Saturday midday, 11:30 to 12:30.
 Travel times are routed from every station to a grid of about 21,500 cells over the city's land,
 about 190 m across, on the Wednesday and the Saturday with the most trips scheduled.
 Cells more than 250 m from anything to walk on, like marsh islands in Jamaica Bay, are left out.
+Every station is routed to as well, to say how far it is itself,
+rather than its cell's time, which counts walking to the cell's middle.
 
 ## Usage
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import override
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import r5py
 
@@ -59,27 +60,40 @@ def output_path(scenario: Scenario, day: Day) -> Path:
     return paths.TRAVEL_TIMES / f"{scenario}-{day}.parquet"
 
 
+def stations_output_path(scenario: Scenario, day: Day) -> Path:
+    return paths.TRAVEL_TIMES / f"{scenario}-{day}-stations.parquet"
+
+
+def _points(stations: list[gtfs.Station], ids: object) -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(
+        {"id": ids},
+        geometry=gpd.points_from_xy([s.lon for s in stations], [s.lat for s in stations]),
+        crs=WGS84,
+    )
+
+
 def from_stations(
     scenario: Scenario,
     day: Day,
     origins: list[gtfs.Station],
-    destinations: gpd.GeoDataFrame,
-) -> pd.DataFrame:
+    cells: gpd.GeoDataFrame,
+    stations: list[gtfs.Station],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Median minutes from each of `origins` to each of `destinations`, walking at both ends.
+    Median minutes from each of `origins` to each of `cells` and `stations`, walking at both ends.
 
-    Only the pairs reachable within `MAX_TIME`, as `station`, `cell`, and `minutes`.
+    Only the pairs reachable within `MAX_TIME`:
+    to the cells as `station`, `cell`, and `minutes`,
+    and to the stations themselves as `station`, `to_station`, and `minutes`,
+    so that a station's own time doesn't count walking to the middle of the cell it's in.
     """
     date = gtfs.service_date(scenario.gtfs, day.weekday)
-    origin_points = gpd.GeoDataFrame(
-        {"id": [s.id for s in origins]},
-        geometry=gpd.points_from_xy([s.lon for s in origins], [s.lat for s in origins]),
-        crs=WGS84,
-    )
+    # The stations after the cells, numbered on from them, as R5 takes one set of destinations.
+    station_points = _points(stations, len(cells) + np.arange(len(stations)))
     matrix = _travel_time_matrix(
         r5py.TransportNetwork(paths.OSM_PBF, [scenario.gtfs]),
-        origins=origin_points,
-        destinations=destinations,
+        origins=_points(origins, [s.id for s in origins]),
+        destinations=pd.concat([cells, station_points], ignore_index=True),
         departure=datetime.datetime.combine(date, day.departure),
         departure_time_window=DEPARTURE_WINDOW,
         percentiles=PERCENTILES,
@@ -91,4 +105,11 @@ def from_stations(
         columns={"from_id": "station", "to_id": "cell", "travel_time": "minutes"}
     )
     times = times.dropna(subset=["minutes"])
-    return times.astype({"station": "category", "cell": "int32", "minutes": "uint8"})
+    to_station = times["cell"] >= len(cells)
+    station_times = times[to_station].assign(
+        to_station=lambda t: [stations[i - len(cells)].id for i in t["cell"]]
+    )[["station", "to_station", "minutes"]]
+    return (
+        times[~to_station].astype({"station": "category", "cell": "int32", "minutes": "uint8"}),
+        station_times.astype({"station": "category", "to_station": "category", "minutes": "uint8"}),
+    )

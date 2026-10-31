@@ -24,8 +24,9 @@ def write(grid: Grid) -> None:
     - `stations.json`: each station in either scenario, and which.
     - `lines.json`: GeoJSON of the lines between stations, each with its color
       and which scenarios run on it.
-    - `times/{station}.bin`: minutes from the station to each cell, one byte each,
-      every cell's in each scenario on each day, by day and then by scenario,
+    - `times/{station}.bin`: minutes from the station to each cell, then to each station,
+      in the order `stations.json` lists them, one byte each,
+      in each scenario on each day, by day and then by scenario,
       in the order `Day` and `Scenario` list them.
     """
     shutil.rmtree(paths.WEB_DATA, ignore_errors=True)
@@ -88,12 +89,19 @@ def write(grid: Grid) -> None:
 
     cell_count = len(grid.cols)
     minutes = np.full(
-        (len(stations), len(Day), len(Scenario), cell_count), UNREACHED, dtype=np.uint8
+        (len(stations), len(Day), len(Scenario), cell_count + len(stations)),
+        UNREACHED,
+        dtype=np.uint8,
     )
     index = {station: i for i, station in enumerate(stations)}
     for (d, day), (s, scenario) in itertools.product(enumerate(Day), enumerate(Scenario)):
         times = pd.read_parquet(travel_times.output_path(scenario, day))
         rows = times["station"].astype(str).map(index).to_numpy()
         minutes[rows, d, s, times["cell"].to_numpy()] = times["minutes"].to_numpy()
+        # Each station's own time, after the cells'.
+        to_stations = pd.read_parquet(travel_times.stations_output_path(scenario, day))
+        rows = to_stations["station"].astype(str).map(index).to_numpy()
+        columns = cell_count + to_stations["to_station"].astype(str).map(index).to_numpy()
+        minutes[rows, d, s, columns] = to_stations["minutes"].to_numpy()
     for station, i in index.items():
         (times_dir / f"{station}.bin").write_bytes(minutes[i].tobytes())

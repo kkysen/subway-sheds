@@ -120,6 +120,19 @@ def fetch(
     gtfs.write_feed(scenarios.baseline_feed(), Scenario.BASELINE.gtfs)
 
 
+def _save(times: pd.DataFrame, dest: Path, routed: set[str] | None) -> None:
+    """Write `times`, replacing only the `routed` stations' times if some are already there."""
+    if routed is not None and dest.exists():
+        kept = pd.read_parquet(dest)
+        kept = kept[~kept["station"].astype(str).isin(routed)]
+        times = pd.concat(
+            [kept.astype({"station": str}), times.astype({"station": str})],
+            ignore_index=True,
+        ).astype({"station": "category"})
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    times.to_parquet(dest, index=False)
+
+
 @app.command()
 def route(
     stop_ids: Annotated[
@@ -148,20 +161,16 @@ def route(
         stations = list(every_station.values())
         if stop_ids:
             stations = [s for s in stations if s.id in stop_ids]
-        times = travel_times.from_stations(scenario, day, stations, destinations)
-        dest = travel_times.output_path(scenario, day)
-        if stop_ids and dest.exists():
-            # Replace only these stations' times, keeping every other station's.
-            routed = {s.id for s in stations}
-            kept = pd.read_parquet(dest)
-            kept = kept[~kept["station"].astype(str).isin(routed)]
-            times = pd.concat(
-                [kept.astype({"station": str}), times.astype({"station": str})],
-                ignore_index=True,
-            ).astype({"station": "category"})
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        times.to_parquet(dest, index=False)
-        echo(f"{scenario} {day}: {len(stations)} stations, {len(times)} reachable cells")
+        times, station_times = travel_times.from_stations(
+            scenario, day, stations, destinations, list(every_station.values())
+        )
+        routed = {s.id for s in stations} if stop_ids else None
+        _save(times, travel_times.output_path(scenario, day), routed)
+        _save(station_times, travel_times.stations_output_path(scenario, day), routed)
+        echo(
+            f"{scenario} {day}: {len(stations)} stations, {len(times)} reachable cells, "
+            f"{len(station_times)} reachable stations"
+        )
 
 
 @app.command(name="export")
