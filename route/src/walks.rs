@@ -197,6 +197,17 @@ impl StreetWalks {
         &self.stations
     }
 
+    /// Every walk between stations of different complexes, as `(from, to, seconds)`, by their IDs.
+    pub fn transfers(&self) -> Vec<(String, String, Secs)> {
+        self.near
+            .iter()
+            .enumerate()
+            .flat_map(|(s, near)| near.iter().map(move |&(t, walk)| (s, t as usize, walk)))
+            .filter(|&(s, t, _)| self.complexes[s] != self.complexes[t])
+            .map(|(s, t, walk)| (self.stations[s].clone(), self.stations[t].clone(), walk))
+            .collect()
+    }
+
     /// The complex of the station `id`, if it's one of these.
     pub fn complex(&self, id: &str) -> Option<&str> {
         let i = self.stations.iter().position(|s| s == id)?;

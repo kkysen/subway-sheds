@@ -679,6 +679,21 @@ fn py_travel_times(
     })
 }
 
+/// Every walk on the streets between `stations` of different complexes that routing may change on,
+/// as `(from, to, seconds)`, walking at `speed` millimeters a second, entrances included.
+#[pyfunction]
+fn transfers(
+    py: Python<'_>,
+    osm: PathBuf,
+    stations: Vec<Station>,
+    speed: Mm,
+) -> Result<Vec<(String, String, Secs)>> {
+    py.detach(|| {
+        let graph = Graph::build(&Osm::read(&osm)?);
+        Ok(StreetWalks::compute(&graph, &stations, &[], &[], speed, 0).transfers())
+    })
+}
+
 /// Whether each of `points`, as `(latitude, longitude)`,
 /// links to the streets in `osm`, an `.osm.pbf`, within `meters`, as routing links it.
 #[pyfunction]
@@ -716,6 +731,7 @@ fn station_pairs(py: Python<'_>, feed: PathBuf) -> Result<Vec<feed::Pair>> {
 fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_travel_times, m)?)?;
     m.add_function(wrap_pyfunction!(near_streets, m)?)?;
+    m.add_function(wrap_pyfunction!(transfers, m)?)?;
     m.add_function(wrap_pyfunction!(stations, m)?)?;
     m.add_function(wrap_pyfunction!(station_pairs, m)?)?;
     Ok(())
