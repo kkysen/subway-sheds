@@ -15,6 +15,7 @@ import {
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { BandsLayer, EARTH_CIRCUMFERENCE } from "./bands";
+import { type Arrivals, parseArrivals, parseExits, travelTimes, UNREACHED } from "./times";
 
 // MapLibre loads its worker from a file of its own, which it looks for next to the bundle;
 // importing it with `?url` is what gets Vite to emit it at all.
@@ -72,9 +73,6 @@ interface Station {
   readonly scenarios: readonly Scenario[];
 }
 
-// In a station's times, a cell not reached within the `ROUTED_MINUTES` routed.
-const UNREACHED = 255;
-
 const data = (path: string): string => `${import.meta.env.BASE_URL}data/${path}`;
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -87,23 +85,31 @@ async function fetchJson<T>(path: string): Promise<T> {
   return json;
 }
 
-async function fetchTimesUncached(station: string): Promise<Uint8Array> {
-  const response = await fetch(data(`times/${encodeURIComponent(station)}.bin`));
+// Fetched first, as reading a station's arrivals needs how many stations there are.
+const stationList = fetchJson<Station[]>("stations.json");
+
+async function fetchBinary(path: string): Promise<ArrayBuffer> {
+  const response = await fetch(data(path));
   if (!response.ok) {
-    throw new Error(`${response.status} fetching times from ${station}`);
+    throw new Error(`${response.status} fetching ${path}`);
   }
-  return new Uint8Array(await response.arrayBuffer());
+  return response.arrayBuffer();
 }
 
-// How many stations' times are kept, about 86 KB each,
+async function fetchTimesUncached(station: string): Promise<Arrivals> {
+  const buffer = await fetchBinary(`arrivals/${encodeURIComponent(station)}.bin`);
+  return parseArrivals(buffer, (await stationList).length);
+}
+
+// How many stations' arrivals are kept, about 240 KB each unpacked,
 // so that pointing across the city doesn't keep all of them.
 const CACHED_STATIONS = 64;
 
 // The times fetched or being fetched, least recently asked for first,
 // so that a click on a station already fetched for being pointed at waits on that fetch.
-const timesCache = new Map<string, Promise<Uint8Array>>();
+const timesCache = new Map<string, Promise<Arrivals>>();
 
-function fetchTimes(station: string): Promise<Uint8Array> {
+function fetchTimes(station: string): Promise<Arrivals> {
   let times = timesCache.get(station);
   timesCache.delete(station);
   if (times === undefined) {
@@ -361,6 +367,7 @@ function element<T extends Element>(selector: string, type: new () => T): T {
 const controls = element("#controls", HTMLFormElement);
 const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
+const speedValue = element("#speed-value", HTMLOutputElement);
 const summaryStatus = element("#summary-status", HTMLElement);
 // Kept apart from the stations, which load after the controls are first shown.
 let selectedName = "…";
@@ -390,7 +397,7 @@ timeInfoButton.addEventListener("click", () => {
 fullMap.hidden = window.top === window.self;
 
 // The controls kept across reloads and in links, by their inputs' name.
-const savedControls = ["day", "view"] as const;
+const savedControls = ["day", "view", "speed"] as const;
 
 // Prefixed, since every page on kkysen.github.io shares the same storage.
 const storageKey = (name: string): string => `subway-sheds:${name}`;
@@ -420,6 +427,8 @@ function restoreControls(): void {
     // Checks the radio with that value, if there still is one.
     if (value !== null && inputs instanceof RadioNodeList) {
       inputs.value = value;
+    } else if (value !== null && inputs instanceof HTMLInputElement) {
+      inputs.value = value;
     }
   }
 }
@@ -442,6 +451,7 @@ function showView(view: View): void {
 // Shows what's outside the map for the controls as they are.
 function showControls(): void {
   dayName.textContent = dayNames[currentDay()];
+  showSpeed();
   showView(currentView());
   showSummaryStatus();
 }
@@ -507,6 +517,15 @@ function currentDay(): Day {
     throw new Error(`unknown day ${String(value)}`);
   }
   return value;
+}
+
+// The reader's walking speed out of stations, in miles an hour.
+function currentSpeed(): number {
+  return Number(new FormData(controls).get("speed"));
+}
+
+function showSpeed(): void {
+  speedValue.textContent = `${currentSpeed()} mph`;
 }
 
 function currentView(): View {
@@ -578,10 +597,11 @@ if (fullscreenGroup !== null && fullscreenCorner !== null && fullscreenCorner !=
 // Listened for before awaiting the data, which the map can finish loading before.
 const loaded = new Promise((resolve) => map.once("load", resolve));
 
-const [grid, stations, lines] = await Promise.all([
+const [grid, stations, lines, exits] = await Promise.all([
   fetchJson<Grid>("grid.json"),
-  fetchJson<Station[]>("stations.json"),
+  stationList,
   fetchJson<GeoJSON.FeatureCollection>("lines.json"),
+  stationList.then(async (list) => parseExits(await fetchBinary("exits.bin"), list.length)),
 ]);
 const { width, height } = rasterSize(grid);
 const bandsLayer = new BandsLayer("bands", grid, width, height);
@@ -592,10 +612,39 @@ const DEFAULT_STATION = "H04";
 
 // The station last asked for, so that a slower fetch for an earlier one can't replace it.
 let selected = "";
-// The times from the station shown.
+// When trains from the station shown reach every station.
+let selectedArrivals: Arrivals | undefined;
+// The times from the station shown, at the walking speed chosen.
 let selectedTimes: Uint8Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
+
+function computeTimes(): void {
+  if (selectedArrivals !== undefined) {
+    const origin = stations.findIndex((station) => station.id === selected);
+    selectedTimes = travelTimes(
+      selectedArrivals,
+      exits,
+      origin,
+      grid.cols.length,
+      stations.length,
+      currentSpeed(),
+    );
+  }
+}
+
+// Recomputed as the speed slides, at most once a frame.
+let speedFrame = 0;
+controls.addEventListener("input", (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.name === "speed") {
+    showSpeed();
+    cancelAnimationFrame(speedFrame);
+    speedFrame = requestAnimationFrame(() => {
+      computeTimes();
+      drawCells();
+    });
+  }
+});
 
 function drawCells(): void {
   if (selectedTimes !== undefined) {
@@ -632,11 +681,12 @@ async function selectStation(id: string): Promise<void> {
   selectedName = station.name;
   showSummaryStatus();
   writeHash();
-  const times = await fetchTimes(id);
+  const arrivals = await fetchTimes(id);
   if (selected !== id) {
     return;
   }
-  selectedTimes = times;
+  selectedArrivals = arrivals;
+  computeTimes();
   drawCells();
 }
 
@@ -657,6 +707,7 @@ function writeHash(): void {
 function applyControls(): void {
   showControls();
   map.setFilter("lines", linesFilter(currentView()));
+  computeTimes();
   drawCells();
 }
 

@@ -75,7 +75,7 @@ streets = { path = "../mta-od-data/streets" }
 `uv` doesn't see changes there, so rebuild after them with `uv sync --reinstall-package subway-sheds`.
 
 ```sh
-uv run subway-sheds fetch    # download the MTA feed, land, and streets, and make both feeds
+uv run subway-sheds fetch    # download the MTA feed, land, streets, and platforms, and make both feeds
 uv run subway-sheds route    # route every station, in both scenarios
 uv run subway-sheds export   # for the web page, into `web/public/data/`
 npm --prefix web install
@@ -88,6 +88,12 @@ and `--scenario` and `--day` to route only those, e.g. `route --scenario queensl
 Downloads and travel times go in `.cache/`.
 Neither they nor the export are committed:
 CI routes, exports, and publishes the page to GitHub Pages on every push to `main`.
+
+The page times walking out of stations itself, at the speed its slider is set to, 2 to 4 mph:
+`export` gives it when each station's trains reach every station each minute of the window,
+and every station's walks out to the cells,
+and it takes each cell's median over the minutes, as routing does.
+Walking to the first station and between stations stays at 3 mph.
 
 ## Development
 
