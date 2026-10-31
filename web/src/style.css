@@ -12,7 +12,7 @@ body,
   /* As wide open as collapsed, so that the marker stays put as it turns.
      Short of the fullscreen button on narrow screens: its 29px, and 10px either side of it. */
   box-sizing: border-box;
-  width: min(300px, calc(100% - 59px));
+  width: min(380px, calc(100% - 59px));
   /* No taller than the map, 10px from its bottom as from its top, scrolling if it's more,
      as on phones turned sideways, where it would otherwise be cut off. */
   max-height: calc(100% - 20px);
@@ -95,9 +95,17 @@ body,
   border-top: 1px solid #cccccc;
 }
 
+/* Each choice's heading beside it rather than above it, to save a line,
+   with "QueensLink" said once after the buttons, rather than in each, so that they fit on one line. */
 #controls fieldset {
   display: flex;
-  flex-direction: column;
+  flex-flow: row wrap;
+  align-items: center;
+  column-gap: 8px;
+}
+
+#controls .info {
+  flex-basis: 100%;
 }
 
 #controls legend,
@@ -111,7 +119,7 @@ body,
 /* A fieldset's legend sits on its border unless it's floated. */
 #controls legend {
   float: left;
-  width: 100%;
+  margin: 0;
 }
 
 #controls p {
@@ -125,6 +133,10 @@ body,
   border: 1px solid #333333;
   border-radius: 6px;
   overflow: hidden;
+}
+
+#controls .segmented {
+  flex: 1;
 }
 
 .segmented label {
