@@ -302,16 +302,19 @@ body,
 }
 
 /* As highlighted on the map, stronger and outlined. */
-.legend-bands span.highlighted,
-.legend-swatch.highlighted {
+.legend-bands span.highlighted {
   opacity: 0.85;
   outline: 2px solid #000000;
   outline-offset: -1px;
 }
 
-.legend-bands span,
-.legend-swatch {
+.legend-bands span {
   cursor: default;
+}
+
+/* Set apart from the minutes saved, a different kind of place. */
+.legend-bands .legend-only-queenslink {
+  margin-left: 4px;
 }
 
 .band-popup .maplibregl-popup-content {
@@ -334,14 +337,6 @@ body,
 .legend-labels span {
   position: absolute;
   transform: translateX(-50%);
-}
-
-.legend-swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  opacity: 0.6;
-  vertical-align: baseline;
 }
 
 /* As the stations are drawn on the map. */
@@ -373,8 +368,19 @@ body,
   height: 22px;
   margin: 0 4px 0 2px;
   border: 2px solid #ffffff;
-  background: #ff6319 center / 100% no-repeat;
+  background: #ff6319 var(--queenslink-m) center / 100% no-repeat;
   vertical-align: -6px;
+}
+
+/* The M bullet under the band of places only QueensLink reaches, as small as the labels. */
+.legend-labels .legend-station-new {
+  position: static;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border-width: 1px;
+  transform: none;
+  vertical-align: -3px;
 }
 
 /* A plain button, as small as the line it's on. */

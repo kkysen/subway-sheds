@@ -259,11 +259,13 @@ function legendItems(view: View): HTMLElement[] {
   bar.className = "legend-bands";
   const labels = document.createElement("div");
   labels.className = "legend-labels";
+  // With a last band of its own for places only QueensLink reaches, in minutes saved.
+  const slots = viewBands.length + (view === "saved" ? 1 : 0);
   // Each at the edge its band starts at, as in QueensLink's mockup.
-  const label = (text: string, edge: number): void => {
+  const label = (text: string | HTMLElement, edge: number): void => {
     const span = document.createElement("span");
-    span.textContent = text;
-    span.style.left = `${(edge / viewBands.length) * 100}%`;
+    span.append(text);
+    span.style.left = `${(edge / slots) * 100}%`;
     labels.append(span);
   };
   for (const [i, [minutes, color]] of viewBands.entries()) {
@@ -271,10 +273,18 @@ function legendItems(view: View): HTMLElement[] {
     // The last band of minutes saved goes on without end, so it's marked as starting with no end.
     label(view === "saved" && i === viewBands.length - 1 ? `${minutes}+` : String(minutes), i);
   }
-  if (view !== "saved") {
+  if (view === "saved") {
+    // Set apart from the minutes saved, as there's no saying how many it saves,
+    // and labeled in its middle, with what it means in full on pointing at it.
+    const onlyQueensLink = legendBand(savedBands.length, QUEENSLINK_ONLY_COLOR, view);
+    onlyQueensLink.className = "legend-only-queenslink";
+    bar.append(onlyQueensLink);
+    // QueensLink's M bullet, as its new stations are drawn, for "only with QueensLink".
+    const m = document.createElement("span");
+    m.className = "legend-station legend-station-new";
+    label(m, savedBands.length + 0.5);
+  } else {
     label(String(MAX_MINUTES), viewBands.length);
-  }
-  if (view !== "saved") {
     // Beside the heading, to save a line.
     const note = document.createElement("span");
     note.className = "heading-note";
@@ -282,14 +292,7 @@ function legendItems(view: View): HTMLElement[] {
     heading.append(note);
   }
   heading.append(stationKeyShow);
-  if (view !== "saved") {
-    return [heading, bar, labels];
-  }
-  const note = document.createElement("p");
-  const swatch = legendBand(savedBands.length, QUEENSLINK_ONLY_COLOR, view);
-  swatch.className = "legend-swatch";
-  note.append(swatch, ` Reached only with QueensLink, within ${ROUTED_MINUTES} minutes`);
-  return [heading, bar, labels, note];
+  return [heading, bar, labels];
 }
 
 // The lines of the scenario the view shows, with QueensLink's for what it saves.
@@ -794,9 +797,8 @@ function imageData(canvas: HTMLCanvasElement): ImageData {
 
 // The legend's new station, the same bullet as on the map.
 const legendM = queenslinkM();
-for (const station of document.querySelectorAll<HTMLElement>(".legend-station-new")) {
-  station.style.backgroundImage = `url(${legendM.toDataURL()})`;
-}
+// As a variable for `style.css`, for the legend's bullets made since, too.
+document.documentElement.style.setProperty("--queenslink-m", `url(${legendM.toDataURL()})`);
 
 await loaded;
 {
