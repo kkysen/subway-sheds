@@ -27,7 +27,7 @@ WALKING_SPEED_KM_PER_H = 3 * 1.609344
 # In millimeters a second, rounded down, as the routing walks.
 WALKING_SPEED_MM_PER_S = int(WALKING_SPEED_KM_PER_H / 3600 * 1000 * 1000)
 # The speeds the page's slider walks out of stations at, in miles an hour.
-SLIDER_MPH = (2.0, 4.0)
+SLIDER_MPH = (1.0, 5.0)
 # How far the page may walk from a station: `EXIT_WALK` at the slider's fastest.
 EXIT_WALK = datetime.timedelta(minutes=30)
 EXIT_WALK_MM = int(SLIDER_MPH[1] * 1609.344 / 3600 * 1000 * EXIT_WALK.total_seconds())
