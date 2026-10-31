@@ -3,7 +3,10 @@
 import datetime
 import itertools
 import json
+import os
+import threading
 import zipfile
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import brotli
@@ -20,12 +23,35 @@ UNREACHED = 0xFFFF
 WALK_LEG = 0xFFFF
 
 
-def _write_brotli(path: Path, data: bytes) -> None:
+class _BrotliFiles:
     """
-    Write `data` to `path` compressed with Brotli, as GitHub Pages won't:
+    Writes files compressed with Brotli, as GitHub Pages won't:
     it sends `.bin` files as they are, so the page decompresses them itself.
+    Compressed on every core, as Brotli's best takes minutes for every station's files,
+    and `brotli` lets go of the GIL to compress, with only a few files waiting at a time.
     """
-    path.write_bytes(brotli.compress(data, quality=11))
+
+    def __init__(self) -> None:
+        workers = os.cpu_count() or 1
+        self._pool = ThreadPoolExecutor(workers)
+        self._waiting = threading.BoundedSemaphore(2 * workers)
+        self._written: list[Future[None]] = []
+
+    def write(self, path: Path, data: bytes) -> None:
+        self._waiting.acquire()
+        self._written.append(self._pool.submit(self._write, path, data))
+
+    def _write(self, path: Path, data: bytes) -> None:
+        try:
+            path.write_bytes(brotli.compress(data, quality=11))
+        finally:
+            self._waiting.release()
+
+    def close(self) -> None:
+        """Wait for every file, raising what writing any did."""
+        self._pool.shutdown()
+        for written in self._written:
+            written.result()
 
 
 def _deltas(values: np.ndarray, first: np.ndarray) -> np.ndarray:
@@ -74,7 +100,7 @@ def write(grid: Grid) -> None:
       wrapping around, as those are small and alike, which compresses better.
       The page adds each departure's walk out to each cell and takes the median, as routing does.
 
-    The `.bin` files are each compressed with Brotli (see `_write_brotli`).
+    The `.bin` files are each compressed with Brotli (see `_BrotliFiles`).
     """
     # Only the files, keeping the directories, which a running `vite` watches:
     # replacing them, it serves the page itself for every file in them until restarted.
@@ -83,6 +109,7 @@ def write(grid: Grid) -> None:
             old.unlink()
     arrivals_dir = paths.WEB_DATA / "arrivals"
     arrivals_dir.mkdir(parents=True, exist_ok=True)
+    files = _BrotliFiles()
 
     (paths.WEB_DATA / "grid.json").write_text(
         json.dumps(
@@ -171,7 +198,7 @@ def write(grid: Grid) -> None:
     columns = [
         exits[c].to_numpy(dtype="<u2") for c in ["station", "cell", "exit_seconds", "meters"]
     ]
-    _write_brotli(
+    files.write(
         paths.WEB_DATA / "exits.bin",
         np.array([len(exits)], dtype="<u4").tobytes() + b"".join(c.tobytes() for c in columns),
     )
@@ -253,7 +280,7 @@ def write(grid: Grid) -> None:
                 end - start,
             ]
         ).astype("<u2")
-        _write_brotli(routes_dir / f"{station}.bin", counts[i].tobytes() + fields.tobytes())
+        files.write(routes_dir / f"{station}.bin", counts[i].tobytes() + fields.tobytes())
 
     # When, from the window's start, rather than how long after each departure.
     reached = seconds != UNREACHED
@@ -269,9 +296,10 @@ def write(grid: Grid) -> None:
     for station, i in index.items():
         minute = minute_of[changed[i]]
         first = minute == 0
-        _write_brotli(
+        files.write(
             arrivals_dir / f"{station}.bin",
             counts[i].tobytes()
             + _deltas(minute, first).astype(np.uint8).tobytes()
             + (_deltas(clock[i][changed[i]], first) % 0x10000).astype("<u2").tobytes(),
         )
+    files.close()
