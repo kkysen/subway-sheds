@@ -92,7 +92,7 @@ def write(grid: Grid) -> None:
     - `lines.json`: GeoJSON of the lines between stations, each with its color
       and which scenarios run on it.
     - `walks.json`: the street walk between each pair of stations of different complexes
-      that changing trains may walk, by `{from}|{to}`, their IDs,
+      that some journey in `routes/` walks, by `{from}|{to}`, their IDs,
       as `[longitude, latitude]`s from the entrance walked out of to the one walked into.
     - `routes.json`: each route's name and colors, by its ID.
     - `patterns.json`: in each run, by day, then fare, then scenario,
@@ -215,21 +215,6 @@ def write(grid: Grid) -> None:
         )
     )
 
-    walks = pd.read_parquet(travel_times.WALK_PATHS)
-    walks = walks[walks["from"].isin(stations) & walks["to"].isin(stations)]
-    (paths.WEB_DATA / "walks.json").write_text(
-        json.dumps(
-            {
-                f"{a}|{b}": [
-                    [round(lon, 5), round(lat, 5)]
-                    for lat, lon in zip(walk["latitude"], walk["longitude"], strict=True)
-                ]
-                for (a, b), walk in walks.groupby(["from", "to"], sort=False)
-            },
-            separators=(",", ":"),
-        )
-    )
-
     index = {station: i for i, station in enumerate(stations)}
 
     def rows_of(ids: pd.Series) -> np.ndarray:
@@ -318,6 +303,32 @@ def write(grid: Grid) -> None:
             }
         )
         del table
+    # Only the walks between stations some journey walks, as most never are.
+    walked: set[int] = set()
+    for c in columns_of:
+        walk = c["p"] == WALK_LEG
+        walked.update(
+            np.unique(c["a"][walk].astype(np.int64) * len(stations) + c["b"][walk]).tolist()
+        )
+    station_ids = list(stations)
+    walked_ids = {
+        (station_ids[ab // len(stations)], station_ids[ab % len(stations)]) for ab in walked
+    }
+    walks = pd.read_parquet(travel_times.WALK_PATHS)
+    walks = walks[[(a, b) in walked_ids for a, b in zip(walks["from"], walks["to"], strict=True)]]
+    (paths.WEB_DATA / "walks.json").write_text(
+        json.dumps(
+            {
+                f"{a}|{b}": [
+                    [round(lon, 5), round(lat, 5)]
+                    for lat, lon in zip(walk["latitude"], walk["longitude"], strict=True)
+                ]
+                for (a, b), walk in walks.groupby(["from", "to"], sort=False)
+            },
+            separators=(",", ":"),
+        )
+    )
+
     for station, i in index.items():
         counts = np.zeros((len(runs), len(stations)), dtype=np.uint8)
         pieces = [
