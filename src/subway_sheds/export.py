@@ -101,6 +101,7 @@ def write(grid: Grid) -> None:
                         "color": segment.color,
                         "from": segment.stations[0],
                         "to": segment.stations[1],
+                        "shortcut": segment.shortcut,
                     },
                 },
             )

@@ -20,9 +20,10 @@ from subway_sheds import _route, gtfs
 # but they run on track some other route's shape follows.
 SHAPE_REACH = 100
 
-# A pair of stations is left out if a path through others, at most this much longer, joins them:
-# an express run alongside a local's stops would otherwise be drawn over it, cutting corners
-# wherever it's drawn straight.
+# A pair of stations is a shortcut if a path through others, at most this much longer, joins them:
+# an express run alongside a local's stops,
+# which the map leaves out so it isn't drawn over the local,
+# but a journey on it is drawn along its own track.
 DETOUR = 1.2
 
 _to_meters = Transformer.from_crs("EPSG:4326", "EPSG:32618", always_xy=True)
@@ -36,6 +37,8 @@ class Segment:
     color: str
     # In WGS84, from the first station to the second.
     coordinates: list[tuple[float, float]]
+    # Whether others' segments join its stations nearly as directly, as an express's over a local's.
+    shortcut: bool
 
 
 def _point(lon: float, lat: float) -> Point:
@@ -80,7 +83,7 @@ def _is_shortcut(
 
 
 def segments(feed_path: Path) -> list[Segment]:
-    """Each pair of stations trains run between without stopping, but for shortcuts."""
+    """Each pair of stations trains run between without stopping."""
     with zipfile.ZipFile(feed_path) as feed:
         stops = list(gtfs.read_csv(feed, "stops.txt"))
         route_rows = list(gtfs.read_csv(feed, "routes.txt"))
@@ -124,8 +127,6 @@ def segments(feed_path: Path) -> list[Segment]:
     result: list[Segment] = []
     for pair, (_, color) in colors.items():
         a, b = (points[station] for station in pair)
-        if _is_shortcut(pair, neighbors, a.distance(b)):
-            continue
         # Its own trips' shapes first, then any passing near both stations, the nearest first.
         nearby = [shape_ids[i] for i in tree.query(a, predicate="dwithin", distance=SHAPE_REACH)]
         candidates = sorted(own_shapes.get(pair, set())) + sorted(
@@ -145,6 +146,7 @@ def segments(feed_path: Path) -> list[Segment]:
                     (round(lon, 5), round(lat, 5))
                     for lon, lat in (_to_degrees.transform(x, y) for x, y in line.coords)
                 ],
+                _is_shortcut(pair, neighbors, a.distance(b)),
             )
         )
     return result

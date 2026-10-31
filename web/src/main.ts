@@ -375,10 +375,12 @@ function legendItems(view: View): HTMLElement[] {
   return [heading, bar, labels, description];
 }
 
-// The lines of the scenario the view shows, with QueensLink's for what it saves.
+// The lines of the scenario the view shows, with QueensLink's for what it saves,
+// but for express runs over a local's stops, drawn only in journeys along them.
 const linesFilter = (view: View): ExpressionSpecification => [
-  "has",
-  view === "saved" ? "queenslink" : view,
+  "all",
+  ["has", view === "saved" ? "queenslink" : view],
+  ["!", ["get", "shortcut"]],
 ];
 
 function element<T extends Element>(selector: string, type: new () => T): T {
