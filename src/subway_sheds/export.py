@@ -106,11 +106,14 @@ def write(grid: Grid) -> None:
       then when it starts, in seconds from the window's start for a journey's first leg
       and after the leg before for the rest, and how long it takes,
       as those are small and alike, which compresses better.
-    - `exits.bin`: every walk out of a station to a cell, to time at the reader's walking speed,
+    - `exits.bin`: every walk out of a station to a cell within `travel_times.NEAR_EXIT_WALK_M`,
+      to time at the reader's walking speed,
       as four little-endian `uint16` arrays of equal length after their length, a `uint32`:
       the station, as `stations.json` lists them, the cell, as `grid.json` lists them,
       the seconds out through the entrance, and the meters on the streets after it,
       by station.
+    - `exits-far.bin`: the rest, as `exits.bin` has them, which the page loads after,
+      as there are about as many again, but few are any cell's quickest way.
     - `arrivals/{station}.bin`: when trains from the station reach each station's platforms,
       for each minute of the departure window, in each run,
       in seconds from the window's start, `UNREACHED` if not within `travel_times.MAX_TIME`.
@@ -218,13 +221,15 @@ def write(grid: Grid) -> None:
 
     exits = pd.read_parquet(travel_times.EXITS)
     exits = exits.assign(station=rows_of(exits["station"])).sort_values(["station", "cell"])
-    columns = [
-        exits[c].to_numpy(dtype="<u2") for c in ["station", "cell", "exit_seconds", "meters"]
-    ]
-    files.write(
-        paths.WEB_DATA / "exits.bin",
-        np.array([len(exits)], dtype="<u4").tobytes() + b"".join(c.tobytes() for c in columns),
-    )
+    near = exits["meters"] <= travel_times.NEAR_EXIT_WALK_M
+    for name, part in [("exits.bin", exits[near]), ("exits-far.bin", exits[~near])]:
+        columns = [
+            part[c].to_numpy(dtype="<u2") for c in ["station", "cell", "exit_seconds", "meters"]
+        ]
+        files.write(
+            paths.WEB_DATA / name,
+            np.array([len(part)], dtype="<u4").tobytes() + b"".join(c.tobytes() for c in columns),
+        )
 
     minutes = travel_times.DEPARTURE_WINDOW // datetime.timedelta(minutes=1)
     seconds = np.full(

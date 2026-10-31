@@ -9,10 +9,10 @@
 use std::{ptr, slice};
 
 /// As `src/subway_sheds/travel_times.py` routes: departing each minute of an hour,
-/// keeping trips of up to 2 hours, walking out of a station for up to half an hour.
+/// keeping trips of up to 2 hours, walking out of a station for up to an hour.
 const MINUTES: usize = 60;
 const MAX_SECONDS: u32 = 120 * 60;
-const MAX_EXIT_WALK_SECONDS: u32 = 30 * 60;
+const MAX_EXIT_WALK_SECONDS: u32 = 60 * 60;
 /// The median over the window's departures, as routing picks it.
 const MEDIAN: usize = MINUTES.div_ceil(2) - 1;
 /// The runs each station's arrivals have, by day, then fare, then scenario.

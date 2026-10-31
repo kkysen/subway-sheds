@@ -30,6 +30,7 @@ export interface Response {
 interface Times {
   readonly memory: WebAssembly.Memory;
   alloc(bytes: number): number;
+  free(at: number, bytes: number): void;
   travel_times(
     arrivals: number,
     cell: number,
@@ -54,7 +55,7 @@ const RUNS = 8;
 const MINUTES = 60;
 
 // Where each of the module's arrays is in its memory, allocated once for the walks given,
-// and reused for every station's, so that its memory never grows and views of it stay good.
+// and reused for every station's, and each's size, to free them when the walks change.
 interface Laid {
   readonly cells: number;
   readonly stations: number;
@@ -67,6 +68,8 @@ interface Laid {
   readonly times: number;
   readonly exitFrom: number;
   readonly exitMinute: number;
+  // Each array's place and size, to free.
+  readonly allocated: readonly (readonly [number, number])[];
 }
 
 const module = WebAssembly.instantiateStreaming(fetch(wasmUrl))
@@ -79,18 +82,25 @@ let laid: Promise<Laid | undefined> = Promise.resolve(undefined);
 
 function layOut(times: Times, given: Exits, cells: number, stations: number): Laid {
   const n = given.cell.length;
+  const allocated: [number, number][] = [];
+  const alloc = (bytes: number): number => {
+    const place = times.alloc(bytes);
+    allocated.push([place, bytes]);
+    return place;
+  };
   const at = {
     cells,
     stations,
     exits: n,
-    arrivals: times.alloc(2 * RUNS * MINUTES * stations),
-    cell: times.alloc(2 * n),
-    exitSeconds: times.alloc(2 * n),
-    meters: times.alloc(2 * n),
-    starts: times.alloc(4 * (stations + 1)),
-    times: times.alloc(RUNS * (cells + stations)),
-    exitFrom: times.alloc(2 * RUNS * cells),
-    exitMinute: times.alloc(RUNS * cells),
+    arrivals: alloc(2 * RUNS * MINUTES * stations),
+    cell: alloc(2 * n),
+    exitSeconds: alloc(2 * n),
+    meters: alloc(2 * n),
+    starts: alloc(4 * (stations + 1)),
+    times: alloc(RUNS * (cells + stations)),
+    exitFrom: alloc(2 * RUNS * cells),
+    exitMinute: alloc(RUNS * cells),
+    allocated,
   };
   const memory = times.memory.buffer;
   new Uint16Array(memory, at.cell, n).set(given.cell);
@@ -143,9 +153,15 @@ self.onmessage = async (event: MessageEvent<Request>): Promise<void> => {
   if (request.kind === "exits") {
     const { exits, cells, stations } = request;
     given = { exits, cells, stations };
-    laid = module.then((times) =>
-      times === undefined ? undefined : layOut(times, exits, cells, stations),
-    );
+    laid = Promise.all([module, laid]).then(([times, old]) => {
+      if (times === undefined) {
+        return undefined;
+      }
+      for (const [place, bytes] of old?.allocated ?? []) {
+        times.free(place, bytes);
+      }
+      return layOut(times, exits, cells, stations);
+    });
     return;
   }
   const times = await module;

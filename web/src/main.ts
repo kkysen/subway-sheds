@@ -18,6 +18,7 @@ import { BandsLayer, EARTH_CIRCUMFERENCE } from "./bands";
 import {
   type Arrivals,
   medianDeparture,
+  mergeExits,
   NO_STATION,
   parseArrivals,
   parseExits,
@@ -686,7 +687,7 @@ interface Pattern {
   readonly stations: readonly number[];
 }
 
-const [grid, stations, lines, exits, routeInfo, patterns] = await Promise.all([
+const [grid, stations, lines, nearExits, routeInfo, patterns] = await Promise.all([
   fetchJson<Grid>("grid.json"),
   stationList,
   fetchJson<GeoJSON.FeatureCollection>("lines.json"),
@@ -720,9 +721,12 @@ let selectedExitMinute: Uint8Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
 
+// The walks out of stations: the near ones first, then all of them once the far ones are in.
+let exits = nearExits;
+
 // Computes the times off the page's thread; see `times.worker.ts`.
 const timesWorker = new Worker(new URL("./times.worker.ts", import.meta.url), { type: "module" });
-{
+function sendExits(): void {
   const request: TimesRequest = {
     kind: "exits",
     exits,
@@ -731,6 +735,13 @@ const timesWorker = new Worker(new URL("./times.worker.ts", import.meta.url), { 
   };
   timesWorker.postMessage(request);
 }
+sendExits();
+// The far walks, after the page has drawn with the near ones, as they're most of the download.
+void fetchBinary("exits-far.bin").then((far) => {
+  exits = mergeExits(nearExits, parseExits(far, stations.length), stations.length);
+  sendExits();
+  recompute();
+});
 // The last request sent, and whether the controls or station have changed since,
 // so that while one's computing, any number of changes ask for one more, not one each.
 let timesAsked = 0;

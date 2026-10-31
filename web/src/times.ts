@@ -3,10 +3,10 @@
 // See `src/subway_sheds/export.py` for the files.
 
 // As `src/subway_sheds/travel_times.py` routes: departing each minute of an hour,
-// keeping trips of up to 2 hours, walking out of a station for up to half an hour.
+// keeping trips of up to 2 hours, walking out of a station for up to an hour.
 const MINUTES = 60;
 const MAX_SECONDS = 120 * 60;
-const MAX_EXIT_WALK_SECONDS = 30 * 60;
+const MAX_EXIT_WALK_SECONDS = 60 * 60;
 // The median over the window's departures, as routing picks it.
 const MEDIAN = Math.ceil(0.5 * MINUTES) - 1;
 // The runs each station's arrivals have, by day, then fare, then scenario.
@@ -48,6 +48,29 @@ export function parseExits(buffer: ArrayBuffer, stations: number): Exits {
     starts[s] = Math.max(starts[s] ?? 0, starts[s - 1] ?? 0);
   }
   return { cell: column(1), exitSeconds: column(2), meters: column(3), starts };
+}
+
+// `near`'s walks out of stations and `far`'s, by station.
+export function mergeExits(near: Exits, far: Exits, stations: number): Exits {
+  const n = near.cell.length + far.cell.length;
+  const cell = new Uint16Array(n);
+  const exitSeconds = new Uint16Array(n);
+  const meters = new Uint16Array(n);
+  const starts = new Uint32Array(stations + 1);
+  let at = 0;
+  for (let s = 0; s < stations; s++) {
+    starts[s] = at;
+    for (const part of [near, far]) {
+      const from = part.starts[s] ?? 0;
+      const to = part.starts[s + 1] ?? 0;
+      cell.set(part.cell.subarray(from, to), at);
+      exitSeconds.set(part.exitSeconds.subarray(from, to), at);
+      meters.set(part.meters.subarray(from, to), at);
+      at += to - from;
+    }
+  }
+  starts[stations] = at;
+  return { cell, exitSeconds, meters, starts };
 }
 
 // When trains reach each station each minute, in seconds from the window's start:
