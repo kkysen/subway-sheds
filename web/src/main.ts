@@ -429,7 +429,7 @@ timeInfoButton.addEventListener("click", () => {
 fullMap.hidden = window.top === window.self;
 
 // The controls kept across reloads and in links, by their inputs' name.
-const savedControls = ["day", "view", "speed"] as const;
+const savedControls = ["day", "view", "speed", "fare"] as const;
 
 // Prefixed, since every page on kkysen.github.io shares the same storage.
 const storageKey = (name: string): string => `subway-sheds:${name}`;
@@ -558,6 +558,19 @@ function currentSpeed(): number {
 
 function showSpeed(): void {
   speedValue.textContent = `${currentSpeed()} mph`;
+}
+
+// How a journey's fares are paid: at each entry to the system, at most once, or never, with an unlimited card.
+const fares = ["each", "capped", "unlimited"] as const;
+type Fare = (typeof fares)[number];
+
+function currentFare(): Fare {
+  const value = new FormData(controls).get("fare");
+  const fare = fares.find((fare) => fare === value);
+  if (fare === undefined) {
+    throw new Error(`unknown fare ${String(value)}`);
+  }
+  return fare;
 }
 
 function currentView(): View {
@@ -1197,9 +1210,17 @@ function journeyLine(
   }
   const line = document.createElement("span");
   line.className = "route-trains";
+  // Whether a step that enters the system pays there, as the fare chosen has it.
+  const fare = currentFare();
+  let paid = false;
+  const pays = (enters: boolean): boolean => {
+    const paying = enters && (fare === "each" || (fare === "capped" && !paid));
+    paid ||= paying;
+    return paying;
+  };
   const first = rides[0];
   if (first !== undefined && departs !== undefined) {
-    line.append(journeyStep("→", first.start - departs, "journey-change", true));
+    line.append(journeyStep("→", first.start - departs, "journey-change", pays(true)));
   }
   let last: RouteLeg | undefined;
   for (const leg of legs) {
@@ -1208,7 +1229,12 @@ function journeyLine(
     }
     if (last !== undefined) {
       line.append(
-        journeyStep("→", leg.start - last.end, "journey-change", paysBetween(legs, last, leg)),
+        journeyStep(
+          "→",
+          leg.start - last.end,
+          "journey-change",
+          pays(paysBetween(legs, last, leg)),
+        ),
       );
     }
     line.append(journeyStep(bullet(trainOf(leg)), leg.end - leg.start, "journey-ride"));
