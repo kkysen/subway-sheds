@@ -185,6 +185,25 @@ export function travelTimes(
   return { times, exitFrom };
 }
 
+// The minute of the window departing at which `station` is reached at its median in `run`,
+// whose journey `Routes` has, or `undefined` if it's not reached.
+export function medianDeparture(
+  arrivals: Arrivals,
+  run: number,
+  station: number,
+  stations: number,
+): number | undefined {
+  const trips: [number, number][] = [];
+  for (let m = 0; m < MINUTES; m++) {
+    const clock = arrivals[(run * MINUTES + m) * stations + station] ?? UNREACHED_SECONDS;
+    trips.push([clock === UNREACHED_SECONDS ? clock : clock - 60 * m, m]);
+  }
+  // Sorted as `route` sorts them, by trip, then minute.
+  trips.sort(([a, m], [b, n]) => a - b || m - n);
+  const [trip, minute] = trips[MEDIAN] ?? [UNREACHED_SECONDS, 0];
+  return trip === UNREACHED_SECONDS ? undefined : minute;
+}
+
 // The seconds walking out of `station` to `cell` takes at `mph`, as `travelTimes` counts it,
 // or from `origin` itself, without going in to its platforms; `undefined` if it's not walked.
 export function walkOutSeconds(

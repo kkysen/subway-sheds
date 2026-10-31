@@ -17,6 +17,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { BandsLayer, EARTH_CIRCUMFERENCE } from "./bands";
 import {
   type Arrivals,
+  medianDeparture,
   NO_STATION,
   parseArrivals,
   parseExits,
@@ -927,7 +928,10 @@ function showBand(band: number, lngLat: LngLat): void {
   if (from !== undefined) {
     const origin = stations.findIndex((station) => station.id === selected);
     const walk = walkOutSeconds(exits, exitFrom, cell, currentSpeed(), exitFrom === origin);
-    const line = journeyLine(exitFrom === origin ? [] : routeLegs(from), walk);
+    const line =
+      exitFrom === origin
+        ? journeyLine([], undefined, walk)
+        : journeyLine(routeLegs(from), departureOf(from), walk);
     if (line !== undefined) {
       label.append(document.createElement("br"), line);
     }
@@ -1048,6 +1052,16 @@ function currentRun(): number {
   return 2 * days.indexOf(currentDay()) + (currentView() === "baseline" ? 0 : 1);
 }
 
+// When, in seconds into the window, the journey to `station` the page shows departs.
+function departureOf(station: Station): number | undefined {
+  if (selectedArrivals === undefined) {
+    return undefined;
+  }
+  const at = stations.indexOf(station);
+  const minute = medianDeparture(selectedArrivals, currentRun(), at, stations.length);
+  return minute === undefined ? undefined : 60 * minute;
+}
+
 // The journey from the selected station to `station`, in the run shown.
 function routeLegs(station: Station): RouteLeg[] {
   if (selectedRoutes === undefined) {
@@ -1118,13 +1132,26 @@ function journeyStep(top: Node | string, seconds: number, className: string): HT
 
 // A journey's trains, each with its ride's minutes under it, and between them,
 // the minutes changing, walking and waiting, then, if given, the walk out at the end.
-function journeyLine(legs: readonly RouteLeg[], walkOut?: number): HTMLElement | undefined {
+// Before them, departing at `departs` seconds into the window, going in and waiting for the first,
+// or walking to another station for it.
+function journeyLine(
+  legs: readonly RouteLeg[],
+  departs: number | undefined,
+  walkOut?: number,
+): HTMLElement | undefined {
   const rides = legs.filter((leg) => leg.pattern !== WALK_LEG);
   if (rides.length === 0 && walkOut === undefined) {
     return undefined;
   }
   const line = document.createElement("span");
   line.className = "route-trains";
+  const first = rides[0];
+  if (first !== undefined && departs !== undefined) {
+    const boards = patterns[currentRun()]?.[first.pattern]?.stations[first.a];
+    const origin = stations.findIndex((station) => station.id === selected);
+    const start = boards === origin ? "wait" : "walk";
+    line.append(journeyStep(start, first.start - departs, "journey-start"), "→");
+  }
   let last: RouteLeg | undefined;
   for (const leg of legs) {
     if (leg.pattern === WALK_LEG) {
@@ -1469,7 +1496,7 @@ await loaded;
     }
     const route = routeLegs(station);
     showRoute(station);
-    const line = journeyLine(route);
+    const line = journeyLine(route, departureOf(station));
     if (line !== undefined) {
       label.append(document.createElement("br"), line);
     }
