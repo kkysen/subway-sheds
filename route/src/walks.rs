@@ -56,6 +56,8 @@ pub struct Walks {
     pub transfers: Vec<(StopIdx, StopIdx, Secs)>,
     /// Each stop's complex, to tell which of `transfers.txt`'s footpaths to keep.
     pub complexes: Vec<Option<String>>,
+    /// Each stop's station, by its index in `StreetWalks`' stations.
+    pub stations: Vec<Option<u32>>,
 }
 
 /// A station's entrances on the streets, each with its time to the platforms as a distance.
@@ -190,11 +192,74 @@ impl StreetWalks {
 }
 
 impl StreetWalks {
+    /// Each station's ID, by its index.
+    pub fn stations(&self) -> &[String] {
+        &self.stations
+    }
+
     /// The complex of the station `id`, if it's one of these.
     pub fn complex(&self, id: &str) -> Option<&str> {
         let i = self.stations.iter().position(|s| s == id)?;
         Some(&self.complexes[i])
     }
+}
+
+/// From each station's platforms to destinations, for walking at any speed:
+/// `(station, destination, seconds out of the station, meters on the streets)`,
+/// through whichever entrance is quickest at `speed` millimeters a second,
+/// walking at most `limit` millimeters.
+pub fn exits(
+    graph: &Graph,
+    stations: &[Station],
+    destinations: &[(f64, f64)],
+    speed: Mm,
+    limit: Mm,
+) -> Vec<(u32, u32, u16, u16)> {
+    let dest_splits: Vec<(u32, Split)> = destinations
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &(lat, lon))| Some((i as u32, graph.snap(lat, lon)?)))
+        .collect();
+    let entrances: Vec<(u32, Secs, Split)> = stations
+        .iter()
+        .enumerate()
+        .flat_map(|(s, (_, _, entrances))| {
+            entrances
+                .iter()
+                .filter_map(move |&(lat, lon, secs)| Some((s as u32, secs, graph.snap(lat, lon)?)))
+        })
+        .collect();
+    let reached: Vec<Vec<(u32, u32, Secs, Mm)>> = entrances
+        .par_iter()
+        .map_init(
+            || Search::new(graph),
+            |search, &(s, secs, ref split)| {
+                search.run(split, limit);
+                dest_splits
+                    .iter()
+                    .filter_map(|(d, to)| {
+                        let mm = search.to(to).filter(|&mm| mm <= limit)?;
+                        Some((s, *d, secs, mm))
+                    })
+                    .collect()
+            },
+        )
+        .collect();
+    // The quickest entrance at `speed` for each station and destination.
+    let mut best: HashMap<(u32, u32), (Secs, Mm)> = HashMap::default();
+    let cost = |(secs, mm): (Secs, Mm)| secs as Mm * speed + mm;
+    for (s, d, secs, mm) in reached.into_iter().flatten() {
+        let entry = best.entry((s, d)).or_insert((secs, mm));
+        if cost((secs, mm)) < cost(*entry) {
+            *entry = (secs, mm);
+        }
+    }
+    let mut exits: Vec<(u32, u32, u16, u16)> = best
+        .into_iter()
+        .map(|((s, d), (secs, mm))| (s, d, secs as u16, (mm / 1000) as u16))
+        .collect();
+    exits.sort_unstable();
+    exits
 }
 
 /// Of `reached` stops, only the closest on each of `tts`' patterns, as R5 keeps
@@ -245,6 +310,7 @@ impl Walks {
             }
         }
         let mut walks = Self {
+            stations: station.clone(),
             egress: vec![Vec::new(); tt.stops.len()],
             complexes: station
                 .iter()

@@ -16,6 +16,8 @@ def travel_times(
     destinations: list[tuple[float, float]],
     speed: int,
     runs: list[tuple[StrPath, date, str, int, StrPath]],
+    exits_out: StrPath,
+    exits_limit: int,
 ) -> list[int]:
     """
     Median minutes from each of `origins`, by station ID, starting on the street at its entrances,
@@ -27,6 +29,10 @@ def travel_times(
     (see `route/src/walks.rs`),
     changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
     with `islands`' stations' stops all on one island platform.
+    Each run also writes its origins' median rides to stations' platforms
+    to `{out}-arrivals.parquet`, as `origin`, `station`, and `seconds`,
+    and every station's walks out to destinations, up to `exits_limit` millimeters,
+    go to `exits_out`, as `station`, `destination`, `exit_seconds`, and `meters`.
     Returns how many rows each run wrote.
 
     The streets are read and walked once, for every feed's stations.

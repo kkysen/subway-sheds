@@ -25,12 +25,23 @@ MAX_TIME = datetime.timedelta(minutes=120)
 WALKING_SPEED_KM_PER_H = 3 * 1.609344
 # In millimeters a second, rounded down, as the routing walks.
 WALKING_SPEED_MM_PER_S = int(WALKING_SPEED_KM_PER_H / 3600 * 1000 * 1000)
+# The speeds the page's slider walks out of stations at, in miles an hour.
+SLIDER_MPH = (2.0, 4.0)
+# How far the page may walk from a station: `EXIT_WALK` at the slider's fastest.
+EXIT_WALK = datetime.timedelta(minutes=30)
+EXIT_WALK_MM = int(SLIDER_MPH[1] * 1609.344 / 3600 * 1000 * EXIT_WALK.total_seconds())
+# Every station's walks out to the cells, for walking at any of the slider's speeds.
+EXITS = paths.TRAVEL_TIMES / "exits.parquet"
 # Most rides in a journey, as R5 routed before.
 MAX_RIDES = 8
 
 
 def output_path(scenario: Scenario, day: Day) -> Path:
     return paths.TRAVEL_TIMES / f"{scenario}-{day}.parquet"
+
+
+def arrivals_path(scenario: Scenario, day: Day) -> Path:
+    return paths.TRAVEL_TIMES / f"{scenario}-{day}-arrivals.parquet"
 
 
 def stations_output_path(scenario: Scenario, day: Day) -> Path:
@@ -67,7 +78,7 @@ def from_stations(
     origins: list[gtfs.Station],
     cells: gpd.GeoDataFrame,
     stations: list[gtfs.Station],
-) -> Iterator[tuple[Scenario, Day, pd.DataFrame, pd.DataFrame]]:
+) -> Iterator[tuple[Scenario, Day, pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
     """
     Median minutes from each of `origins` to each of `cells` and `stations`, walking at both ends,
     in each scenario on each day of `runs`, routed together so that the streets are walked once.
@@ -76,6 +87,10 @@ def from_stations(
     to the cells as `station`, `cell`, and `minutes`,
     and to the stations themselves as `station`, `to_station`, and `minutes`,
     so that a station's own time doesn't count walking to the middle of the cell it's in.
+    With them, the median ride to each station's platforms reached by train,
+    as `station`, `to_station`, and `seconds`, which the page adds walks out of stations to
+    at whatever speed its reader walks.
+    Every station's walks out to the cells, for that, go to `EXITS`.
     """
     # The stations after the cells, numbered on from them, as one set of destinations.
     destinations = list(zip(cells.geometry.y, cells.geometry.x, strict=True)) + [
@@ -104,6 +119,13 @@ def from_stations(
                 )
                 for (scenario, day), out in zip(runs, outs, strict=True)
             ],
+            Path(tmp) / "exits.parquet",
+            EXIT_WALK_MM,
+        )
+        exits = pd.read_parquet(Path(tmp) / "exits.parquet").rename(columns={"destination": "cell"})
+        EXITS.parent.mkdir(parents=True, exist_ok=True)
+        exits[exits["cell"] < len(cells)].astype({"station": "category"}).to_parquet(
+            EXITS, index=False
         )
         for (scenario, day), out in zip(runs, outs, strict=True):
             times = pd.read_parquet(out).rename(
@@ -113,6 +135,11 @@ def from_stations(
             station_times = times[to_station].assign(
                 to_station=lambda t: [stations[i - len(cells)].id for i in t["cell"]]
             )[["station", "to_station", "minutes"]]
+            arrivals = (
+                pd.read_parquet(out.with_name(f"{out.stem}-arrivals.parquet"))
+                .rename(columns={"origin": "station", "station": "to_station"})
+                .astype({"station": "category", "to_station": "category"})
+            )
             yield (
                 scenario,
                 day,
@@ -122,4 +149,5 @@ def from_stations(
                 station_times.astype(
                     {"station": "category", "to_station": "category", "minutes": "uint8"}
                 ),
+                arrivals,
             )

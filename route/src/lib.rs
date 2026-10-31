@@ -11,16 +11,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
-use arrow_array::{RecordBatch, StringArray, UInt8Array, UInt32Array};
-use arrow_schema::{DataType, Field, Schema};
+use arrow_array::{ArrayRef, RecordBatch, StringArray, UInt8Array, UInt16Array, UInt32Array};
+use arrow_schema::{Field, Schema};
 use jiff::civil::Date;
 use parquet::arrow::ArrowWriter;
 use pyo3::types::{PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pyfunction, pymodule, wrap_pyfunction};
-use raptor::gtfs::{Feed, Secs, parse_time};
-use raptor::raptor::Router;
 use raptor::assign::{DEFAULT_STACKED_SECS_PER_LEVEL, DEFAULT_UP_AND_OVER_SECS};
+use raptor::gtfs::{Feed, Secs, parse_time};
 use raptor::platforms::Platforms;
+use raptor::raptor::Router;
 use raptor::timetable::{StopIdx, Timetable};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -44,12 +44,16 @@ pub struct Request<'a> {
     /// The longest journey kept.
     pub max_secs: Secs,
     pub destinations: usize,
+    /// How many stations `StreetWalks` has.
+    pub stations: usize,
 }
 
 /// Each origin's travel times, as R5's `TravelTimeMatrix` reports them:
 /// its `PERCENTILE`th journey over a departure each minute of the window,
 /// in whole minutes rounded down, to each destination reached within `max_secs`.
-pub fn travel_times(req: &Request, origins: &[String]) -> Vec<Vec<(u32, u8)>> {
+/// With each, its ride to each station's platforms each minute, before walking out
+/// (see `Arrivals`).
+pub fn travel_times(req: &Request, origins: &[String]) -> Vec<(Vec<(u32, u8)>, Arrivals)> {
     let router = Router::with_max_rides(req.tt, req.max_rides);
     origins
         .par_iter()
@@ -57,13 +61,23 @@ pub fn travel_times(req: &Request, origins: &[String]) -> Vec<Vec<(u32, u8)>> {
         .collect()
 }
 
-fn origin_times(req: &Request, router: &Router, origin: &str) -> Vec<(u32, u8)> {
+/// An origin's arrival by train on each station's platforms each minute of the window,
+/// within `max_secs`, as `(station, minute, seconds from departing)`,
+/// by the station's index in `StreetWalks`:
+/// what the page adds walks out of stations to, at whatever speed its reader walks,
+/// before taking each destination's `PERCENTILE`th over the minutes, as here.
+pub type Arrivals = Vec<(u32, u8, u16)>;
+
+fn origin_times(req: &Request, router: &Router, origin: &str) -> (Vec<(u32, u8)>, Arrivals) {
     let walks = req.walks;
     let access = walks.access.get(origin).map_or(&[][..], Vec::as_slice);
     let direct = walks.direct.get(origin).map_or(&[][..], Vec::as_slice);
     // Each destination's time each minute, minute-major.
     let n = req.destinations;
     let mut times = vec![Secs::MAX; req.minutes as usize * n];
+    // Each station's arrival each minute, minute-major.
+    let ns = req.stations;
+    let mut at_stations = vec![Secs::MAX; req.minutes as usize * ns];
     let mut labels = router.labels();
     for m in (0..req.minutes).rev() {
         let depart = req.depart + 60 * m as Secs;
@@ -77,22 +91,40 @@ fn origin_times(req: &Request, router: &Router, origin: &str) -> Vec<(u32, u8)> 
                 continue;
             }
             let ride = arrive - depart;
+            if let Some(station) = walks.stations[s] {
+                let at = &mut at_stations[m as usize * ns + station as usize];
+                *at = (*at).min(ride);
+            }
             for &(d, walk) in &walks.egress[s] {
                 times[d as usize] = times[d as usize].min(ride + walk);
             }
         }
     }
     let index = percentile_index(req.minutes as usize, PERCENTILE);
-    let mut each_minute = Vec::with_capacity(req.minutes as usize);
-    (0..n)
-        .filter_map(|d| {
-            each_minute.clear();
-            each_minute.extend((0..req.minutes as usize).map(|m| times[m * n + d]));
-            each_minute.sort_unstable();
-            let t = each_minute[index];
-            (t <= req.max_secs).then_some((d as u32, (t / 60) as u8))
+    let medians = |times: &[Secs], n: usize| -> Vec<(u32, Secs)> {
+        let mut each_minute = Vec::with_capacity(req.minutes as usize);
+        (0..n)
+            .filter_map(|d| {
+                each_minute.clear();
+                each_minute.extend((0..req.minutes as usize).map(|m| times[m * n + d]));
+                each_minute.sort_unstable();
+                let t = each_minute[index];
+                (t <= req.max_secs).then_some((d as u32, t))
+            })
+            .collect()
+    };
+    let cells = medians(&times, n)
+        .into_iter()
+        .map(|(d, t)| (d, (t / 60) as u8))
+        .collect();
+    let arrivals = (0..ns)
+        .flat_map(|s| (0..req.minutes as usize).map(move |m| (s, m)))
+        .filter_map(|(s, m)| {
+            let t = at_stations[m * ns + s];
+            (t <= req.max_secs).then_some((s as u32, m as u8, t as u16))
         })
-        .collect()
+        .collect();
+    (cells, arrivals)
 }
 
 /// The index of a percentile in a sorted list of `n`, as R5 picks it, without interpolating
@@ -145,30 +177,118 @@ fn change_trains(tt: &mut Timetable, walks: &Walks) {
     }
 }
 
-/// Writes each origin's travel times as `origin`, `destination`, and `minutes`.
-fn write_times(out: &Path, origins: &[String], times: &[Vec<(u32, u8)>]) -> Result<usize> {
-    let rows: usize = times.iter().map(Vec::len).sum();
-    let origin = StringArray::from_iter_values(
-        origins
+/// Writes `columns` to `out` as Parquet.
+fn write_parquet(out: &Path, columns: Vec<(&str, ArrayRef)>) -> Result<()> {
+    let schema = Arc::new(Schema::new(
+        columns
             .iter()
-            .zip(times)
-            .flat_map(|(o, t)| std::iter::repeat_n(o.as_str(), t.len())),
-    );
-    let destination = UInt32Array::from_iter_values(times.iter().flatten().map(|&(d, _)| d));
-    let minutes = UInt8Array::from_iter_values(times.iter().flatten().map(|&(_, m)| m));
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("origin", DataType::Utf8, false),
-        Field::new("destination", DataType::UInt32, false),
-        Field::new("minutes", DataType::UInt8, false),
-    ]));
+            .map(|(name, array)| Field::new(*name, array.data_type().clone(), false))
+            .collect::<Vec<_>>(),
+    ));
     let batch = RecordBatch::try_new(
         schema.clone(),
-        vec![Arc::new(origin), Arc::new(destination), Arc::new(minutes)],
+        columns.into_iter().map(|(_, a)| a).collect(),
     )?;
     let mut writer = ArrowWriter::try_new(std::fs::File::create(out)?, schema, None)?;
     writer.write(&batch)?;
     writer.close()?;
-    Ok(rows)
+    Ok(())
+}
+
+/// Each origin repeated once for each of its rows.
+fn origin_column<T>(origins: &[String], rows: &[Vec<T>]) -> ArrayRef {
+    Arc::new(StringArray::from_iter_values(
+        origins
+            .iter()
+            .zip(rows)
+            .flat_map(|(o, r)| std::iter::repeat_n(o.as_str(), r.len())),
+    ))
+}
+
+/// Writes each origin's travel times as `origin`, `destination`, and `minutes`.
+fn write_times(out: &Path, origins: &[String], times: &[Vec<(u32, u8)>]) -> Result<usize> {
+    write_parquet(
+        out,
+        vec![
+            ("origin", origin_column(origins, times)),
+            (
+                "destination",
+                Arc::new(UInt32Array::from_iter_values(
+                    times.iter().flatten().map(|&(d, _)| d),
+                )),
+            ),
+            (
+                "minutes",
+                Arc::new(UInt8Array::from_iter_values(
+                    times.iter().flatten().map(|&(_, m)| m),
+                )),
+            ),
+        ],
+    )?;
+    Ok(times.iter().map(Vec::len).sum())
+}
+
+/// Writes each origin's arrivals as `origin`, `station`, `minute`, and `seconds`.
+fn write_arrivals(
+    out: &Path,
+    origins: &[String],
+    stations: &[String],
+    arrivals: &[Arrivals],
+) -> Result<()> {
+    let flat = || arrivals.iter().flatten();
+    write_parquet(
+        out,
+        vec![
+            ("origin", origin_column(origins, arrivals)),
+            (
+                "station",
+                Arc::new(StringArray::from_iter_values(
+                    flat().map(|&(s, ..)| stations[s as usize].as_str()),
+                )),
+            ),
+            (
+                "minute",
+                Arc::new(UInt8Array::from_iter_values(flat().map(|&(_, m, _)| m))),
+            ),
+            (
+                "seconds",
+                Arc::new(UInt16Array::from_iter_values(flat().map(|&(.., t)| t))),
+            ),
+        ],
+    )
+}
+
+/// Writes `walks::exits` as `station`, `destination`, `exit_seconds`, and `meters`.
+fn write_exits(out: &Path, stations: &[String], exits: &[(u32, u32, u16, u16)]) -> Result<()> {
+    write_parquet(
+        out,
+        vec![
+            (
+                "station",
+                Arc::new(StringArray::from_iter_values(
+                    exits.iter().map(|e| stations[e.0 as usize].as_str()),
+                )),
+            ),
+            (
+                "destination",
+                Arc::new(UInt32Array::from_iter_values(exits.iter().map(|e| e.1))),
+            ),
+            (
+                "exit_seconds",
+                Arc::new(UInt16Array::from_iter_values(exits.iter().map(|e| e.2))),
+            ),
+            (
+                "meters",
+                Arc::new(UInt16Array::from_iter_values(exits.iter().map(|e| e.3))),
+            ),
+        ],
+    )
+}
+
+/// Where a run writing its times to `out` writes its arrivals: `{out}-arrivals.parquet`.
+fn arrivals_path(out: &Path) -> PathBuf {
+    let stem = out.file_stem().unwrap_or_default().to_string_lossy();
+    out.with_file_name(format!("{stem}-arrivals.parquet"))
 }
 
 /// One routing: a feed on a date, departing each minute of `minutes` from `depart`,
@@ -181,6 +301,9 @@ type Run = (PathBuf, Date, String, u32, PathBuf);
 /// through `stations`' entrances (see `walks.rs`),
 /// changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
 /// with `islands`' stations' stops all on one island platform (see `use_platforms`).
+/// Each run also writes its origins' arrivals at stations to `{out}-arrivals.parquet`,
+/// and the walks out of every station to destinations, for walking at any speed,
+/// up to `exits_limit` millimeters, go to `exits_out` (see `walks::exits`).
 /// Returns how many rows each run wrote.
 ///
 /// The streets are read and walked once, for every feed's stations (see `walks.rs`).
@@ -198,6 +321,8 @@ fn py_travel_times(
     destinations: Vec<(f64, f64)>,
     speed: Mm,
     runs: Vec<Run>,
+    exits_out: PathBuf,
+    exits_limit: Mm,
 ) -> Result<Vec<usize>> {
     let max_secs = max_minutes as Secs * 60;
     py.detach(|| {
@@ -216,6 +341,9 @@ fn py_travel_times(
         drop(opened);
         let graph = Graph::build(&Osm::read(&osm)?);
         let all = StreetWalks::compute(&graph, &stations, &origins, &destinations, speed, max_secs);
+        let exits = walks::exits(&graph, &stations, &destinations, speed, exits_limit);
+        write_exits(&exits_out, all.stations(), &exits)?;
+        drop(exits);
         drop(graph);
 
         let platforms = Platforms::load(&platforms)?;
@@ -237,8 +365,12 @@ fn py_travel_times(
                 max_rides,
                 max_secs,
                 destinations: destinations.len(),
+                stations: all.stations().len(),
             };
-            rows[i] = write_times(out, &origins, &travel_times(&req, &origins))?;
+            let (times, arrivals): (Vec<_>, Vec<_>) =
+                travel_times(&req, &origins).into_iter().unzip();
+            rows[i] = write_times(out, &origins, &times)?;
+            write_arrivals(&arrivals_path(out), &origins, all.stations(), &arrivals)?;
         }
         Ok(rows)
     })
@@ -319,12 +451,16 @@ mod tests {
         let (a, b) = (tt.stop("A").unwrap(), tt.stop("B").unwrap());
         let mut egress = vec![Vec::new(); tt.stops.len()];
         egress[b as usize].push((0, 60));
+        let mut stations = vec![None; tt.stops.len()];
+        stations[a as usize] = Some(0);
+        stations[b as usize] = Some(1);
         let walks = Walks {
             access: [("O".to_owned(), vec![(a, 120)])].into_iter().collect(),
             direct: [("O".to_owned(), vec![(1, 300)])].into_iter().collect(),
             egress,
             transfers: Vec::new(),
             complexes: Vec::new(),
+            stations,
         };
         let req = Request {
             tt: &tt,
@@ -334,10 +470,14 @@ mod tests {
             max_rides: 8,
             max_secs: 120 * 60,
             destinations: 3,
+            stations: 2,
         };
         // Leaving at 08:00, 08:01, and 08:02, the walk makes the 08:05: 16, 15, and 14 minutes.
         // Destination 2 is never reached.
         let times = travel_times(&req, &["O".to_owned()]);
-        assert_eq!(times, [[(0, 15), (1, 5)]]);
+        // On B's platform when the 08:05 arrives, 15, 14, and 13 minutes after departing;
+        // A's only on foot, which walking straight to destinations covers.
+        let b_each_minute = vec![(1, 0, 15 * 60), (1, 1, 14 * 60), (1, 2, 13 * 60)];
+        assert_eq!(times, [(vec![(0, 15), (1, 5)], b_each_minute)]);
     }
 }
