@@ -45,7 +45,8 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   and the levels OSM puts platforms on,
   climbed by stairs, escalator, or elevator at the rates in `src/subway_sheds/access.py`.
   `subway-sheds access` rebuilds it to review and commit.
-  Changing trains between complexes walks the streets, out one entrance and in another.
+  Changing trains between complexes walks the streets, out one entrance and in another,
+  and the page draws those walks along the streets.
 - **Platforms**: `mta-od-data`'s physical platforms from OSM, at the commit `route/Cargo.toml` pins,
   which time changing trains within a complex as its `raptor`'s OSM transfers do:
   free on the same platform, up and over to another, a flight a level between stacked ones.

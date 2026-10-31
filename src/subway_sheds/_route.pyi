@@ -19,6 +19,7 @@ def travel_times(
     runs: list[tuple[StrPath, date, str, int, StrPath, bool]],
     exits_out: StrPath,
     exits_limit: int,
+    paths_out: StrPath,
 ) -> list[int]:
     """
     Median minutes from each of `origins`, by station ID, starting on the street at its entrances,
@@ -38,7 +39,11 @@ def travel_times(
     the journeys to them at the median minute to `{out}-routes.parquet`,
     and its patterns' stations to `{out}-patterns.parquet`,
     and every station's walks out to destinations, up to `exits_limit` millimeters,
-    go to `exits_out`, as `station`, `destination`, `exit_seconds`, and `meters`.
+    go to `exits_out`, as `station`, `destination`, `exit_seconds`, and `meters`,
+    and the street walks between stations of different complexes that changing trains may walk,
+    to draw, go to `paths_out`, as `from`, `to`, `latitude`, and `longitude`,
+    a row for each point, each walk's in order,
+    from the entrance walked out of to the one walked into.
     Returns how many rows each run wrote.
 
     The streets are read and walked once, for every feed's stations.

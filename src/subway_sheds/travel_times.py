@@ -36,6 +36,8 @@ EXIT_WALK_MM = int(SLIDER_MPH[1] * 1609.344 / 3600 * 1000 * EXIT_WALK.total_seco
 NEAR_EXIT_WALK_M = int(SLIDER_MPH[1] * 1609.344 / 3600 * NEAR_EXIT_WALK.total_seconds())
 # Every station's walks out to the cells, for walking at any of the slider's speeds.
 EXITS = paths.TRAVEL_TIMES / "exits.parquet"
+# The street walks between stations that changing trains walks, to draw.
+WALK_PATHS = paths.TRAVEL_TIMES / "walk_paths.parquet"
 # A route's leg that walks between stations, rather than riding a pattern.
 WALK = 0xFFFFFFFF
 # A route's `leg` for a journey with no legs, walked from the origin, on a row of its own.
@@ -118,7 +120,7 @@ def from_stations(
     destinations = list(zip(cells.geometry.y, cells.geometry.x, strict=True)) + [
         (s.lat, s.lon) for s in stations
     ]
-    paths.OUT.mkdir(parents=True, exist_ok=True)
+    paths.TRAVEL_TIMES.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=paths.OUT) as tmp:
         outs = [Path(tmp) / f"{scenario}-{day}-{fare}.parquet" for scenario, day, fare in runs]
         _route.travel_times(
@@ -145,6 +147,7 @@ def from_stations(
             ],
             Path(tmp) / "exits.parquet",
             EXIT_WALK_MM,
+            WALK_PATHS,
         )
         exits = pd.read_parquet(Path(tmp) / "exits.parquet").rename(columns={"destination": "cell"})
         EXITS.parent.mkdir(parents=True, exist_ok=True)

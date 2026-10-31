@@ -369,3 +369,187 @@ impl Walks {
         walks
     }
 }
+
+/// A walk between stations to draw: `(from, to, points)`, by station index,
+/// the points as `(latitude, longitude)`s.
+pub type Path = (u32, u32, Vec<(f64, f64)>);
+
+/// An entrance to walk from or to: where it is, where it links, and its time to the platforms.
+type Linked = ((f64, f64), Split, Mm);
+
+/// The points of `split`'s edge from where its point links to it to its end `v`,
+/// as `(latitude, longitude)`s, starting at the linked point.
+fn along_to(graph: &Graph, split: &Split, v: u32) -> Vec<(f64, f64)> {
+    let geometry = graph.geometry(split.edge);
+    let mut walked = 0.0;
+    let mut cut = geometry.len();
+    let mut linked = geometry.first().copied();
+    // Where the point links, `d0` from `v0` along the edge's geometry.
+    let at = f64::from(split.d0) / 1000.0;
+    for (k, pair) in geometry.windows(2).enumerate() {
+        let length = streets::graph::distance_m(pair[0], pair[1]);
+        if walked + length >= at {
+            let f = if length > 0.0 {
+                (at - walked) / length
+            } else {
+                0.0
+            };
+            linked = Some((
+                pair[0].0 + f * (pair[1].0 - pair[0].0),
+                pair[0].1 + f * (pair[1].1 - pair[0].1),
+            ));
+            cut = k + 1;
+            break;
+        }
+        walked += length;
+    }
+    let mut points: Vec<(f64, f64)> = linked.into_iter().collect();
+    if v == split.v1 {
+        points.extend_from_slice(&geometry[cut.min(geometry.len())..]);
+    } else {
+        points.extend(geometry[..cut.min(geometry.len())].iter().rev());
+    }
+    points
+}
+
+/// The street walk between each pair of stations of different complexes
+/// within `TRANSFER_LIMIT` of each other, as changing trains walks it, to draw:
+/// from the entrance walked out of to the one walked into,
+/// at `speed` millimeters a second.
+pub fn transfer_paths(graph: &Graph, stations: &[Station], speed: Mm) -> Vec<Path> {
+    let mm = |s: Secs| speed.saturating_mul(s as Mm);
+    let limit = mm(TRANSFER_LIMIT);
+    let entrances: Vec<Vec<Linked>> = stations
+        .iter()
+        .map(|(_, _, entrances)| {
+            entrances
+                .iter()
+                .filter_map(|&(lat, lon, s)| Some(((lat, lon), graph.snap(lat, lon)?, mm(s))))
+                .collect()
+        })
+        .collect();
+    entrances
+        .par_iter()
+        .enumerate()
+        .map_init(
+            || Search::new(graph),
+            |search, (s, from)| {
+                let sources: Vec<(u32, Mm)> = from
+                    .iter()
+                    .flat_map(|(_, split, cost)| {
+                        split.ends().map(|(v, d)| (v, d.saturating_add(*cost)))
+                    })
+                    .collect();
+                search.run_from_vertices(&sources, limit);
+                let mut paths = Vec::new();
+                for (t, to) in entrances.iter().enumerate() {
+                    if t == s || stations[t].1 == stations[s].1 {
+                        continue;
+                    }
+                    // The entrance walked into, as `Snapped::reached` picks it.
+                    let Some((reached, &(point, split, _))) = to
+                        .iter()
+                        .filter_map(|e| Some((search.to(&e.1)?.saturating_add(e.2), e)))
+                        .min_by_key(|&(reached, _)| reached)
+                    else {
+                        continue;
+                    };
+                    if reached > limit {
+                        continue;
+                    }
+                    let Some(edges) = search.path(&split) else {
+                        continue;
+                    };
+                    paths.push((
+                        s as u32,
+                        t as u32,
+                        chain(graph, from, &edges, point, &split),
+                    ));
+                }
+                paths
+            },
+        )
+        .flatten()
+        .collect()
+}
+
+/// The points of a walk along `edges` from one of `from`'s entrances to `point`, linked at `split`.
+fn chain(
+    graph: &Graph,
+    from: &[Linked],
+    edges: &[u32],
+    point: (f64, f64),
+    split: &Split,
+) -> Vec<(f64, f64)> {
+    // The vertices walked through, from the start, found from how the edges meet.
+    let ends = |e: u32| {
+        let edge = &graph.edges[e as usize];
+        (edge.from, edge.to)
+    };
+    let mut vertices = Vec::with_capacity(edges.len() + 1);
+    match edges {
+        // Linked to edges that meet: at the end of `split`'s that one of `from`'s links to.
+        [] => vertices.extend(
+            [split.v0, split.v1]
+                .into_iter()
+                .find(|&v| from.iter().any(|(_, s, _)| s.v0 == v || s.v1 == v)),
+        ),
+        [only] => {
+            // Its end nearer the linked point, which the walk doesn't start at.
+            let (a, b) = ends(*only);
+            let last = [split.v0, split.v1]
+                .into_iter()
+                .find(|&v| v == a || v == b)
+                .unwrap_or(b);
+            vertices.push(if last == a { b } else { a });
+            vertices.push(last);
+        }
+        [first, second, ..] => {
+            let (a, b) = ends(*first);
+            let (c, d) = ends(*second);
+            let mut v = if b == c || b == d { a } else { b };
+            vertices.push(v);
+            for &e in edges {
+                let (a, b) = ends(e);
+                v = if a == v { b } else { a };
+                vertices.push(v);
+            }
+        }
+    }
+    // The entrance walked out of: the one whose link reaches the start the quickest.
+    let start = vertices.first().copied();
+    let out = from
+        .iter()
+        .filter_map(|(at, s, cost)| {
+            let d = match start {
+                Some(v) => s.ends().into_iter().find(|&(u, _)| u == v)?.1,
+                None => s.to_edge,
+            };
+            Some((d.saturating_add(*cost), at, s))
+        })
+        .min_by_key(|&(d, ..)| d);
+    let mut points = Vec::new();
+    if let Some((_, &at, s)) = out {
+        points.push(at);
+        if let Some(v) = start {
+            let mut out_along = along_to(graph, s, v);
+            points.append(&mut out_along);
+        }
+    }
+    for (k, &e) in edges.iter().enumerate() {
+        let geometry = graph.geometry(e);
+        if graph.edges[e as usize].from == vertices[k] {
+            points.extend_from_slice(geometry);
+        } else {
+            points.extend(geometry.iter().rev());
+        }
+    }
+    if let Some(&v) = vertices.last() {
+        let mut in_along = along_to(graph, split, v);
+        in_along.reverse();
+        points.append(&mut in_along);
+    }
+    points.push(point);
+    points.dedup();
+    points
+}

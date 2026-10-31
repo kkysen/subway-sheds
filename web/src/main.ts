@@ -1364,6 +1364,14 @@ function journeyLine(
   return line;
 }
 
+// The street walks between stations that changing trains may walk, by `from|to`,
+// from the entrance walked out of to the one walked into, fetched after the page is drawn,
+// as they're only for drawing journeys, which walk straight until then.
+let walksBetween: Record<string, GeoJSON.Position[]> = {};
+void fetchJson<Record<string, GeoJSON.Position[]>>("walks.json").then((walks) => {
+  walksBetween = walks;
+});
+
 // The lines between consecutive stations, from the first to the second, by `from|to`.
 const segmentsBetween = new Map<string, GeoJSON.Position[]>();
 for (const feature of lines.features) {
@@ -1398,11 +1406,16 @@ function routeFeatures(
   const features: GeoJSON.Feature[] = [];
   const origin = stations.findIndex((station) => station.id === selected);
   let at = origin;
+  // Between stations, along the streets if changing trains may walk it, else straight.
   const walk = (from: number, to: number): void => {
     if (from !== to && from >= 0 && to >= 0) {
+      const streets = walksBetween[`${stations[from]?.id}|${stations[to]?.id}`] ?? [];
       features.push({
         type: "Feature",
-        geometry: { type: "LineString", coordinates: [coordinatesOf(from), coordinatesOf(to)] },
+        geometry: {
+          type: "LineString",
+          coordinates: [coordinatesOf(from), ...streets, coordinatesOf(to)],
+        },
         properties: { kind: "walk" },
       });
     }

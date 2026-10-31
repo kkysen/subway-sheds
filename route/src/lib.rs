@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
-use arrow_array::{ArrayRef, RecordBatch, StringArray, UInt8Array, UInt16Array, UInt32Array};
+use arrow_array::{
+    ArrayRef, Float64Array, RecordBatch, StringArray, UInt8Array, UInt16Array, UInt32Array,
+};
 use arrow_schema::{Field, Schema};
 use jiff::civil::Date;
 use parquet::arrow::ArrowWriter;
@@ -491,6 +493,41 @@ fn write_exits(out: &Path, stations: &[String], exits: &[(u32, u32, u16, u16)]) 
     )
 }
 
+/// Writes `walks::transfer_paths` as `from`, `to`, `latitude`, and `longitude`,
+/// a row for each point, each walk's in order.
+fn write_paths(out: &Path, stations: &[String], paths: &[walks::Path]) -> Result<()> {
+    let points = || {
+        paths
+            .iter()
+            .flat_map(|(s, t, p)| p.iter().map(move |q| (*s, *t, *q)))
+    };
+    write_parquet(
+        out,
+        vec![
+            (
+                "from",
+                Arc::new(StringArray::from_iter_values(
+                    points().map(|(s, ..)| stations[s as usize].as_str()),
+                )),
+            ),
+            (
+                "to",
+                Arc::new(StringArray::from_iter_values(
+                    points().map(|(_, t, _)| stations[t as usize].as_str()),
+                )),
+            ),
+            (
+                "latitude",
+                Arc::new(Float64Array::from_iter_values(points().map(|(.., q)| q.0))),
+            ),
+            (
+                "longitude",
+                Arc::new(Float64Array::from_iter_values(points().map(|(.., q)| q.1))),
+            ),
+        ],
+    )
+}
+
 /// Where a run writing its times to `out` writes its `what`: `{out}-{what}.parquet`.
 fn beside(out: &Path, what: &str) -> PathBuf {
     let stem = out.file_stem().unwrap_or_default().to_string_lossy();
@@ -650,7 +687,8 @@ type Run = (PathBuf, Date, String, u32, PathBuf, bool);
 /// and changing free out of the system between the complexes of `free`'s pairs of stations.
 /// Each run also writes its origins' arrivals at stations to `{out}-arrivals.parquet`,
 /// and the walks out of every station to destinations, for walking at any speed,
-/// up to `exits_limit` millimeters, go to `exits_out` (see `walks::exits`).
+/// up to `exits_limit` millimeters, go to `exits_out` (see `walks::exits`),
+/// and the street walks between stations to draw go to `paths_out` (see `walks::transfer_paths`).
 /// Returns how many rows each run wrote.
 ///
 /// The streets are read and walked once, for every feed's stations (see `walks.rs`).
@@ -671,6 +709,7 @@ fn py_travel_times(
     runs: Vec<Run>,
     exits_out: PathBuf,
     exits_limit: Mm,
+    paths_out: PathBuf,
 ) -> Result<Vec<usize>> {
     let max_secs = max_minutes as Secs * 60;
     py.detach(|| {
@@ -692,6 +731,9 @@ fn py_travel_times(
         let exits = walks::exits(&graph, &stations, &destinations, speed, exits_limit);
         write_exits(&exits_out, all.stations(), &exits)?;
         drop(exits);
+        let paths = walks::transfer_paths(&graph, &stations, speed);
+        write_paths(&paths_out, all.stations(), &paths)?;
+        drop(paths);
         drop(graph);
 
         let platforms = Platforms::load(&platforms)?;
