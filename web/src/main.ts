@@ -919,7 +919,10 @@ function showBand(band: number, lngLat: LngLat): void {
   showRoute(stations[exitFromOf(cell)], lngLat);
   const here = describeCell(cell);
   const label = document.createElement("span");
-  label.append(`${describeBand(band, currentView())}${here === "" ? "" : `. ${here}`}`);
+  label.append(describeBand(band, currentView()));
+  if (here !== "") {
+    label.append(document.createElement("br"), here);
+  }
   // The trains there, and the walk out of the last station at the speed chosen.
   const exitFrom = exitFromOf(cell);
   const from = stations[exitFrom];
