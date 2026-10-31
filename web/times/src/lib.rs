@@ -78,6 +78,53 @@ pub fn compute(
     runs: &[usize],
     out: TravelTimes,
 ) {
+    compute_tracking::<false>(
+        arrivals,
+        exits,
+        origin,
+        cells,
+        stations,
+        mph,
+        runs,
+        out,
+        &mut [],
+    );
+}
+
+/// `compute`, but also marking in `used` each walk out, by its place in `exits`,
+/// that some cell's quickest trip takes in some minute, walking out of a station or from `origin`.
+/// The rest change nothing `compute` gives: none is ever the quickest.
+#[allow(clippy::too_many_arguments)]
+pub fn used_exits(
+    arrivals: &[u16],
+    exits: &Exits,
+    origin: usize,
+    cells: usize,
+    stations: usize,
+    mph: f64,
+    runs: &[usize],
+    out: TravelTimes,
+    used: &mut [bool],
+) {
+    compute_tracking::<true>(
+        arrivals, exits, origin, cells, stations, mph, runs, out, used,
+    );
+}
+
+/// `compute`, and if `TRACK`, `used_exits`, which is only for the pipeline,
+/// so that the page's doesn't do the work.
+#[allow(clippy::too_many_arguments)]
+fn compute_tracking<const TRACK: bool>(
+    arrivals: &[u16],
+    exits: &Exits,
+    origin: usize,
+    cells: usize,
+    stations: usize,
+    mph: f64,
+    runs: &[usize],
+    out: TravelTimes,
+    used: &mut [bool],
+) {
     let speed = mph * METERS_PER_SECOND_PER_MPH;
     // Each walk out's seconds, through the station's entrance and on the streets.
     let walks: Vec<u32> = exits
@@ -95,12 +142,20 @@ pub fn compute(
         .collect();
     // Walking straight there from `origin`, out of its entrances without its time to the platforms.
     let mut direct = vec![UNREACHED_SECONDS; cells];
+    // And if `TRACK`, the walk out it is.
+    let mut direct_exit = vec![0u32; if TRACK { cells } else { 0 }];
     let own = exits.starts[origin] as usize..exits.starts[origin + 1] as usize;
-    for (&meters, &cell) in exits.meters[own.clone()].iter().zip(&exits.cell[own]) {
+    for (k, (&meters, &cell)) in own
+        .clone()
+        .zip(exits.meters[own.clone()].iter().zip(&exits.cell[own]))
+    {
         let walk = walk(meters, speed);
-        let at = &mut direct[usize::from(cell)];
-        if walk <= MAX_EXIT_WALK_SECONDS && walk < *at {
-            *at = walk;
+        let cell = usize::from(cell);
+        if walk <= MAX_EXIT_WALK_SECONDS && walk < direct[cell] {
+            direct[cell] = walk;
+            if TRACK {
+                direct_exit[cell] = k as u32;
+            }
         }
     }
     let stride = cells + stations;
@@ -108,6 +163,8 @@ pub fn compute(
     // and the station walked out of to it.
     let mut best = vec![UNREACHED_SECONDS; cells];
     let mut best_from = vec![0u32; cells];
+    // And if `TRACK`, the walk out it is.
+    let mut best_exit = vec![0u32; if TRACK { cells } else { 0 }];
     // Each cell's trip each minute, minute-major so that each minute's are computed together,
     // in the high half, and its station in the low,
     // so that ordering them orders by trip and keeps each's station with it.
@@ -127,12 +184,18 @@ pub fn compute(
                     continue;
                 }
                 let range = exits.starts[s] as usize..exits.starts[s + 1] as usize;
-                for (&walk, &cell) in walks[range.clone()].iter().zip(&exits.cell[range]) {
+                for (k, (&walk, &cell)) in range
+                    .clone()
+                    .zip(walks[range.clone()].iter().zip(&exits.cell[range]))
+                {
                     let t = clock + walk;
                     let cell = usize::from(cell);
                     if t < best[cell] {
                         best[cell] = t;
                         best_from[cell] = s as u32;
+                        if TRACK {
+                            best_exit[cell] = k as u32;
+                        }
                     }
                 }
             }
@@ -152,6 +215,26 @@ pub fn compute(
                 } else {
                     by_train << 16 | from
                 };
+            }
+            if TRACK {
+                for cell in 0..cells {
+                    let trip = row[cell] >> 16;
+                    if trip >= UNREACHED_SECONDS {
+                        continue;
+                    }
+                    // As the trip was picked above.
+                    let by_train = if best[cell] >= UNREACHED_SECONDS {
+                        best[cell]
+                    } else {
+                        best[cell] - departs
+                    };
+                    let k = if direct[cell] <= by_train {
+                        direct_exit[cell]
+                    } else {
+                        best_exit[cell]
+                    };
+                    used[k as usize] = true;
+                }
             }
         }
         let first = run * stride;
