@@ -278,74 +278,59 @@ pub fn exits(
     exits
 }
 
-/// The street walk out of a station to a destination for each of `wanted`,
-/// `(station, destination)` by index, as `exits` takes it:
+/// The street walk out of station `s` to each of `dests`, as `exits` takes it:
 /// out of whichever entrance is quickest at `speed` millimeters a second,
-/// from the entrance to the destination, walking at most `limit` millimeters.
-pub fn exit_paths(
+/// from the entrance to the destination, walking at most `limit` millimeters,
+/// simplified, as `(latitude, longitude)`s in 100,000ths of a degree, or `None` if there's none.
+#[allow(clippy::too_many_arguments)]
+fn exit_paths(
     graph: &Graph,
+    search: &mut Search,
     stations: &[Station],
     destinations: &[(f64, f64)],
     speed: Mm,
     limit: Mm,
-    wanted: &[(u32, u32)],
-) -> Vec<Path> {
-    let mut by_station: HashMap<u32, Vec<u32>> = HashMap::default();
-    for &(s, d) in wanted {
-        by_station.entry(s).or_default().push(d);
+    s: u32,
+    dests: &[u32],
+) -> Vec<Option<E5Points>> {
+    let (_, _, entrances) = &stations[s as usize];
+    let linked: Vec<(Linked, Secs)> = entrances
+        .iter()
+        .filter_map(|&(lat, lon, secs)| Some((((lat, lon), graph.snap(lat, lon)?, 0), secs)))
+        .collect();
+    let splits: Vec<Option<Split>> = dests
+        .iter()
+        .map(|&d| {
+            let (lat, lon) = destinations[d as usize];
+            graph.snap(lat, lon)
+        })
+        .collect();
+    // Each destination's quickest entrance, as `exits` picks it, and its path.
+    let mut best: Vec<Option<(Mm, E5Points)>> = vec![None; dests.len()];
+    for (entrance, secs) in &linked {
+        search.run(&entrance.1, limit);
+        for (k, split) in splits.iter().enumerate() {
+            let Some(split) = split else { continue };
+            let Some(mm) = search.to(split).filter(|&mm| mm <= limit) else {
+                continue;
+            };
+            let cost = *secs as Mm * speed + mm;
+            if best[k].as_ref().is_some_and(|(c, _)| *c <= cost) {
+                continue;
+            }
+            let Some(edges) = search.path(split) else {
+                continue;
+            };
+            let to = destinations[dests[k] as usize];
+            let points = chain(graph, std::slice::from_ref(entrance), &edges, to, split);
+            let quantized: Vec<(i32, i32)> = points
+                .iter()
+                .map(|&(lat, lon)| ((lat * 1.0e5).round() as i32, (lon * 1.0e5).round() as i32))
+                .collect();
+            best[k] = Some((cost, simplify(&quantized)));
+        }
     }
-    let mut stations_wanted: Vec<(u32, Vec<u32>)> = by_station.into_iter().collect();
-    stations_wanted.sort_unstable();
-    stations_wanted
-        .par_iter()
-        .map_init(
-            || Search::new(graph),
-            |search, (s, dests)| {
-                let (_, _, entrances) = &stations[*s as usize];
-                let linked: Vec<(Linked, Secs)> = entrances
-                    .iter()
-                    .filter_map(|&(lat, lon, secs)| {
-                        Some((((lat, lon), graph.snap(lat, lon)?, 0), secs))
-                    })
-                    .collect();
-                let splits: Vec<Option<Split>> = dests
-                    .iter()
-                    .map(|&d| {
-                        let (lat, lon) = destinations[d as usize];
-                        graph.snap(lat, lon)
-                    })
-                    .collect();
-                // Each destination's quickest entrance, as `exits` picks it, and its path.
-                let mut best: Vec<Option<(Mm, Points)>> = vec![None; dests.len()];
-                for (entrance, secs) in &linked {
-                    search.run(&entrance.1, limit);
-                    for (k, split) in splits.iter().enumerate() {
-                        let Some(split) = split else { continue };
-                        let Some(mm) = search.to(split).filter(|&mm| mm <= limit) else {
-                            continue;
-                        };
-                        let cost = *secs as Mm * speed + mm;
-                        if best[k].as_ref().is_some_and(|(c, _)| *c <= cost) {
-                            continue;
-                        }
-                        let Some(edges) = search.path(split) else {
-                            continue;
-                        };
-                        let to = destinations[dests[k] as usize];
-                        let points =
-                            chain(graph, std::slice::from_ref(entrance), &edges, to, split);
-                        best[k] = Some((cost, points));
-                    }
-                }
-                dests
-                    .iter()
-                    .zip(best)
-                    .filter_map(|(&d, best)| Some((*s, d, best?.1)))
-                    .collect::<Vec<_>>()
-            },
-        )
-        .flatten()
-        .collect()
+    best.into_iter().map(|best| Some(best?.1)).collect()
 }
 
 /// How far a point may be from the line between its neighbors to leave it out of a walk to draw,
@@ -400,49 +385,71 @@ pub struct ExitTree {
     pub near_ends: usize,
 }
 
-/// Each station's `ExitTree` of `paths`, simplified, with those to `far` destinations, by station,
-/// after the rest, so that the near ones' points are all there is to draw them.
-pub fn exit_trees(paths: Vec<Path>, far: &HashSet<(u32, u32)>, stations: usize) -> Vec<ExitTree> {
-    let mut by_station: Vec<Vec<(bool, u32, Points)>> = vec![Vec::new(); stations];
-    for (s, d, points) in paths {
-        by_station[s as usize].push((far.contains(&(s, d)), d, points));
+/// Each of `stations`' `ExitTree` of its walks out to destinations of `wanted`,
+/// `(station, destination, far)`, by index, as `exit_paths` walks them,
+/// with those to `far` destinations after the rest,
+/// so that the near ones' points are all there is to draw them.
+/// Each station's are walked and made a tree together, so that only a few stations' are kept at once.
+pub fn exit_trees(
+    graph: &Graph,
+    stations: &[Station],
+    destinations: &[(f64, f64)],
+    speed: Mm,
+    limit: Mm,
+    wanted: &[(u32, u32, bool)],
+) -> Vec<ExitTree> {
+    let mut by_station: Vec<Vec<(bool, u32)>> = vec![Vec::new(); stations.len()];
+    for &(s, d, far) in wanted {
+        by_station[s as usize].push((far, d));
     }
     by_station
         .into_par_iter()
-        .map(|mut walks| {
-            walks.sort_by_key(|&(far, d, _)| (far, d));
-            let mut tree = ExitTree::default();
-            let mut node: HashMap<(i32, i32, i32), u32> = HashMap::default();
-            let mut near = true;
-            for (far, d, points) in walks {
-                if far && near {
-                    near = false;
+        .enumerate()
+        .map_init(
+            || Search::new(graph),
+            |search, (s, mut walks)| {
+                walks.sort_unstable();
+                let dests: Vec<u32> = walks.iter().map(|&(_, d)| d).collect();
+                let paths = exit_paths(
+                    graph,
+                    search,
+                    stations,
+                    destinations,
+                    speed,
+                    limit,
+                    s as u32,
+                    &dests,
+                );
+                let mut tree = ExitTree::default();
+                let mut node: HashMap<(i32, i32, i32), u32> = HashMap::default();
+                let mut near = true;
+                for ((far, d), points) in walks.into_iter().zip(paths) {
+                    let Some(points) = points else { continue };
+                    if far && near {
+                        near = false;
+                        tree.near = tree.parent.len();
+                        tree.near_ends = tree.ends.len();
+                    }
+                    let mut at = -1;
+                    for (lat, lon) in points {
+                        at = *node.entry((at, lat, lon)).or_insert_with(|| {
+                            tree.parent.push(at);
+                            tree.lat.push(lat);
+                            tree.lon.push(lon);
+                            (tree.parent.len() - 1) as u32
+                        }) as i32;
+                    }
+                    if at >= 0 {
+                        tree.ends.push((d, at as u32));
+                    }
+                }
+                if near {
                     tree.near = tree.parent.len();
                     tree.near_ends = tree.ends.len();
                 }
-                let quantized: Vec<(i32, i32)> = points
-                    .iter()
-                    .map(|&(lat, lon)| ((lat * 1.0e5).round() as i32, (lon * 1.0e5).round() as i32))
-                    .collect();
-                let mut at = -1;
-                for (lat, lon) in simplify(&quantized) {
-                    at = *node.entry((at, lat, lon)).or_insert_with(|| {
-                        tree.parent.push(at);
-                        tree.lat.push(lat);
-                        tree.lon.push(lon);
-                        (tree.parent.len() - 1) as u32
-                    }) as i32;
-                }
-                if at >= 0 {
-                    tree.ends.push((d, at as u32));
-                }
-            }
-            if near {
-                tree.near = tree.parent.len();
-                tree.near_ends = tree.ends.len();
-            }
-            tree
-        })
+                tree
+            },
+        )
         .collect()
 }
 
@@ -546,6 +553,9 @@ pub type Path = (u32, u32, Points);
 
 /// A walk's points, as `(latitude, longitude)`s.
 pub type Points = Vec<(f64, f64)>;
+
+/// A walk's points to draw, as `(latitude, longitude)`s in 100,000ths of a degree.
+type E5Points = Vec<(i32, i32)>;
 
 /// An entrance to walk from or to: where it is, where it links, and its time to the platforms.
 type Linked = ((f64, f64), Split, Mm);

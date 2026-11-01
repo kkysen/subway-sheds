@@ -929,14 +929,14 @@ fn exit_trees<'py>(
 ) -> Result<Vec<ExitTreeBytes<'py>>> {
     let trees = py.detach(|| -> Result<_> {
         let graph = Graph::build(&Osm::read(&osm)?);
-        let pairs: Vec<(u32, u32)> = wanted.iter().map(|&(s, d, _)| (s, d)).collect();
-        let far = wanted
-            .iter()
-            .filter(|w| w.2)
-            .map(|&(s, d, _)| (s, d))
-            .collect();
-        let paths = walks::exit_paths(&graph, &stations, &destinations, speed, limit, &pairs);
-        Ok(walks::exit_trees(paths, &far, stations.len()))
+        Ok(walks::exit_trees(
+            &graph,
+            &stations,
+            &destinations,
+            speed,
+            limit,
+            &wanted,
+        ))
     })?;
     let bytes =
         |values: &[i32]| -> Vec<u8> { values.iter().flat_map(|v| v.to_le_bytes()).collect() };
