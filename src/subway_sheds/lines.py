@@ -19,6 +19,11 @@ from subway_sheds import _route, gtfs
 # MTA's feed leaves many trips without a shape (every B, most Fs and Qs),
 # but they run on track some other route's shape follows.
 SHAPE_REACH = 100
+# But another route's shape, borrowed for trips without their own, has to pass nearer,
+# as one passing 100 m off can be that route's on its way elsewhere:
+# the E and M's, curving off to Court Sq-23 St, for the G run on past Court Sq,
+# which QueensLink's feed gives no shape past there.
+BORROWED_REACH = 30
 
 # A pair of stations is a shortcut if a path through others, at most this much longer, joins them:
 # an express run alongside a local's stops,
@@ -45,9 +50,9 @@ def _point(lon: float, lat: float) -> Point:
     return Point(*_to_meters.transform(lon, lat))
 
 
-def _between(line: LineString, a: Point, b: Point) -> LineString | None:
-    """The piece of `line` from nearest `a` to nearest `b`, if it passes near both."""
-    if line.distance(a) > SHAPE_REACH or line.distance(b) > SHAPE_REACH:
+def _between(line: LineString, a: Point, b: Point, reach: float) -> LineString | None:
+    """The piece of `line` from nearest `a` to nearest `b`, if it passes within `reach` of both."""
+    if line.distance(a) > reach or line.distance(b) > reach:
         return None
     start = line.project(a)
     end = line.project(b)
@@ -129,11 +134,19 @@ def segments(feed_path: Path) -> list[Segment]:
         a, b = (points[station] for station in pair)
         # Its own trips' shapes first, then any passing near both stations, the nearest first.
         nearby = [shape_ids[i] for i in tree.query(a, predicate="dwithin", distance=SHAPE_REACH)]
-        candidates = sorted(own_shapes.get(pair, set())) + sorted(
-            nearby, key=lambda shape: shapes[shape].distance(a) + shapes[shape].distance(b)
-        )
+        own = sorted(own_shapes.get(pair, set()))
+        candidates = [(shape, SHAPE_REACH) for shape in own] + [
+            (shape, BORROWED_REACH)
+            for shape in sorted(
+                nearby, key=lambda shape: shapes[shape].distance(a) + shapes[shape].distance(b)
+            )
+        ]
         line = next(
-            (piece for shape in candidates if (piece := _between(shapes[shape], a, b))),
+            (
+                piece
+                for shape, reach in candidates
+                if (piece := _between(shapes[shape], a, b, reach))
+            ),
             LineString([a, b]),
         )
         # About 2 m, well under a pixel at the zooms the page is looked at.
