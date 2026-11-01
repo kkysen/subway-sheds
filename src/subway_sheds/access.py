@@ -7,6 +7,7 @@ the heights of the MTA's elevators and escalators,
 depths published elsewhere for the few deep stations the MTA leaves blank (`DEPTHS`),
 the levels OpenStreetMap puts the station's platforms on, in feet as the MTA's heights fit them,
 and last the station's structure.
+Stations not yet built, which the MTA has no data for, are in `PLANNED`.
 """
 
 import json
@@ -66,6 +67,27 @@ DEPTHS = {
     # https://en.wikipedia.org/wiki/190th_Street_station,
     # https://untappedcities.com/deepest-highest-subway-stations-nyc
     "A05": (140, "about 140 ft: Wikipedia, Untapped Cities"),
+}
+
+
+@dataclass(frozen=True)
+class Planned:
+    """A station not yet built, entered at its own coordinates, with escalators where deep."""
+
+    name: str
+    complex: str
+    lat: float
+    lon: float
+    depth_ft: float
+    depth_source: str
+
+
+# Second Avenue Subway phase 2's stations, at their coordinates in QueensLink's feed,
+# with 125 St in the complex of the 4, 5, and 6's 125 St, changed to in the system.
+PLANNED = {
+    "Q06": Planned("106 St", "Q06", 40.790621, -73.942418, 37, "phase 2 plans"),
+    "Q07": Planned("116 St", "Q07", 40.797005, -73.937783, 39, "phase 2 plans"),
+    "Q08": Planned("125 St", "392", 40.804382, -73.937408, 120, "phase 2 plans"),
 }
 
 
@@ -272,6 +294,20 @@ def build() -> pd.DataFrame:
         row(gtfs_id, float(s["gtfs_latitude"]), float(s["gtfs_longitude"]), "Station")
         for gtfs_id, s in by_id.items()
         if gtfs_id not in listed
+    ]
+    rows += [
+        {
+            "station": gtfs_id,
+            "complex": planned.complex,
+            "name": planned.name,
+            "lat": planned.lat,
+            "lon": planned.lon,
+            "kind": "Station",
+            "depth_ft": planned.depth_ft,
+            "depth_source": planned.depth_source,
+            "secs": round(entrance_secs("Station", planned.depth_ft, True, None)),
+        }
+        for gtfs_id, planned in PLANNED.items()
     ]
     return pd.DataFrame(rows)
 
