@@ -21,8 +21,11 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   and the G run on past Court Sq along the Queens Blvd local to Forest Hills.
   Its F and M have also swapped tunnels, as they did after that feed,
   the F via 53 St and the M via 63 St.
-  It also assumes Second Avenue Subway Phase 2 is open (the Q to 125 St),
-  and runs the 7 on its regular schedule from an older feed,
+  It also assumes Second Avenue Subway Phase 2 is open (the weekday Q to 125 St),
+  which neither scenario routes, cutting the Q back to 96 St,
+  so that the baseline is the subway now;
+  its stations stay in the data, to add back as a scenario of their own.
+  It runs the 7 on its regular schedule from an older feed,
   rather than this one's, with no regular 7 express during construction.
   It was committed as given, `B1_MVS.zip`, and the repairs routing it needed followed as commits.
 - **Baseline**: the QueensLink feed without QueensLink, so that QueensLink is all that differs:

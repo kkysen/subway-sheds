@@ -126,8 +126,9 @@ def fetch(
         dest = paths.PLATFORMS.with_name(name)
         if force or not dest.exists():
             _download(f"{MTA_OD_DATA_RAW}/{rev[1]}/src/mta_od_data/ridership/{name}", dest)
-    gtfs.zip_feed(paths.QUEENSLINK_FEED, Scenario.QUEENSLINK.gtfs)
-    gtfs.write_feed(scenarios.baseline_feed(), Scenario.BASELINE.gtfs)
+    mta = gtfs.read_feed(scenarios.mta_feed())
+    gtfs.write_feed(scenarios.queenslink_feed(mta), Scenario.QUEENSLINK.gtfs)
+    gtfs.write_feed(scenarios.baseline_feed(mta), Scenario.BASELINE.gtfs)
 
 
 def _save(times: pd.DataFrame, dest: Path, routed: set[str] | None) -> None:

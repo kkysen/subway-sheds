@@ -30,6 +30,12 @@ WEEKEND_SERVICES = frozenset({"Saturday", "Sunday"})
 # QueensLink also runs the G past Court Sq along the Queens Blvd local to Forest Hills;
 # the baseline cuts it back to the stations it serves in MTA's feed.
 G = "G"
+# The QueensLink feed also runs the weekday Q, and one R, on past 96 St to 125 St,
+# as Second Avenue Subway phase 2, with their times otherwise MTA's, but neither scenario does,
+# so that the baseline is the subway now and QueensLink is all the other adds.
+# Its stations, their depths (`access.PLANNED`), and their changes stay in the data,
+# to add back as a scenario of their own.
+PHASE_2 = frozenset({"Q06", "Q07", "Q08"})
 
 
 class Day(StrEnum):
@@ -79,7 +85,7 @@ class Fare(StrEnum):
 class Scenario(StrEnum):
     # The QueensLink feed without QueensLink's M branch and G extension.
     BASELINE = "baseline"
-    # The QueensLink scenario feed.
+    # The QueensLink scenario feed, without Second Avenue Subway phase 2 (see `PHASE_2`).
     QUEENSLINK = "queenslink"
 
     @property
@@ -96,10 +102,29 @@ def mta_feed_url() -> str:
     return f"https://files.mobilitydatabase.org/{feed}/{BASELINE_DATASET}/{BASELINE_DATASET}.zip"
 
 
-def baseline_feed() -> gtfs.Feed:
-    """The QueensLink feed without QueensLink, as `BASELINE` describes."""
+def _mta_stations(mta: gtfs.Feed, route: str) -> set[str]:
+    """The parent stations `route`'s trips stop at in `mta`."""
+    parents = {s["stop_id"]: s["parent_station"] or s["stop_id"] for s in mta.rows["stops.txt"]}
+    trips = {t["trip_id"] for t in mta.rows["trips.txt"] if t["route_id"] == route}
+    return {parents[st["stop_id"]] for st in mta.rows["stop_times.txt"] if st["trip_id"] in trips}
+
+
+def queenslink_feed(mta: gtfs.Feed) -> gtfs.Feed:
+    """The QueensLink feed, without Second Avenue Subway phase 2, as `PHASE_2` describes:
+    each route stopping at its stations cut back to the stations it stops at in MTA's feed."""
     feed = gtfs.read_feed(paths.QUEENSLINK_FEED)
-    mta = gtfs.read_feed(mta_feed())
+    parents = {s["stop_id"]: s["parent_station"] or s["stop_id"] for s in feed.rows["stops.txt"]}
+    trips = {
+        st["trip_id"] for st in feed.rows["stop_times.txt"] if parents[st["stop_id"]] in PHASE_2
+    }
+    for route in sorted({t["route_id"] for t in feed.rows["trips.txt"] if t["trip_id"] in trips}):
+        gtfs.keep_route_stations(feed, route, _mta_stations(mta, route))
+    return feed
+
+
+def baseline_feed(mta: gtfs.Feed) -> gtfs.Feed:
+    """`queenslink_feed` without QueensLink, as `BASELINE` describes."""
+    feed = queenslink_feed(mta)
     gtfs.splice_routes(feed, mta, {ROCKAWAY_PARK_SHUTTLE})
     gtfs.drop_trips(
         feed,
@@ -121,12 +146,5 @@ def baseline_feed() -> gtfs.Feed:
         M_TERMINAL_LIKE,
     )
     gtfs.match_frequencies(feed, QUEENSLINK_M, mta, M, M_FREQUENCY_STATION)
-    mta_parents = {s["stop_id"]: s["parent_station"] or s["stop_id"] for s in mta.rows["stops.txt"]}
-    mta_g_trips = {t["trip_id"] for t in mta.rows["trips.txt"] if t["route_id"] == G}
-    mta_g_stations = {
-        mta_parents[st["stop_id"]]
-        for st in mta.rows["stop_times.txt"]
-        if st["trip_id"] in mta_g_trips
-    }
-    gtfs.keep_route_stations(feed, G, mta_g_stations)
+    gtfs.keep_route_stations(feed, G, _mta_stations(mta, G))
     return feed
