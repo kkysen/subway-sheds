@@ -119,6 +119,9 @@ export interface TravelTimes {
   readonly exitFrom: Uint16Array;
   // And the minute of the window its median trip departs, by run.
   readonly exitMinute: Uint8Array;
+  // The minutes QueensLink saves to every cell, then every station, in the runs asked for,
+  // from the difference of the two trips in seconds, rounded toward zero; 0 where either isn't reached.
+  readonly saved: Int8Array;
 }
 export const NO_STATION = 0xffff;
 

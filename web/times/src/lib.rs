@@ -44,11 +44,26 @@ pub struct TravelTimes<'a> {
     pub exit_from: &'a mut [u16],
     /// And the minute of the window its median trip departs.
     pub exit_minute: &'a mut [u8],
+    /// The minutes the second of two runs saves over the first to every cell, then every station:
+    /// the difference of their medians in seconds, in whole minutes, rounded toward zero,
+    /// so that trips a few seconds apart don't differ by a minute from rounding each down.
+    /// 0 where either isn't within `MAX_SECONDS`, and left as it is unless there are two runs.
+    pub saved: &'a mut [i8],
 }
 
 /// Where `station`'s walks out are in `exits`.
 fn own_range(exits: &Exits, station: usize) -> std::ops::Range<usize> {
     exits.starts[station] as usize..exits.starts[station + 1] as usize
+}
+
+/// The minutes `with` saves over `without`, as `TravelTimes::saved` says.
+fn saved(without: u32, with: u32) -> i8 {
+    if without <= MAX_SECONDS && with <= MAX_SECONDS {
+        // Within `MAX_SECONDS`, the most either way is 120 minutes, which fits.
+        ((i64::from(without) - i64::from(with)) / 60) as i8
+    } else {
+        0
+    }
 }
 
 /// Whole minutes, if within `MAX_SECONDS`.
@@ -190,7 +205,10 @@ fn compute_tracking<const TRACK: bool>(
     // so that ordering them orders by trip and keeps each's station with it.
     let mut trips = vec![0u32; MINUTES * cells];
     let mut each = [0u32; MINUTES];
-    for &run in runs {
+    // The first of two runs' medians, in seconds, to every cell, then every station, for `saved`.
+    let pair = !TRACK && runs.len() == 2;
+    let mut first_medians = vec![UNREACHED_SECONDS; if pair { stride } else { 0 }];
+    for (i, &run) in runs.iter().enumerate() {
         best.fill(UNREACHED_SECONDS);
         // Latest departure first: departing earlier, every station is reached at the same time or
         // earlier, so each minute's earliest are the next minute's, lowered by the stations that changed.
@@ -278,6 +296,13 @@ fn compute_tracking<const TRACK: bool>(
             let median = *sorted.select_nth_unstable(MEDIAN).1;
             let trip = median >> 16;
             out.times[first + cell] = minutes(trip);
+            if pair {
+                if i == 0 {
+                    first_medians[cell] = trip;
+                } else {
+                    out.saved[cell] = saved(first_medians[cell], trip);
+                }
+            }
             if trip != UNREACHED_SECONDS {
                 out.exit_from[run * cells + cell] = median as u16;
                 // The first minute of the median trip, as `route` orders ties.
@@ -294,7 +319,15 @@ fn compute_tracking<const TRACK: bool>(
                     clock - 60 * m as u32
                 };
             }
-            out.times[first + cells + s] = minutes(*each.select_nth_unstable(MEDIAN).1);
+            let trip = *each.select_nth_unstable(MEDIAN).1;
+            out.times[first + cells + s] = minutes(trip);
+            if pair {
+                if i == 0 {
+                    first_medians[cells + s] = trip;
+                } else {
+                    out.saved[cells + s] = saved(first_medians[cells + s], trip);
+                }
+            }
         }
     }
 }
@@ -350,6 +383,7 @@ pub unsafe extern "C" fn travel_times(
     times: *mut u8,
     exit_from: *mut u16,
     exit_minute: *mut u8,
+    saved: *mut i8,
 ) {
     // SAFETY: the caller gives each as long as it is.
     unsafe {
@@ -371,7 +405,80 @@ pub unsafe extern "C" fn travel_times(
                 times: slice::from_raw_parts_mut(times, RUNS * (cells + stations)),
                 exit_from: slice::from_raw_parts_mut(exit_from, RUNS * cells),
                 exit_minute: slice::from_raw_parts_mut(exit_minute, RUNS * cells),
+                saved: slice::from_raw_parts_mut(saved, cells + stations),
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The minutes the second run saves, and each run's minutes, to the one cell, then station 1,
+    /// where trains from station 0 reach station 1 `without` and `with` seconds after departing,
+    /// every minute, and station 1 walks out to the cell in no time.
+    fn saved_between(without: u16, with: u16) -> ([i8; 3], [u8; 3], [u8; 3]) {
+        let (cells, stations) = (1, 2);
+        let mut arrivals = vec![UNREACHED_SECONDS as u16; RUNS * MINUTES * stations];
+        for (run, trip) in [(0, without), (1, with)] {
+            for m in 0..MINUTES {
+                let departs = 60 * m as u16;
+                let at = (run * MINUTES + m) * stations;
+                arrivals[at] = departs;
+                arrivals[at + 1] = departs + trip;
+            }
+        }
+        let exits = Exits {
+            cell: &[0],
+            exit_seconds: &[0],
+            meters: &[0],
+            starts: &[0, 0, 1],
+        };
+        let mut times = vec![UNREACHED; RUNS * (cells + stations)];
+        let mut exit_from = vec![NO_STATION; RUNS * cells];
+        let mut exit_minute = vec![0; RUNS * cells];
+        let mut saved = vec![0; cells + stations];
+        compute(
+            &arrivals,
+            &exits,
+            0,
+            cells,
+            stations,
+            3.0,
+            &[0, 1],
+            TravelTimes {
+                times: &mut times,
+                exit_from: &mut exit_from,
+                exit_minute: &mut exit_minute,
+                saved: &mut saved,
+            },
+        );
+        let run = |r: usize| {
+            let at = r * (cells + stations);
+            [times[at], times[at + 1], times[at + 2]]
+        };
+        (saved.try_into().unwrap(), run(0), run(1))
+    }
+
+    #[test]
+    fn saved_from_seconds_not_rounded_minutes() {
+        // A second apart, across a minute: 10 and 9 minutes, rounded down, but none saved.
+        let (saved, without, with) = saved_between(600, 599);
+        assert_eq!((without, with), ([10, 0, 10], [9, 0, 9]));
+        assert_eq!(saved, [0, 0, 0]);
+        // 59 seconds apart, likewise.
+        assert_eq!(saved_between(660, 601).0, [0, 0, 0]);
+        // A minute apart, within a minute: 10 minutes either way, but one saved.
+        assert_eq!(saved_between(659, 599).0, [1, 0, 1]);
+        // Slower, rounded toward zero too.
+        assert_eq!(saved_between(600, 719).0, [-1, 0, -1]);
+    }
+
+    #[test]
+    fn nothing_saved_where_either_is_unreached() {
+        let past = (MAX_SECONDS + 1) as u16;
+        assert_eq!(saved_between(past, 600).0, [0, 0, 0]);
+        assert_eq!(saved_between(600, past).0, [0, 0, 0]);
     }
 }

@@ -290,7 +290,13 @@ function bandOf(value: number, bands: readonly Band[]): number {
 const timesStride = (grid: Grid): number => grid.cols.length + stations.length;
 
 // Each cell of the raster's class: the index of its color in `classColors`, or `NOTHING`.
-function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8Array {
+function cellClasses(
+  grid: Grid,
+  times: Uint8Array,
+  saved: Int8Array,
+  day: Day,
+  view: View,
+): Int8Array {
   const { width, height } = rasterSize(grid);
   const stride = timesStride(grid);
   // Each run's times are every cell's and station's, the baseline's, then with QueensLink.
@@ -304,8 +310,7 @@ function cellClasses(grid: Grid, times: Uint8Array, day: Day, view: View): Int8A
       const minutes = view === "baseline" ? baseline : queenslink;
       classes[at] = minutes > MAX_MINUTES ? NOTHING : bandOf(minutes, travelTimeBands);
     } else if (queenslink !== UNREACHED) {
-      classes[at] =
-        baseline === UNREACHED ? savedBands.length : bandOf(baseline - queenslink, savedBands);
+      classes[at] = baseline === UNREACHED ? savedBands.length : bandOf(saved[i] ?? 0, savedBands);
     }
   });
   return classes;
@@ -317,7 +322,7 @@ const ONLY_QUEENSLINK = -2;
 // The minutes from the selected station to `station` itself, in the view shown:
 // the trip's, or those saved, `ONLY_QUEENSLINK`, or `NOTHING` where there's none to say.
 function stationMinutes(station: Station): number {
-  if (selectedTimes === undefined) {
+  if (selectedTimes === undefined || selectedSaved === undefined) {
     return NOTHING;
   }
   const stride = timesStride(grid);
@@ -332,7 +337,8 @@ function stationMinutes(station: Station): number {
   if (queenslink === UNREACHED) {
     return NOTHING;
   }
-  return baseline === UNREACHED ? ONLY_QUEENSLINK : Math.max(baseline - queenslink, 0);
+  const saved = selectedSaved[grid.cols.length + stations.indexOf(station)] ?? 0;
+  return baseline === UNREACHED ? ONLY_QUEENSLINK : Math.max(saved, 0);
 }
 
 // What the cells of class `band` are, as said when they're pointed at or tapped.
@@ -738,6 +744,8 @@ let selectedRoutes: Routes | undefined;
 let selectedTimes: Uint8Array | undefined;
 let selectedExitFrom: Uint16Array | undefined;
 let selectedExitMinute: Uint8Array | undefined;
+// And the minutes QueensLink saves, to every cell, then every station.
+let selectedSaved: Int8Array | undefined;
 // Each cell's class, as drawn.
 let selectedClasses: Int8Array | undefined;
 
@@ -879,6 +887,7 @@ timesWorker.addEventListener("message", (event: MessageEvent<TimesResponse>) => 
     times: selectedTimes,
     exitFrom: selectedExitFrom,
     exitMinute: selectedExitMinute,
+    saved: selectedSaved,
   } = event.data.times);
   drawCells();
 });
@@ -902,6 +911,7 @@ function clearTimes(): void {
   selectedTimes = undefined;
   selectedExitFrom = undefined;
   selectedExitMinute = undefined;
+  selectedSaved = undefined;
   selectedClasses = undefined;
   const { width, height } = rasterSize(grid);
   bandsLayer.setClasses(new Int8Array(width * height).fill(NOTHING), []);
@@ -909,9 +919,9 @@ function clearTimes(): void {
 }
 
 function drawCells(): void {
-  if (selectedTimes !== undefined) {
+  if (selectedTimes !== undefined && selectedSaved !== undefined) {
     const view = currentView();
-    selectedClasses = cellClasses(grid, selectedTimes, currentDay(), view);
+    selectedClasses = cellClasses(grid, selectedTimes, selectedSaved, currentDay(), view);
     bandsLayer.setClasses(selectedClasses, classColors(view));
     clearBand();
   }

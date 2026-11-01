@@ -819,6 +819,7 @@ fn used_exits(
                                 times: &mut out,
                                 exit_from: &mut exit_from,
                                 exit_minute: &mut exit_minute,
+                                saved: &mut [],
                             },
                             &mut used,
                         );

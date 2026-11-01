@@ -46,6 +46,7 @@ interface Times {
     times: number,
     exitFrom: number,
     exitMinute: number,
+    saved: number,
   ): void;
 }
 
@@ -67,6 +68,7 @@ interface Laid {
   readonly times: number;
   readonly exitFrom: number;
   readonly exitMinute: number;
+  readonly saved: number;
   // Each array's place and size, to free.
   readonly allocated: readonly (readonly [number, number])[];
 }
@@ -97,6 +99,7 @@ function layOut(times: Times, given: Exits, cells: number, stations: number): La
     times: alloc(RUNS * (cells + stations)),
     exitFrom: alloc(2 * RUNS * cells),
     exitMinute: alloc(RUNS * cells),
+    saved: alloc(cells + stations),
     allocated,
   };
   const memory = times.memory.buffer;
@@ -119,6 +122,7 @@ function compute(
   new Uint8Array(memory, at.times, RUNS * (cells + stations)).fill(255);
   new Uint16Array(memory, at.exitFrom, RUNS * cells).fill(0xffff);
   new Uint8Array(memory, at.exitMinute, RUNS * cells).fill(0);
+  new Int8Array(memory, at.saved, cells + stations).fill(0);
   times.travel_times(
     at.arrivals,
     at.cell,
@@ -135,6 +139,7 @@ function compute(
     at.times,
     at.exitFrom,
     at.exitMinute,
+    at.saved,
   );
   // It may have grown for its own scratch space, which replaces the buffer.
   memory = times.memory.buffer;
@@ -142,6 +147,7 @@ function compute(
     times: new Uint8Array(memory, at.times, RUNS * (cells + stations)).slice(),
     exitFrom: new Uint16Array(memory, at.exitFrom, RUNS * cells).slice(),
     exitMinute: new Uint8Array(memory, at.exitMinute, RUNS * cells).slice(),
+    saved: new Int8Array(memory, at.saved, cells + stations).slice(),
   };
 }
 
@@ -173,6 +179,11 @@ self.onmessage = async (event: MessageEvent<Request>): Promise<void> => {
   }
   const response: Response = { id: request.id, times: result };
   self.postMessage(response, {
-    transfer: [result.times.buffer, result.exitFrom.buffer, result.exitMinute.buffer],
+    transfer: [
+      result.times.buffer,
+      result.exitFrom.buffer,
+      result.exitMinute.buffer,
+      result.saved.buffer,
+    ],
   });
 };
