@@ -75,7 +75,8 @@ body,
 
 /* Under the heading, only while the controls are collapsed. */
 #summary-status {
-  grid-column: 1;
+  /* Under the marker and any buttons too, as they're only on the heading's row. */
+  grid-column: 1 / -1;
   /* Not widening the controls, only shortened or wrapped to the width the choices need. */
   contain: inline-size;
   /* On one line, its words shortened to fit rather than it wrapping. */
