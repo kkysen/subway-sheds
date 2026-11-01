@@ -101,14 +101,15 @@ jobs:
           # On the runner's own target, as it builds for WebAssembly, which can't run here.
           cargo test --target "$(rustc -vV | sed -n 's/host: //p')"
 
-  # Fetch what routing needs, once for every job after it, and see whether it's routed already.
-  prepare:
+  # The page's data: fetch what routing needs, then route and export,
+  # unless what goes into them is unchanged, and the data's cached.
+  # In one job, as each job takes most of a minute to set up,
+  # and only the data goes on to `pages`.
+  # Every scenario on every day routed together, as that walks the streets once.
+  data:
     needs: check
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    outputs:
-      key: ${{ steps.inputs.outputs.key }}
-      routed: ${{ steps.routed.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -190,106 +191,44 @@ jobs:
       # so that nothing written during the run, like `src/`'s `__pycache__/`, can change it.
       # The downloads' URLs are in the code, so they're covered too.
       # With the streets, which aren't tracked, since `fetch` keeps them up to date with OSM.
-      - name: travel times' inputs
+      - name: data's inputs
         id: inputs
         run: |
           tracked=$(git ls-files -s -- gtfs data src route web/times pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
           streets=$(sha256sum .cache/nyc-streets.osm.pbf | cut -d' ' -f1)
-          echo "key=travel-times-$tracked-$streets" >> "$GITHUB_OUTPUT"
+          echo "key=data-$tracked-$streets" >> "$GITHUB_OUTPUT"
 
-      # Routing takes a while, and only what goes into it changes its output.
-      # The export too, whose inputs are among routing's: the travel times, grid, and feeds.
-      # Only looked up here; `pages` restores it.
+      # Routing and exporting take a while, and only what goes into them changes their output.
       - uses: actions/cache/restore@v6.1.0
-        id: routed
+        id: data
         with:
-          path: |
-            out/travel_times
-            web/public/data
+          path: web/public/data
           key: ${{ steps.inputs.outputs.key }}
-          lookup-only: true
-
-      # The same inputs for every job, even if Geofabrik has newer streets by the time one starts.
-      - uses: actions/upload-artifact@v7.0.2
-        if: steps.routed.outputs.cache-hit != 'true'
-        with:
-          name: inputs
-          path: |
-            out/gtfs
-            .cache/nyc-streets.osm.pbf
-            .cache/nyc-shoreline.json
-            .cache/platforms
-          include-hidden-files: true
-          retention-days: 1
-
-  # Every scenario on every day in one job, as routing them together walks the streets once,
-  # and takes about half a minute, less than a job of its own takes to set up.
-  route:
-    needs: prepare
-    if: needs.prepare.outputs.routed != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7.0.1
-
-      - uses: astral-sh/setup-uv@v10.3.2
-        with:
-          enable-cache: true
-          # With the `route` crate, whose wheel `uv sync` builds and the cache keeps,
-          # as `tool.uv.cache-keys` has `uv` rebuild it.
-          cache-dependency-glob: |
-            uv.lock
-            pyproject.toml
-            route/Cargo.lock
-            route/Cargo.toml
-            route/src/**/*.rs
-            web/times/Cargo.toml
-            web/times/src/**/*.rs
-
-      - uses: jdx/mise-action@v5.2.3
-        env:
-          MISE_DISABLE_TOOLS: uv
-
-      # The `route` crate's dependencies and build, which `uv` compiles through `maturin`,
-      # in every job that runs `uv`, as the runner's Rust has it.
-      - uses: actions/cache@v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            route/target
-            web/times/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock', 'web/times/Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
-
-      # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
-      # and failing if `uv.lock` is out of date, which `uv run` would quietly update.
-      - name: uv sync
-        run: uv sync --locked
-
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: inputs
-          # Where the artifact's root is: the repository's, as its files are in both `.cache/` and `out/`.
-          path: .
 
       - name: route
+        if: steps.data.outputs.cache-hit != 'true'
         run: uv run subway-sheds route
+
+      - name: export
+        if: steps.data.outputs.cache-hit != 'true'
+        run: uv run subway-sheds export
+
+      - uses: actions/cache/save@v6.1.0
+        if: steps.data.outputs.cache-hit != 'true'
+        with:
+          path: web/public/data
+          key: ${{ steps.inputs.outputs.key }}
 
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: travel-times
-          path: out/travel_times/*.parquet
-          include-hidden-files: true
+          name: data
+          path: web/public/data
           if-no-files-found: error
           retention-days: 1
 
-  # Export the travel times, whether just routed or cached, and publish the page.
+  # Build the page with its data and publish it.
   pages:
-    needs: [prepare, route]
-    # Also when `route` was skipped, since everything was routed already.
-    if: >-
-      !cancelled() && needs.prepare.result == 'success'
-      && (needs.route.result == 'success' || needs.route.result == 'skipped')
+    needs: data
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -301,40 +240,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - uses: astral-sh/setup-uv@v10.3.2
-        with:
-          enable-cache: true
-          # With the `route` crate, whose wheel `uv sync` builds and the cache keeps,
-          # as `tool.uv.cache-keys` has `uv` rebuild it.
-          cache-dependency-glob: |
-            uv.lock
-            pyproject.toml
-            route/Cargo.lock
-            route/Cargo.toml
-            route/src/**/*.rs
-            web/times/Cargo.toml
-            web/times/src/**/*.rs
-
+      # Node, as `mise.toml` pins it, but not `uv`, which building the page doesn't need.
       - uses: jdx/mise-action@v5.2.3
         env:
           MISE_DISABLE_TOOLS: uv
 
-      # The `route` crate's dependencies and build, which `uv` compiles through `maturin`,
-      # in every job that runs `uv`, as the runner's Rust has it.
+      # `web/times/`'s build, which `npm run build` compiles to WebAssembly.
       - uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            route/target
             web/times/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('route/Cargo.lock', 'web/times/Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
-
-      # On its own, so that building the `route` crate isn't timed as the first step that runs `uv`,
-      # and failing if `uv.lock` is out of date, which `uv run` would quietly update.
-      - name: uv sync
-        run: uv sync --locked
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('web/times/Cargo.lock') }}
+          restore-keys: cargo-wasm-${{ runner.os }}-
 
       - uses: actions/cache@v6.1.0
         with:
@@ -342,39 +261,10 @@ jobs:
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
 
-      - uses: actions/cache/restore@v6.1.0
-        if: needs.prepare.outputs.routed == 'true'
-        with:
-          path: |
-            out/travel_times
-            web/public/data
-          key: ${{ needs.prepare.outputs.key }}
-          fail-on-cache-miss: true
-
       - uses: actions/download-artifact@v8.0.2
-        if: needs.prepare.outputs.routed != 'true'
         with:
-          name: inputs
-          # Where the artifact's root is: the repository's, as its files are in both `.cache/` and `out/`.
-          path: .
-
-      - uses: actions/download-artifact@v8.0.2
-        if: needs.prepare.outputs.routed != 'true'
-        with:
-          name: travel-times
-          path: out/travel_times
-
-      - name: export
-        if: needs.prepare.outputs.routed != 'true'
-        run: uv run subway-sheds export
-
-      - uses: actions/cache/save@v6.1.0
-        if: needs.prepare.outputs.routed != 'true'
-        with:
-          path: |
-            out/travel_times
-            web/public/data
-          key: ${{ needs.prepare.outputs.key }}
+          name: data
+          path: web/public/data
 
       - name: build
         working-directory: web
