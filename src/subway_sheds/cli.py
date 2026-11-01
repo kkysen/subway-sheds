@@ -190,16 +190,12 @@ def route(
     for run in travel_times.from_stations(
         runs, stations, destinations, list(every_station.values())
     ):
-        scenario, day, fare, times, station_times, arrivals, routes = run
+        scenario, day, fare, arrivals, routes = run
         routed = {s.id for s in stations} if stop_ids else None
-        _save(times, travel_times.output_path(scenario, day, fare), routed)
-        _save(station_times, travel_times.stations_output_path(scenario, day, fare), routed)
         _save(arrivals, travel_times.arrivals_path(scenario, day, fare), routed)
         _save(routes, travel_times.routes_path(scenario, day, fare), routed)
-        echo(
-            f"{scenario} {day} {fare}: {len(stations)} stations, {len(times)} reachable cells, "
-            f"{len(station_times)} reachable stations"
-        )
+        pairs = len(arrivals[["station", "to_station"]].drop_duplicates())
+        echo(f"{scenario} {day} {fare}: {len(stations)} stations, {pairs} station pairs reached")
 
 
 @app.command(name="export")

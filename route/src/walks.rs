@@ -19,10 +19,6 @@ use streets::{Graph, Mm, Search, Split};
 /// about the 1000 m R5 walked between stops, as a time, entrances included.
 const TRANSFER_LIMIT: Secs = 15 * 60;
 
-/// How long a walk from the last stop may take: past what almost anyone walks from a station,
-/// while keeping each stop's search to a few kilometers.
-const EGRESS_LIMIT: Secs = 30 * 60;
-
 /// A station's entrance: `(latitude, longitude, seconds between it and the platforms)`.
 pub type Entrance = (f64, f64, Secs);
 
@@ -37,10 +33,6 @@ pub struct StreetWalks {
     complexes: Vec<String>,
     /// From each origin to the stations' platforms it walks to, by index.
     access: HashMap<String, Vec<(u32, Secs)>>,
-    /// From each origin straight to destinations.
-    direct: HashMap<String, Vec<(u32, Secs)>>,
-    /// From each station's platforms to destinations.
-    egress: Vec<Vec<(u32, Secs)>>,
     /// From each station's platforms to other stations' within `TRANSFER_LIMIT`.
     near: Vec<Vec<(u32, Secs)>>,
 }
@@ -50,10 +42,6 @@ pub struct StreetWalks {
 pub struct Walks {
     /// From each origin to the stops it walks to.
     pub access: HashMap<String, Vec<(StopIdx, Secs)>>,
-    /// From each origin straight to destinations.
-    pub direct: HashMap<String, Vec<(u32, Secs)>>,
-    /// From each stop to destinations, by stop.
-    pub egress: Vec<Vec<(u32, Secs)>>,
     /// `(from, to, walk)` between stops of stations in different complexes.
     pub transfers: Vec<(StopIdx, StopIdx, Secs)>,
     /// Those of them between complexes changed between free though out of the system,
@@ -93,14 +81,13 @@ impl Snapped {
 
 impl StreetWalks {
     /// The walks from `origins`, by station ID, starting on the street at their entrances,
-    /// and between `stations`' platforms and to `destinations`, as `(latitude, longitude)`,
+    /// and between `stations`' platforms,
     /// at `speed` millimeters a second, rounded down to whole seconds,
     /// walking from origins for at most `max_secs`.
     pub fn compute(
         graph: &Graph,
         stations: &[Station],
         origins: &[String],
-        destinations: &[(f64, f64)],
         speed: Mm,
         max_secs: Secs,
     ) -> Self {
@@ -115,20 +102,6 @@ impl StreetWalks {
                     .collect(),
             })
             .collect();
-        let dest_splits: Vec<(u32, Split)> = destinations
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &(lat, lon))| Some((i as u32, graph.snap(lat, lon)?)))
-            .collect();
-        let to_destinations = |search: &Search, limit: Mm| -> Vec<(u32, Secs)> {
-            dest_splits
-                .iter()
-                .filter_map(|(d, split)| {
-                    let reached = search.to(split).filter(|&r| r <= limit)?;
-                    Some((*d, secs(reached)))
-                })
-                .collect()
-        };
         let to_stations = |search: &Search, skip: Option<usize>, limit: Mm| -> Vec<(u32, Secs)> {
             snapped
                 .iter()
@@ -141,22 +114,17 @@ impl StreetWalks {
                 .collect()
         };
 
-        let from_stations: Vec<_> = snapped
+        let near = snapped
             .par_iter()
             .enumerate()
             .map_init(
                 || Search::new(graph),
                 |search, (s, station)| {
-                    let sources = station.sources(true);
-                    search.run_from_vertices(&sources, mm(TRANSFER_LIMIT));
-                    let near = to_stations(search, Some(s), mm(TRANSFER_LIMIT));
-                    search.run_from_vertices(&sources, mm(EGRESS_LIMIT));
-                    let egress = to_destinations(search, mm(EGRESS_LIMIT));
-                    (near, egress)
+                    search.run_from_vertices(&station.sources(true), mm(TRANSFER_LIMIT));
+                    to_stations(search, Some(s), mm(TRANSFER_LIMIT))
                 },
             )
             .collect();
-        let (near, egress) = from_stations.into_iter().unzip();
 
         let index: HashMap<&str, usize> = stations
             .iter()
@@ -170,27 +138,17 @@ impl StreetWalks {
                 || Search::new(graph),
                 |search, origin| {
                     let Some(&o) = index.get(origin.as_str()) else {
-                        return (origin.clone(), Vec::new(), Vec::new());
+                        return (origin.clone(), Vec::new());
                     };
                     search.run_from_vertices(&snapped[o].sources(false), walk_limit);
-                    let access = to_stations(search, None, walk_limit);
-                    let direct = to_destinations(search, walk_limit);
-                    (origin.clone(), access, direct)
+                    (origin.clone(), to_stations(search, None, walk_limit))
                 },
             )
             .collect();
-        let mut access = HashMap::default();
-        let mut direct = HashMap::default();
-        for (origin, a, d) in from_origins {
-            access.insert(origin.clone(), a);
-            direct.insert(origin, d);
-        }
         Self {
             stations: stations.iter().map(|(id, ..)| id.clone()).collect(),
             complexes: stations.iter().map(|(_, c, _)| c.clone()).collect(),
-            access,
-            direct,
-            egress,
+            access: from_origins.into_iter().collect(),
             near,
         }
     }
@@ -508,7 +466,6 @@ impl Walks {
         }
         let mut walks = Self {
             stations: station.clone(),
-            egress: vec![Vec::new(); tt.stops.len()],
             complexes: station
                 .iter()
                 .map(|s| s.map(|s| all.complexes[s as usize].clone()))
@@ -517,7 +474,6 @@ impl Walks {
         };
         for (i, &s) in station.iter().enumerate() {
             let Some(s) = s else { continue };
-            walks.egress[i] = all.egress[s as usize].clone();
             let complex = &all.complexes[s as usize];
             let near: Vec<(StopIdx, Secs)> = all.near[s as usize]
                 .iter()
@@ -542,7 +498,6 @@ impl Walks {
                 .collect();
             walks.access.insert(origin.clone(), access);
         }
-        walks.direct = all.direct.clone();
         walks
     }
 }

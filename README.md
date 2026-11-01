@@ -99,7 +99,7 @@ but only those some cell's quickest trip takes, from any station at any of the s
 which `export` finds by running the page's own Rust (`web/times/`) through `route`,
 those farther than half an hour at 5 mph loaded after the page first draws,
 and those farther than an hour at 3 mph, where the slider starts, only once it's faster,
-and it takes each cell's median over the minutes, as routing does,
+and it takes each cell's median over the minutes, as R5 does,
 in a worker, in WebAssembly with SIMD (`web/times/`).
 Walking to the first station and between stations stays at 3 mph.
 Pointing at a place draws the walk there along the streets, out of the entrance it takes,

@@ -31,9 +31,6 @@ use streets::{Graph, Mm};
 
 use crate::walks::{Station, StreetWalks, Walks};
 
-/// The percentile R5 reports: the median.
-const PERCENTILE: f64 = 50.0;
-
 /// What `travel_times` routes on and how.
 pub struct Request<'a> {
     pub tt: &'a Timetable,
@@ -45,16 +42,12 @@ pub struct Request<'a> {
     pub max_rides: usize,
     /// The longest journey kept.
     pub max_secs: Secs,
-    pub destinations: usize,
     /// How many stations `StreetWalks` has.
     pub stations: usize,
 }
 
-/// Each origin's travel times, as R5's `TravelTimeMatrix` reports them:
-/// its `PERCENTILE`th journey over a departure each minute of the window,
-/// in whole minutes rounded down, to each destination reached within `max_secs`.
-/// With each, its ride to each station's platforms each minute, before walking out
-/// (see `Arrivals`).
+/// Each origin's ride to each station's platforms each minute, before walking out
+/// (see `Arrivals`), and the journeys behind them (see `Routes`).
 pub fn travel_times(req: &Request, origins: &[String]) -> Vec<OriginTimes> {
     let router = Router::with_max_rides(req.tt, req.max_rides);
     // Each stop's departures, from every pattern leaving it, sorted.
@@ -84,7 +77,7 @@ pub fn travel_times(req: &Request, origins: &[String]) -> Vec<OriginTimes> {
 /// and at its own station, when it's on the first train it can board there,
 /// by the station's index in `StreetWalks`:
 /// what the page adds walks out of stations to, at whatever speed its reader walks,
-/// before taking each destination's `PERCENTILE`th over the minutes, as here.
+/// before taking each destination's median over the minutes.
 pub type Arrivals = Vec<(u32, u8, u16)>;
 
 /// A leg of a journey: a ride on `pattern` from its stop at `board` to its stop at `alight`,
@@ -111,7 +104,7 @@ pub const WALK: u32 = u32::MAX;
 pub type Routes = Vec<(u32, u8, Vec<RouteLeg>)>;
 
 /// What `origin_times` gives for an origin.
-pub type OriginTimes = (Vec<(u32, u8)>, Arrivals, Routes);
+pub type OriginTimes = (Arrivals, Routes);
 
 fn origin_times(
     req: &Request,
@@ -121,10 +114,6 @@ fn origin_times(
 ) -> OriginTimes {
     let walks = req.walks;
     let access = walks.access.get(origin).map_or(&[][..], Vec::as_slice);
-    let direct = walks.direct.get(origin).map_or(&[][..], Vec::as_slice);
-    // Each destination's time each minute, minute-major.
-    let n = req.destinations;
-    let mut times = vec![Secs::MAX; req.minutes as usize * n];
     // Each station's arrival each minute, minute-major.
     let ns = req.stations;
     let mut at_stations = vec![Secs::MAX; req.minutes as usize * ns];
@@ -151,10 +140,6 @@ fn origin_times(
         labels.run_access(access, depart);
         at_stations[m as usize * ns..][..ns].copy_from_slice(&on_foot);
         via.fill(None);
-        let times = &mut times[m as usize * n..][..n];
-        for &(d, walk) in direct {
-            times[d as usize] = times[d as usize].min(walk);
-        }
         for (s, arrive) in labels.arrivals().enumerate() {
             if arrive == Secs::MAX {
                 continue;
@@ -178,9 +163,6 @@ fn origin_times(
                         via[station as usize] = Some((s as StopIdx, Some(to)));
                     }
                 }
-            }
-            for &(d, walk) in &walks.egress[s] {
-                times[d as usize] = times[d as usize].min(ride + walk);
             }
         }
         for station in 0..ns {
@@ -242,23 +224,6 @@ fn origin_times(
             at_stations[m * ns + station as usize] = board.map_or(Secs::MAX, |b| b - depart);
         }
     }
-    let index = percentile_index(req.minutes as usize, PERCENTILE);
-    let medians = |times: &[Secs], n: usize| -> Vec<(u32, Secs)> {
-        let mut each_minute = Vec::with_capacity(req.minutes as usize);
-        (0..n)
-            .filter_map(|d| {
-                each_minute.clear();
-                each_minute.extend((0..req.minutes as usize).map(|m| times[m * n + d]));
-                each_minute.sort_unstable();
-                let t = each_minute[index];
-                (t <= req.max_secs).then_some((d as u32, t))
-            })
-            .collect()
-    };
-    let cells = medians(&times, n)
-        .into_iter()
-        .map(|(d, t)| (d, (t / 60) as u8))
-        .collect();
     let arrivals = (0..ns)
         .flat_map(|s| (0..req.minutes as usize).map(move |m| (s, m)))
         .filter_map(|(s, m)| {
@@ -281,7 +246,7 @@ fn origin_times(
             })
         })
         .collect();
-    (cells, arrivals, routes)
+    (arrivals, routes)
 }
 
 /// The seconds `tt`'s footpath from `from` to `to` takes, or 0 if there's none.
@@ -330,12 +295,6 @@ fn fastest_journey(req: &Request, labels: &Labels, targets: &[StopIdx]) -> Vec<R
             leg
         })
         .collect()
-}
-
-/// The index of a percentile in a sorted list of `n`, as R5 picks it, without interpolating
-/// (`TravelTimeReducer.findPercentileIndex`).
-fn percentile_index(n: usize, percentile: f64) -> usize {
-    ((percentile / 100.0 * n as f64).ceil() as usize).saturating_sub(1)
 }
 
 /// `tt`'s changes within a complex timed by OSM's platforms (`Timetable::use_osm_transfers`):
@@ -411,29 +370,6 @@ fn origin_column<T>(origins: &[String], rows: &[Vec<T>]) -> ArrayRef {
             .zip(rows)
             .flat_map(|(o, r)| std::iter::repeat_n(o.as_str(), r.len())),
     ))
-}
-
-/// Writes each origin's travel times as `origin`, `destination`, and `minutes`.
-fn write_times(out: &Path, origins: &[String], times: &[Vec<(u32, u8)>]) -> Result<usize> {
-    write_parquet(
-        out,
-        vec![
-            ("origin", origin_column(origins, times)),
-            (
-                "destination",
-                Arc::new(UInt32Array::from_iter_values(
-                    times.iter().flatten().map(|&(d, _)| d),
-                )),
-            ),
-            (
-                "minutes",
-                Arc::new(UInt8Array::from_iter_values(
-                    times.iter().flatten().map(|&(_, m)| m),
-                )),
-            ),
-        ],
-    )?;
-    Ok(times.iter().map(Vec::len).sum())
 }
 
 /// Writes each origin's arrivals as `origin`, `station`, `minute`, and `seconds`.
@@ -678,18 +614,19 @@ fn write_patterns(out: &Path, tt: &Timetable, walks: &Walks, stations: &[String]
 /// written to `out`, and whether a journey may pay again (see `change_trains`).
 type Run = (PathBuf, Date, String, u32, PathBuf, bool);
 
-/// Median minutes from each of `origins`, by station ID,
-/// to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
+/// Rides from each of `origins`, by station ID, to every station's platforms, in each of `runs`,
 /// walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second,
 /// through `stations`' entrances (see `walks.rs`),
 /// changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
 /// with `islands`' stations' stops all on one island platform (see `use_platforms`),
 /// and changing free out of the system between the complexes of `free`'s pairs of stations.
-/// Each run also writes its origins' arrivals at stations to `{out}-arrivals.parquet`,
-/// and the walks out of every station to destinations, for walking at any speed,
+/// Each run writes its origins' arrivals at stations to `{out}-arrivals.parquet`,
+/// the journeys behind them to `{out}-routes.parquet`,
+/// and its patterns' stations to `{out}-patterns.parquet`,
+/// and the walks out of every station to `destinations`, as `(latitude, longitude)`,
+/// for walking at any speed,
 /// up to `exits_limit` millimeters, go to `exits_out` (see `walks::exits`),
 /// and the street walks between stations to draw go to `paths_out` (see `walks::transfer_paths`).
-/// Returns how many rows each run wrote.
 ///
 /// The streets are read and walked once, for every feed's stations (see `walks.rs`).
 #[pyfunction(name = "travel_times")]
@@ -710,7 +647,7 @@ fn py_travel_times(
     exits_out: PathBuf,
     exits_limit: Mm,
     paths_out: PathBuf,
-) -> Result<Vec<usize>> {
+) -> Result<()> {
     let max_secs = max_minutes as Secs * 60;
     py.detach(|| {
         // Each feed once, and each run's timetable.
@@ -727,7 +664,7 @@ fn py_travel_times(
             .collect::<Result<Vec<_>>>()?;
         drop(opened);
         let graph = Graph::build(&Osm::read(&osm)?);
-        let all = StreetWalks::compute(&graph, &stations, &origins, &destinations, speed, max_secs);
+        let all = StreetWalks::compute(&graph, &stations, &origins, speed, max_secs);
         let exits = walks::exits(&graph, &stations, &destinations, speed, exits_limit);
         write_exits(&exits_out, all.stations(), &exits)?;
         drop(exits);
@@ -738,11 +675,8 @@ fn py_travel_times(
 
         let platforms = Platforms::load(&platforms)?;
         let islands: HashSet<String> = islands.into_iter().collect();
-        let mut rows = vec![0; runs.len()];
         // Each run's own walks, as splitting stops by platform numbers them by its patterns.
-        for (i, (tt, (_, _, depart, minutes, out, pay_again))) in
-            tts.iter_mut().zip(&runs).enumerate()
-        {
+        for (tt, (_, _, depart, minutes, out, pay_again)) in tts.iter_mut().zip(&runs) {
             let Some(depart) = parse_time(depart) else {
                 bail!("not a time: {depart}");
             };
@@ -756,18 +690,10 @@ fn py_travel_times(
                 minutes: *minutes,
                 max_rides,
                 max_secs,
-                destinations: destinations.len(),
                 stations: all.stations().len(),
             };
-            let mut times = Vec::with_capacity(origins.len());
-            let mut arrivals = Vec::with_capacity(origins.len());
-            let mut routes = Vec::with_capacity(origins.len());
-            for (t, a, r) in travel_times(&req, &origins) {
-                times.push(t);
-                arrivals.push(a);
-                routes.push(r);
-            }
-            rows[i] = write_times(out, &origins, &times)?;
+            let (arrivals, routes): (Vec<_>, Vec<_>) =
+                travel_times(&req, &origins).into_iter().unzip();
             write_arrivals(
                 &beside(out, "arrivals"),
                 &origins,
@@ -777,7 +703,7 @@ fn py_travel_times(
             write_routes(&beside(out, "routes"), &origins, all.stations(), &routes)?;
             write_patterns(&beside(out, "patterns"), tt, &walks, all.stations())?;
         }
-        Ok(rows)
+        Ok(())
     })
 }
 
@@ -792,7 +718,7 @@ fn transfers(
 ) -> Result<Vec<(String, String, Secs)>> {
     py.detach(|| {
         let graph = Graph::build(&Osm::read(&osm)?);
-        Ok(StreetWalks::compute(&graph, &stations, &[], &[], speed, 0).transfers())
+        Ok(StreetWalks::compute(&graph, &stations, &[], speed, 0).transfers())
     })
 }
 
@@ -989,14 +915,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn median_of_60_is_the_30th() {
-        assert_eq!(percentile_index(60, 50.0), 29);
-        assert_eq!(percentile_index(1, 50.0), 0);
-        assert_eq!(percentile_index(5, 100.0), 4);
-    }
-
-    #[test]
-    fn median_over_the_window_walking_at_either_end() {
+    fn arrivals_and_journeys_over_the_window() {
         let files = std::collections::HashMap::from([
             ("stops.txt", "stop_id,stop_name\nA,A\nB,B\n"),
             ("trips.txt", "route_id,trip_id,service_id\n1,t1,W\n1,t2,W\n"),
@@ -1015,15 +934,11 @@ mod tests {
         let feed = Feed::load(&mut { files }).unwrap();
         let tt = Timetable::build(&feed, Date::new(2025, 9, 3).unwrap()).unwrap();
         let (a, b) = (tt.stop("A").unwrap(), tt.stop("B").unwrap());
-        let mut egress = vec![Vec::new(); tt.stops.len()];
-        egress[b as usize].push((0, 60));
         let mut stations = vec![None; tt.stops.len()];
         stations[a as usize] = Some(0);
         stations[b as usize] = Some(1);
         let walks = Walks {
             access: [("O".to_owned(), vec![(a, 120)])].into_iter().collect(),
-            direct: [("O".to_owned(), vec![(1, 300)])].into_iter().collect(),
-            egress,
             stations,
             ..Walks::default()
         };
@@ -1034,11 +949,8 @@ mod tests {
             minutes: 3,
             max_rides: 8,
             max_secs: 120 * 60,
-            destinations: 3,
             stations: 2,
         };
-        // Leaving at 08:00, 08:01, and 08:02, the walk makes the 08:05: 16, 15, and 14 minutes.
-        // Destination 2 is never reached.
         let times = travel_times(&req, &["O".to_owned()]);
         // On A's platforms 2 minutes after departing, on foot;
         // on B's when the 08:05 arrives, 15, 14, and 13 minutes after departing.
@@ -1064,7 +976,6 @@ mod tests {
         assert_eq!(
             times,
             [(
-                vec![(0, 15), (1, 5)],
                 each_minute,
                 // A's arrival changes every minute, walked to, so each minute's journey is read back;
                 // B's is the 08:05's each minute, read back only at the last.

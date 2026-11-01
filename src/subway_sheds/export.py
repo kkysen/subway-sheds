@@ -166,7 +166,7 @@ def write(grid: Grid) -> None:
       for each minute, which is all routing gives it to time:
       a journey's last leg's end, or the minute it departs at and its walk,
       unreached if that's more than `travel_times.MAX_TIME` after it departs.
-      It adds each departure's walk out to each cell and takes the median, as routing does.
+      It adds each departure's walk out to each cell and takes the median, as R5 does.
     - `exits.bin`: every walk out of a station to a cell the page ever takes
       (see `web/times/`'s `used_exits`), within `travel_times.NEAR_EXIT_WALK_M`,
       to time at the reader's walking speed,

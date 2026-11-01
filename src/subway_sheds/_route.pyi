@@ -20,12 +20,12 @@ def travel_times(
     exits_out: StrPath,
     exits_limit: int,
     paths_out: StrPath,
-) -> list[int]:
+) -> None:
     """
-    Median minutes from each of `origins`, by station ID, starting on the street at its entrances,
-    to each of `destinations`, as `(latitude, longitude)`, in each of `runs`,
+    Rides from each of `origins`, by station ID, starting on the street at its entrances,
+    to every station's platforms, in each of `runs`,
     as `(feed, date, depart, minutes, out, pay_again)`:
-    departing each minute of `minutes` from `depart`, written to `out`,
+    departing each minute of `minutes` from `depart`, written beside `out`,
     changing between complexes on the streets if `pay_again`,
     walking on the streets in `osm`, an `.osm.pbf`,
     at `speed` millimeters a second, through `stations`' entrances,
@@ -34,17 +34,17 @@ def travel_times(
     changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
     with `islands`' stations' stops all on one island platform,
     and changing free out of the system between the complexes of `free`'s pairs of stations.
-    Each run also writes its origins' rides to stations' platforms
+    Each run writes its origins' rides to stations' platforms
     each minute to `{out}-arrivals.parquet`, as `origin`, `station`, `minute`, and `seconds`,
     the journeys to them at the median minute to `{out}-routes.parquet`,
     and its patterns' stations to `{out}-patterns.parquet`,
-    and every station's walks out to destinations, up to `exits_limit` millimeters,
+    and every station's walks out to `destinations`, as `(latitude, longitude)`,
+    up to `exits_limit` millimeters,
     go to `exits_out`, as `station`, `destination`, `exit_seconds`, and `meters`,
     and the street walks between stations of different complexes that changing trains may walk,
     to draw, go to `paths_out`, as `from`, `to`, `latitude`, and `longitude`,
     a row for each point, each walk's in order,
     from the entrance walked out of to the one walked into.
-    Returns how many rows each run wrote.
 
     The streets are read and walked once, for every feed's stations.
     """

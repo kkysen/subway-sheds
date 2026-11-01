@@ -59,10 +59,6 @@ NO_LEGS = 0xFF
 MAX_RIDES = 8
 
 
-def output_path(scenario: Scenario, day: Day, fare: Fare) -> Path:
-    return paths.TRAVEL_TIMES / f"{scenario}-{day}-{fare}.parquet"
-
-
 def arrivals_path(scenario: Scenario, day: Day, fare: Fare) -> Path:
     return paths.TRAVEL_TIMES / f"{scenario}-{day}-{fare}-arrivals.parquet"
 
@@ -73,10 +69,6 @@ def routes_path(scenario: Scenario, day: Day, fare: Fare) -> Path:
 
 def patterns_path(scenario: Scenario, day: Day, fare: Fare) -> Path:
     return paths.TRAVEL_TIMES / f"{scenario}-{day}-{fare}-patterns.parquet"
-
-
-def stations_output_path(scenario: Scenario, day: Day, fare: Fare) -> Path:
-    return paths.TRAVEL_TIMES / f"{scenario}-{day}-{fare}-stations.parquet"
 
 
 def _mta_stations() -> set[str]:
@@ -109,19 +101,14 @@ def from_stations(
     origins: list[gtfs.Station],
     cells: gpd.GeoDataFrame,
     stations: list[gtfs.Station],
-) -> Iterator[tuple[Scenario, Day, Fare, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+) -> Iterator[tuple[Scenario, Day, Fare, pd.DataFrame, pd.DataFrame]]:
     """
-    Median minutes from each of `origins` to each of `cells` and `stations`, walking at both ends,
+    Each of `origins`' rides to each of `stations`' platforms each minute,
     in each scenario on each day with each fare of `runs`,
-    routed together so that the streets are walked once.
-
-    Only the pairs reachable within `MAX_TIME`:
-    to the cells as `station`, `cell`, and `minutes`,
-    and to the stations themselves as `station`, `to_station`, and `minutes`,
-    so that a station's own time doesn't count walking to the middle of the cell it's in.
-    With them, the median ride to each station's platforms reached by train,
-    as `station`, `to_station`, and `seconds`, which the page adds walks out of stations to
-    at whatever speed its reader walks.
+    routed together so that the streets are walked once,
+    only those within `MAX_TIME`, as `station`, `to_station`, `minute`, and `seconds`,
+    which the page adds walks out of stations to `cells` to
+    at whatever speed its reader walks, taking each cell's median over the minutes.
     And the journeys each takes to each station, each read back departing at `minute`
     and taken every minute before until the one before it,
     as `station`, `to_station`, `minute`, `leg` (`NO_LEGS` for none),
@@ -129,10 +116,6 @@ def from_stations(
     with each run's patterns' stations going to `patterns_path`.
     Every station's walks out to the cells, for that, go to `EXITS`.
     """
-    # The stations after the cells, numbered on from them, as one set of destinations.
-    destinations = list(zip(cells.geometry.y, cells.geometry.x, strict=True)) + [
-        (s.lat, s.lon) for s in stations
-    ]
     paths.TRAVEL_TIMES.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=paths.OUT) as tmp:
         outs = [Path(tmp) / f"{scenario}-{day}-{fare}.parquet" for scenario, day, fare in runs]
@@ -145,7 +128,7 @@ def from_stations(
             [s.id for s in stations if s.id not in _mta_stations()],
             scenarios.FREE_TRANSFERS,
             [s.id for s in origins],
-            destinations,
+            list(zip(cells.geometry.y, cells.geometry.x, strict=True)),
             WALKING_SPEED_MM_PER_S,
             [
                 (
@@ -164,17 +147,8 @@ def from_stations(
         )
         exits = pd.read_parquet(Path(tmp) / "exits.parquet").rename(columns={"destination": "cell"})
         EXITS.parent.mkdir(parents=True, exist_ok=True)
-        exits[exits["cell"] < len(cells)].astype({"station": "category"}).to_parquet(
-            EXITS, index=False
-        )
+        exits.astype({"station": "category"}).to_parquet(EXITS, index=False)
         for (scenario, day, fare), out in zip(runs, outs, strict=True):
-            times = pd.read_parquet(out).rename(
-                columns={"origin": "station", "destination": "cell"}
-            )
-            to_station = times["cell"] >= len(cells)
-            station_times = times[to_station].assign(
-                to_station=lambda t: [stations[i - len(cells)].id for i in t["cell"]]
-            )[["station", "to_station", "minutes"]]
             arrivals = (
                 pd.read_parquet(out.with_name(f"{out.stem}-arrivals.parquet"))
                 .rename(columns={"origin": "station", "station": "to_station"})
@@ -188,16 +162,4 @@ def from_stations(
             shutil.copy(
                 out.with_name(f"{out.stem}-patterns.parquet"), patterns_path(scenario, day, fare)
             )
-            yield (
-                scenario,
-                day,
-                fare,
-                times[~to_station].astype(
-                    {"station": "category", "cell": "int32", "minutes": "uint8"}
-                ),
-                station_times.astype(
-                    {"station": "category", "to_station": "category", "minutes": "uint8"}
-                ),
-                arrivals,
-                routes,
-            )
+            yield scenario, day, fare, arrivals, routes
