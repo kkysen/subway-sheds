@@ -3,8 +3,7 @@
   // and the rest catch what it lets through.
   "compilerOptions": {
     "target": "es2024",
-    // With `Symbol.dispose`, which `brotli-dec-wasm`'s types use.
-    "lib": ["es2024", "esnext.disposable", "dom", "dom.iterable"],
+    "lib": ["es2024", "dom", "dom.iterable"],
     "module": "preserve",
     "moduleResolution": "bundler",
     "types": ["vite/client", "geojson"],

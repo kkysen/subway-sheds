@@ -6,10 +6,10 @@ import json
 import os
 import threading
 import zipfile
+from compression import zstd
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
-import brotli
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -25,12 +25,16 @@ UNREACHED = 0xFFFF
 WALK_LEG = 0xFFFF
 
 
-class _BrotliFiles:
+# Near Brotli's best, a few percent bigger, but several times faster to compress and decompress.
+ZSTD_LEVEL = 19
+
+
+class _ZstdFiles:
     """
-    Writes files compressed with Brotli, as GitHub Pages won't:
+    Writes files compressed with zstd, as GitHub Pages won't:
     it sends `.bin` files as they are, so the page decompresses them itself.
-    Compressed on every core, as Brotli's best takes minutes for every station's files,
-    and `brotli` lets go of the GIL to compress, with only a few files waiting at a time.
+    Compressed on every core, as zstd's best takes a while for every station's files,
+    and `compression.zstd` lets go of the GIL to compress, with only a few files waiting at a time.
     """
 
     def __init__(self) -> None:
@@ -45,7 +49,7 @@ class _BrotliFiles:
 
     def _write(self, path: Path, data: bytes) -> None:
         try:
-            path.write_bytes(brotli.compress(data, quality=11))
+            path.write_bytes(zstd.compress(data, level=ZSTD_LEVEL))
         finally:
             self._waiting.release()
 
@@ -82,7 +86,7 @@ def _deltas(values: np.ndarray, first: np.ndarray) -> np.ndarray:
 
 
 def _write_exit_walks(
-    files: _BrotliFiles, grid: Grid, stations: list[gtfs.Station], exits: pd.DataFrame
+    files: _ZstdFiles, grid: Grid, stations: list[gtfs.Station], exits: pd.DataFrame
 ) -> None:
     """
     Each station's walks out to the cells of `exits`, by station, as `stations` lists them,
@@ -193,7 +197,7 @@ def write(grid: Grid) -> None:
       as `walks-out/` has them, but only the points it doesn't have, numbered on from its,
       continuing its tree.
 
-    The `.bin` files are each compressed with Brotli (see `_BrotliFiles`).
+    The `.bin` files are each compressed with zstd (see `_ZstdFiles`).
     """
     # Only the files, keeping the directories, which a running `vite` watches:
     # replacing them, it serves the page itself for every file in them until restarted.
@@ -201,7 +205,7 @@ def write(grid: Grid) -> None:
         if not old.is_dir():
             old.unlink()
     paths.WEB_DATA.mkdir(parents=True, exist_ok=True)
-    files = _BrotliFiles()
+    files = _ZstdFiles()
 
     (paths.WEB_DATA / "grid.json").write_text(
         json.dumps(
