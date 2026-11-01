@@ -564,10 +564,17 @@ body,
   margin-top: 0.3em;
 }
 
-/* For minutes saved, which journey it is: nothing without QueensLink, its logo with it. */
+/* For minutes saved, which journey it is: "Now" without QueensLink, its logo with it. */
 .journey-scenario {
   align-self: center;
   min-width: 2.2em;
+}
+
+/* The whole trip's time, before its steps. */
+.journey-total {
+  align-self: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .journey-logo {
@@ -586,6 +593,7 @@ body,
 
 .journey-time {
   font-size: 0.75em;
+  font-variant-numeric: tabular-nums;
   line-height: 1.2;
   opacity: 0.75;
   white-space: nowrap;

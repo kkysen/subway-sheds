@@ -1062,25 +1062,6 @@ function exitFromOf(cell: number, run = currentRun()): number {
     : (selectedExitFrom[run * grid.cols.length + cell] ?? NO_STATION);
 }
 
-// How long the trip to `cell` takes, walking out included, in the view shown, as said in its popup.
-function describeCell(cell: number): string {
-  if (cell < 0 || selectedTimes === undefined) {
-    return "";
-  }
-  const stride = timesStride(grid);
-  const start = baselineRun() * stride + cell;
-  const say = (minutes: number): string =>
-    minutes === UNREACHED ? "not reached" : `${minutes} min`;
-  const baseline = selectedTimes[start] ?? UNREACHED;
-  const queenslink = selectedTimes[start + stride] ?? UNREACHED;
-  const view = currentView();
-  const trip =
-    view === "saved"
-      ? `${say(baseline)} without, ${say(queenslink)} with`
-      : say(view === "baseline" ? baseline : queenslink);
-  return `Here: ${trip}`;
-}
-
 function bandAt(lngLat: LngLat): number {
   const at = rasterAt(lngLat);
   if (selectedClasses === undefined || at === undefined) {
@@ -1253,16 +1234,12 @@ function showBand(band: number, lngLat: LngLat): void {
       }
     }
   }, HOVER_PREFETCH_MS);
-  const here = describeCell(cell);
   const label = document.createElement("span");
   // What the band is, wrapped at `BAND_TEXT_WIDTH`, or as wide as the journey under it.
   const text = document.createElement("span");
   text.className = "band-text";
   text.style.maxWidth = `${BAND_TEXT_WIDTH}px`;
   text.append(describeBand(band, currentView()));
-  if (here !== "") {
-    text.append(document.createElement("br"), here);
-  }
   label.append(text);
   // The trains there, and the walk out of the last station at the speed chosen.
   for (const run of shownRuns()) {
@@ -1521,11 +1498,20 @@ function diamond(): ImageData {
 // Neither feed has GTFS fares yet; once one does, it should come from them.
 const FARE = "$3";
 
-// One step of a journey in its popup: `top`, with its whole minutes in small text under it,
+// Seconds as `m:ss`, or `h:mm:ss` from an hour.
+function clock(seconds: number): string {
+  const s = Math.max(Math.round(seconds), 0);
+  const hours = Math.floor(s / 3600);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const minutes = Math.floor(s / 60) % 60;
+  return hours === 0 ? `${minutes}:${pad(s % 60)}` : `${hours}:${pad(minutes)}:${pad(s % 60)}`;
+}
+
+// One step of a journey in its popup: `top`, with its time in small text under it,
 // and the fare over it if it's paid there.
 function journeyStep(
   top: Node | string,
-  minutes: number,
+  seconds: number,
   className: string,
   pays = false,
 ): HTMLElement {
@@ -1536,7 +1522,7 @@ function journeyStep(
   fare.textContent = pays ? FARE : "";
   const time = document.createElement("span");
   time.className = "journey-time";
-  time.textContent = `${minutes} min`;
+  time.textContent = clock(seconds);
   step.append(fare, top, time);
   return step;
 }
@@ -1551,11 +1537,12 @@ function paysBetween(legs: readonly RouteLeg[], from: RouteLeg, to: RouteLeg): b
   });
 }
 
-// A journey's trains, each with its ride's minutes under it, and between them,
-// the minutes changing, walking and waiting, then, if given, the walk out at the end, an arrow too.
-// Before them, as an arrow with its minutes as a change's are, from departing at `departs`
+// A journey's trains, each with its ride's time under it, and between them,
+// the time changing, walking and waiting, then, if given, the walk out at the end, an arrow too.
+// Before them, as an arrow with its time as a change's is, from departing at `departs`
 // seconds into the window: going in and waiting for the first, or walking to another station for it.
-// In `run`, which, for minutes saved, it starts by saying, without QueensLink or with it.
+// In `run`, which, for minutes saved, it starts by saying, without QueensLink or with it,
+// then the whole trip's time.
 function journeyLine(
   legs: readonly RouteLeg[],
   departs: number | undefined,
@@ -1584,13 +1571,14 @@ function journeyLine(
     line.append(scenario);
   }
   const first = rides[0];
-  // Each step's whole minutes, as those of the whole trip at its end less those at its start,
-  // so that they add up to the trip's, which is rounded down, as the worker does.
   const since = departs ?? first?.start ?? 0;
-  const minutes = (from: number, to: number): number =>
-    Math.max(Math.floor((to - since) / 60) - Math.floor((from - since) / 60), 0);
+  const arrives = (rides.at(-1)?.end ?? since) + (walkOut ?? 0);
+  const total = document.createElement("span");
+  total.className = "journey-total";
+  total.textContent = clock(arrives - since);
+  line.append(total);
   if (first !== undefined && departs !== undefined) {
-    line.append(journeyStep("→", minutes(departs, first.start), "journey-change", true));
+    line.append(journeyStep("→", first.start - departs, "journey-change", true));
   }
   let last: RouteLeg | undefined;
   for (const leg of legs) {
@@ -1599,22 +1587,14 @@ function journeyLine(
     }
     if (last !== undefined) {
       line.append(
-        journeyStep(
-          "→",
-          minutes(last.end, leg.start),
-          "journey-change",
-          paysBetween(legs, last, leg),
-        ),
+        journeyStep("→", leg.start - last.end, "journey-change", paysBetween(legs, last, leg)),
       );
     }
-    line.append(
-      journeyStep(bullet(trainOf(leg, run)), minutes(leg.start, leg.end), "journey-ride"),
-    );
+    line.append(journeyStep(bullet(trainOf(leg, run)), leg.end - leg.start, "journey-ride"));
     last = leg;
   }
   if (walkOut !== undefined) {
-    const end = last?.end ?? since;
-    line.append(journeyStep("→", minutes(end, end + walkOut), "journey-change"));
+    line.append(journeyStep("→", walkOut, "journey-change"));
   }
   return line;
 }
