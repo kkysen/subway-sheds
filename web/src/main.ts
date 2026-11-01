@@ -835,6 +835,8 @@ function addExits(part: ArrayBuffer): void {
 let timesAsked = 0;
 let timesComputing = false;
 let timesStale = false;
+// The station the times computing are from, which another may have been picked over since.
+let timesOrigin = "";
 
 // Recomputes the times for the station and controls as they are, then redraws.
 function recompute(): void {
@@ -849,6 +851,7 @@ function recompute(): void {
   timesComputing = true;
   timesStale = false;
   timesAsked += 1;
+  timesOrigin = selected;
   const request: TimesRequest = {
     kind: "times",
     id: timesAsked,
@@ -863,7 +866,8 @@ function recompute(): void {
 
 timesWorker.addEventListener("message", (event: MessageEvent<TimesResponse>) => {
   timesComputing = false;
-  if (timesStale) {
+  // Asked again since, or for a station since replaced, which `recompute` asks for, once it's loaded.
+  if (timesStale || timesOrigin !== selected) {
     recompute();
     return;
   }
@@ -882,6 +886,17 @@ controls.addEventListener("input", (event) => {
     recompute();
   }
 });
+
+// Forgets the times shown, and their bands, so that they aren't taken for another station's.
+function clearTimes(): void {
+  selectedTimes = undefined;
+  selectedExitFrom = undefined;
+  selectedExitMinute = undefined;
+  selectedClasses = undefined;
+  const { width, height } = rasterSize(grid);
+  bandsLayer.setClasses(new Int8Array(width * height).fill(NOTHING), []);
+  clearBand();
+}
 
 function drawCells(): void {
   if (selectedTimes !== undefined) {
@@ -904,10 +919,15 @@ function stationLabel(station: Station): (string | HTMLElement)[] {
 
 async function selectStation(id: string): Promise<void> {
   const station = stationsById.get(id);
-  if (station === undefined) {
+  // Picked again, as when a link to another view of it is followed, it's already loaded.
+  if (station === undefined || (id === selected && selectedArrivals !== undefined)) {
     return;
   }
   selected = id;
+  // The last station's, which its journeys would otherwise be drawn over, mixed with this one's.
+  selectedArrivals = undefined;
+  selectedRoutes = undefined;
+  clearTimes();
   // Shown picked straight away, so that the click feels taken while its times load.
   for (const layer of ["selected-station", "selected-station-circle"]) {
     map.setFilter(layer, ["==", ["get", "id"], id]);
