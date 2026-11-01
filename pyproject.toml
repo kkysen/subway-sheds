@@ -38,6 +38,9 @@ cache-keys = [
     { file = "route/Cargo.toml" },
     { file = "route/Cargo.lock" },
     { file = "route/src/**/*.rs" },
+    # The page's travel times, which the `route` crate builds with.
+    { file = "web/times/Cargo.toml" },
+    { file = "web/times/src/**/*.rs" },
 ]
 
 [dependency-groups]
