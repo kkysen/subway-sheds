@@ -587,10 +587,15 @@ body,
   position: absolute;
   right: 0;
   bottom: 100%;
-  font-size: 0.75em;
-  font-weight: normal;
   line-height: 1.2;
   white-space: nowrap;
+}
+
+/* Smaller, to the left of the time, so that the time lines up by its seconds with the totals'. */
+.journey-difference-percent {
+  margin-right: 0.3em;
+  font-size: 0.75em;
+  font-weight: normal;
 }
 
 .journey-logo {

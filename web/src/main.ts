@@ -1615,7 +1615,10 @@ function sayDifference(label: HTMLElement): void {
   const percent = without === 0 ? 0 : Math.round((100 * Math.abs(change)) / without);
   const difference = document.createElement("span");
   difference.className = "journey-difference";
-  difference.textContent = `${sign}${clock(Math.abs(change))} (${sign}${percent}%)`;
+  const share = document.createElement("span");
+  share.className = "journey-difference-percent";
+  share.textContent = `(${sign}${percent}%)`;
+  difference.append(share, `${sign}${clock(Math.abs(change))}`);
   totals[1]?.append(difference);
 }
 
