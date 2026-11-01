@@ -570,9 +570,12 @@ body,
   min-width: 2.2em;
 }
 
-/* The whole trip's time, before its steps. */
+/* The whole trip's time, before its steps,
+   right-aligned as wide as `h:mm:ss`, so that both journeys' seconds line up. */
 .journey-total {
   align-self: center;
+  min-width: 6ch;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
