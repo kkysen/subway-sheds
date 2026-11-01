@@ -352,6 +352,11 @@ body,
   pointer-events: none;
 }
 
+/* Placed beside its point, off the journey, rather than pointing at it. */
+.band-popup .maplibregl-popup-tip {
+  display: none;
+}
+
 .legend-labels {
   position: relative;
   height: 1.4em;

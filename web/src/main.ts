@@ -1073,7 +1073,93 @@ function bandAt(lngLat: LngLat): number {
 const BAND_TEXT_WIDTH = 240;
 // Wide enough for a journey on one line, but not past the edges of a phone's screen.
 const BAND_POPUP_WIDTH = "calc(100vw - 32px)";
-const bandPopup = new Popup({ closeButton: false, closeOnClick: false, className: "band-popup" });
+// From its top left corner, offset to wherever it keeps off the journey drawn (see `placeBandPopup`).
+const bandPopup = new Popup({
+  closeButton: false,
+  closeOnClick: false,
+  className: "band-popup",
+  anchor: "top-left",
+});
+
+// The journey drawn, for keeping the popup off it.
+let routeShown: GeoJSON.Feature[] = [];
+// How far the popup keeps from the point it's for, and from the journey, in pixels.
+const POPUP_GAP_PX = 12;
+const POPUP_ROUTE_MARGIN_PX = 8;
+// How finely the journey's lines are sampled, in pixels, to see whether the popup covers them.
+const ROUTE_SAMPLE_PX = 4;
+
+// Puts the popup beside its point, wherever it covers the least of the journey drawn,
+// and then the least off the map, and then nearest above the point, as MapLibre would have it.
+function placeBandPopup(): void {
+  if (!bandPopup.isOpen()) {
+    return;
+  }
+  const element = bandPopup.getElement();
+  const w = element.offsetWidth;
+  const h = element.offsetHeight;
+  const at = map.project(bandPopup.getLngLat());
+  const container = map.getContainer();
+  // The journey's points, and along its lines, on the screen, from the popup's point.
+  const samples: [number, number][] = [];
+  const sample = (position: GeoJSON.Position): [number, number] => {
+    const p = map.project([position[0] ?? 0, position[1] ?? 0]);
+    return [p.x - at.x, p.y - at.y];
+  };
+  for (const feature of routeShown) {
+    const { geometry } = feature;
+    const lines =
+      geometry.type === "LineString"
+        ? [geometry.coordinates]
+        : geometry.type === "MultiLineString"
+          ? geometry.coordinates
+          : geometry.type === "Point"
+            ? [[geometry.coordinates]]
+            : [];
+    for (const line of lines) {
+      const points = line.map(sample);
+      for (const [k, [x, y]] of points.entries()) {
+        samples.push([x, y]);
+        const [nx, ny] = points[k + 1] ?? [x, y];
+        const steps = Math.floor(Math.hypot(nx - x, ny - y) / ROUTE_SAMPLE_PX);
+        for (let i = 1; i < steps; i++) {
+          samples.push([x + ((nx - x) * i) / steps, y + ((ny - y) * i) / steps]);
+        }
+      }
+    }
+  }
+  // Above or below, from all to its left to all to its right, or left or right, from all above to all below.
+  const SLIDES = 8;
+  const candidates: [number, number][] = [];
+  for (let i = 0; i <= SLIDES; i++) {
+    const x = -w - POPUP_GAP_PX + ((w + 2 * POPUP_GAP_PX) * i) / SLIDES;
+    const y = -h - POPUP_GAP_PX + ((h + 2 * POPUP_GAP_PX) * i) / SLIDES;
+    candidates.push([x, -h - POPUP_GAP_PX], [x, POPUP_GAP_PX]);
+    candidates.push([-w - POPUP_GAP_PX, y], [POPUP_GAP_PX, y]);
+  }
+  const cost = ([x, y]: [number, number]): number => {
+    const m = POPUP_ROUTE_MARGIN_PX;
+    const covered = samples.filter(
+      ([sx, sy]) => sx >= x - m && sx <= x + w + m && sy >= y - m && sy <= y + h + m,
+    ).length;
+    const off =
+      Math.max(-(at.x + x), 0) +
+      Math.max(at.x + x + w - container.clientWidth, 0) +
+      Math.max(-(at.y + y), 0) +
+      Math.max(at.y + y + h - container.clientHeight, 0);
+    const fromAbove = Math.abs(x + w / 2) + Math.abs(y + h + POPUP_GAP_PX);
+    return covered * 1e6 + off * 1e3 + fromAbove;
+  };
+  let best: [number, number] = [-w / 2, -h - POPUP_GAP_PX];
+  for (const candidate of candidates) {
+    if (cost(candidate) < cost(best)) {
+      best = candidate;
+    }
+  }
+  bandPopup.setOffset(best);
+}
+// Zooming moves the journey's lines from the point, under the popup or out from it.
+map.on("zoom", placeBandPopup);
 
 highlightBand = (band: number): void => {
   bandsLayer.setHighlight(band);
@@ -1158,6 +1244,7 @@ function showBand(band: number, lngLat: LngLat): void {
     (j) => j.offsetWidth,
   );
   text.style.maxWidth = `${Math.max(BAND_TEXT_WIDTH, ...widths)}px`;
+  placeBandPopup();
 }
 
 restorePinnedBand = (): void => {
@@ -1656,6 +1743,8 @@ function showRoute(
       return routeFeatures(legs, stations.indexOf(to), position, cell, run, faded);
     });
     source.setData({ type: "FeatureCollection", features });
+    routeShown = features;
+    placeBandPopup();
   }
 }
 
@@ -1925,6 +2014,7 @@ await loaded;
       .setMaxWidth("none")
       .setDOMContent(label)
       .addTo(map);
+    placeBandPopup();
   }
   // On a phone, which can't point, holding a station says what pointing at it would,
   // without picking it, until the next tap.
