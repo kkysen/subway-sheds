@@ -20,11 +20,10 @@ export type Request =
       readonly runs: readonly [number, number];
     };
 
-// And what it's told: the times asked for by `id`.
-export interface Response {
-  readonly id: number;
-  readonly times: TravelTimes;
-}
+// And what it's told: the times asked for by `id`, or why they couldn't be computed.
+export type Response =
+  | { readonly id: number; readonly times: TravelTimes }
+  | { readonly id: number; readonly error: string };
 
 // `web/times/src/lib.rs`'s exports.
 interface Times {
@@ -158,12 +157,20 @@ self.onmessage = async (event: MessageEvent<Request>): Promise<void> => {
     });
     return;
   }
-  const times = await module;
-  const at = await laid;
-  if (at === undefined) {
+  // Always answered, so that the page asks again rather than waiting forever.
+  let result: TravelTimes;
+  try {
+    const times = await module;
+    const at = await laid;
+    if (at === undefined) {
+      throw new Error("times asked for before the walks out of stations");
+    }
+    result = compute(times, at, request);
+  } catch (error) {
+    const response: Response = { id: request.id, error: String(error) };
+    self.postMessage(response);
     return;
   }
-  const result = compute(times, at, request);
   const response: Response = { id: request.id, times: result };
   self.postMessage(response, {
     transfer: [result.times.buffer, result.exitFrom.buffer, result.exitMinute.buffer],

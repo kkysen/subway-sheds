@@ -871,12 +871,22 @@ timesWorker.addEventListener("message", (event: MessageEvent<TimesResponse>) => 
     recompute();
     return;
   }
+  if ("error" in event.data) {
+    console.error("computing times failed:", event.data.error);
+    return;
+  }
   ({
     times: selectedTimes,
     exitFrom: selectedExitFrom,
     exitMinute: selectedExitMinute,
   } = event.data.times);
   drawCells();
+});
+
+// The worker failing to load never answers, so that otherwise nothing would ask it again.
+timesWorker.addEventListener("error", (event) => {
+  console.error("times worker failed:", event.message);
+  timesComputing = false;
 });
 
 // Recomputed as the speed slides.
