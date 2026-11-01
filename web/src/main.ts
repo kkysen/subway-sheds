@@ -1441,7 +1441,14 @@ function journeyLine(
   if (currentView() === "saved") {
     const scenario = document.createElement("span");
     scenario.className = "journey-scenario";
-    scenario.textContent = run % 2 === 0 ? "Without" : "With";
+    // Nothing for the one without, and QueensLink's logo for the one with it.
+    if (run % 2 === 1) {
+      const logo = document.createElement("img");
+      logo.className = "journey-logo";
+      logo.src = `${import.meta.env.BASE_URL}favicon-192.png`;
+      logo.alt = "with QueensLink";
+      scenario.append(logo);
+    }
     line.append(scenario);
   }
   const first = rides[0];
