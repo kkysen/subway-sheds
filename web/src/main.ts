@@ -1619,7 +1619,7 @@ function journeyLine(
 }
 
 // For minutes saved, with both journeys in `label`, says over the one with QueensLink's whole time
-// how much less it is than the one without, and by what percent,
+// how much less it is than the one without, and over its logo by what percent,
 // in the room above it, rather than making the popup taller.
 function sayDifference(label: HTMLElement): void {
   const totals = [...label.querySelectorAll<HTMLElement>(".journey-total")];
@@ -1635,8 +1635,10 @@ function sayDifference(label: HTMLElement): void {
   const share = document.createElement("span");
   share.className = "journey-difference-percent";
   share.textContent = `(${sign}${percent}%)`;
-  difference.append(share, `${sign}${clock(Math.abs(change))}`);
+  difference.textContent = `${sign}${clock(Math.abs(change))}`;
   totals[1]?.append(difference);
+  // And its percent over QueensLink's logo.
+  label.querySelectorAll(".journey-scenario")[1]?.append(share);
 }
 
 // The street walks between stations that changing trains may walk, by `from|to`,

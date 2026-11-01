@@ -566,6 +566,7 @@ body,
 
 /* For minutes saved, which journey it is: "Now" without QueensLink, its logo with it. */
 .journey-scenario {
+  position: relative;
   align-self: center;
   min-width: 2.2em;
 }
@@ -591,11 +592,15 @@ body,
   white-space: nowrap;
 }
 
-/* Smaller, to the left of the time, so that the time lines up by its seconds with the totals'. */
+/* Smaller, over QueensLink's logo, in the room the fares leave as the difference does. */
 .journey-difference-percent {
-  margin-right: 0.3em;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 0.75em;
-  font-weight: normal;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .journey-logo {
