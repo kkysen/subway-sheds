@@ -1062,6 +1062,21 @@ function exitFromOf(cell: number, run = currentRun()): number {
     : (selectedExitFrom[run * grid.cols.length + cell] ?? NO_STATION);
 }
 
+// Whether, for minutes saved, `cell` has journeys to show though it's in no band, saving none.
+function journeysTo(cell: number): boolean {
+  return (
+    currentView() === "saved" && shownRuns().every((run) => exitFromOf(cell, run) !== NO_STATION)
+  );
+}
+
+// What a cell in no band with journeys to it, as `journeysTo` says, saves: none, or it loses some.
+function describeNoSaving(cell: number): string {
+  const saved = selectedSaved?.[cell] ?? 0;
+  return saved < 0
+    ? `${-saved} minute${saved === -1 ? "" : "s"} slower with QueensLink`
+    : "Under a minute saved by QueensLink";
+}
+
 function bandAt(lngLat: LngLat): number {
   const at = rasterAt(lngLat);
   if (selectedClasses === undefined || at === undefined) {
@@ -1204,14 +1219,14 @@ let exitWalksWait: number | undefined;
 // Highlights a band and says what it is at a point, or shows the pinned one if there's none.
 function showBand(band: number, lngLat: LngLat): void {
   showRoute(undefined);
-  if (band === NOTHING) {
+  const cell = cellAt(lngLat);
+  if (band === NOTHING && !journeysTo(cell)) {
     restorePinnedBand();
     return;
   }
   highlightBand(band);
   // The journey there: the trains to the station walked out of, and the walk from it,
   // straight, then along the streets once the station's walks out are loaded.
-  const cell = cellAt(lngLat);
   const drawRoute = (): void =>
     showRoute(
       (run) => stations[exitFromOf(cell, run)],
@@ -1239,7 +1254,7 @@ function showBand(band: number, lngLat: LngLat): void {
   const text = document.createElement("span");
   text.className = "band-text";
   text.style.maxWidth = `${BAND_TEXT_WIDTH}px`;
-  text.append(describeBand(band, currentView()));
+  text.append(band === NOTHING ? describeNoSaving(cell) : describeBand(band, currentView()));
   label.append(text);
   // The trains there, and the walk out of the last station at the speed chosen.
   for (const run of shownRuns()) {
@@ -1288,10 +1303,12 @@ pinLegendBand = (band: number): void => {
   restorePinnedBand();
 };
 
-// Pins the band at a point, or unpins it if it's the one pinned or there's none there.
+// Pins the band at a point, or unpins it if it's the one pinned or there's none there,
+// nor, for minutes saved, journeys there saving none.
 function pinBand(lngLat: LngLat): void {
   const band = bandAt(lngLat);
-  pinned = band === NOTHING || band === pinned?.band ? undefined : { band, lngLat };
+  const none = band === NOTHING && !journeysTo(cellAt(lngLat));
+  pinned = none || (band !== NOTHING && band === pinned?.band) ? undefined : { band, lngLat };
   restorePinnedBand();
 }
 
