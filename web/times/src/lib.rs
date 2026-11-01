@@ -46,6 +46,11 @@ pub struct TravelTimes<'a> {
     pub exit_minute: &'a mut [u8],
 }
 
+/// Where `station`'s walks out are in `exits`.
+fn own_range(exits: &Exits, station: usize) -> std::ops::Range<usize> {
+    exits.starts[station] as usize..exits.starts[station + 1] as usize
+}
+
 /// Whole minutes, if within `MAX_SECONDS`.
 fn minutes(seconds: u32) -> u8 {
     if seconds <= MAX_SECONDS {
@@ -144,7 +149,7 @@ fn compute_tracking<const TRACK: bool>(
     let mut direct = vec![UNREACHED_SECONDS; cells];
     // And if `TRACK`, the walk out it is.
     let mut direct_exit = vec![0u32; if TRACK { cells } else { 0 }];
-    let own = exits.starts[origin] as usize..exits.starts[origin + 1] as usize;
+    let own = own_range(exits, origin);
     for (k, (&meters, &cell)) in own
         .clone()
         .zip(exits.meters[own.clone()].iter().zip(&exits.cell[own]))
@@ -158,6 +163,21 @@ fn compute_tracking<const TRACK: bool>(
             }
         }
     }
+    // If `TRACK`, the cells walked to straight from `origin`, each once.
+    let mut walked_to: Vec<usize> = if TRACK {
+        exits.cell[own_range(exits, origin)]
+            .iter()
+            .map(|&cell| usize::from(cell))
+            .filter(|&cell| direct[cell] < UNREACHED_SECONDS)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    walked_to.sort_unstable();
+    walked_to.dedup();
+    // And the cells whose earliest by train changed this minute, each once.
+    let mut changed: Vec<usize> = Vec::new();
+    let mut is_changed = vec![false; if TRACK { cells } else { 0 }];
     let stride = cells + stations;
     // The earliest time, from the window's start, each cell is reached by train this minute,
     // and the station walked out of to it.
@@ -195,11 +215,39 @@ fn compute_tracking<const TRACK: bool>(
                         best_from[cell] = s as u32;
                         if TRACK {
                             best_exit[cell] = k as u32;
+                            if !is_changed[cell] {
+                                is_changed[cell] = true;
+                                changed.push(cell);
+                            }
                         }
                     }
                 }
             }
             let departs = 60 * m as u32;
+            // Only the cells whose earliest by train changed can newly be reached quickest by train:
+            // while it's the same, departing earlier only takes it longer, so it was quickest by train
+            // the minute after too, through the same walk out, if it is now.
+            // And walking straight from `origin`, only to the cells it walks to.
+            if TRACK {
+                for &cell in &changed {
+                    is_changed[cell] = false;
+                    if best[cell] - departs < direct[cell] {
+                        used[best_exit[cell] as usize] = true;
+                    }
+                }
+                changed.clear();
+                for &cell in &walked_to {
+                    let by_train = if best[cell] >= UNREACHED_SECONDS {
+                        best[cell]
+                    } else {
+                        best[cell] - departs
+                    };
+                    if direct[cell] <= by_train {
+                        used[direct_exit[cell] as usize] = true;
+                    }
+                }
+                continue;
+            }
             // Branch-free, so that it's vectorized.
             let row = &mut trips[m * cells..][..cells];
             for (((trip, &reached), &from), &walked) in
@@ -216,26 +264,10 @@ fn compute_tracking<const TRACK: bool>(
                     by_train << 16 | from
                 };
             }
-            if TRACK {
-                for cell in 0..cells {
-                    let trip = row[cell] >> 16;
-                    if trip >= UNREACHED_SECONDS {
-                        continue;
-                    }
-                    // As the trip was picked above.
-                    let by_train = if best[cell] >= UNREACHED_SECONDS {
-                        best[cell]
-                    } else {
-                        best[cell] - departs
-                    };
-                    let k = if direct[cell] <= by_train {
-                        direct_exit[cell]
-                    } else {
-                        best_exit[cell]
-                    };
-                    used[k as usize] = true;
-                }
-            }
+        }
+        // Only tracking, `used_exits` needs no medians: they're `compute`'s.
+        if TRACK {
+            continue;
         }
         let first = run * stride;
         for cell in 0..cells {
