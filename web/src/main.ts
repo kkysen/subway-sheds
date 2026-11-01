@@ -1258,6 +1258,7 @@ function showBand(band: number, lngLat: LngLat): void {
       label.append(line);
     }
   }
+  sayDifference(label);
   bandPopup.setLngLat(lngLat).setMaxWidth(BAND_POPUP_WIDTH).setDOMContent(label).addTo(map);
   // The journeys kept on one line, as far as the map has room for, and the text as wide as the widest.
   const widths = [...label.querySelectorAll<HTMLElement>(".route-trains")].map(
@@ -1576,6 +1577,7 @@ function journeyLine(
   const total = document.createElement("span");
   total.className = "journey-total";
   total.textContent = clock(arrives - since);
+  total.dataset["seconds"] = String(arrives - since);
   line.append(total);
   if (first !== undefined && departs !== undefined) {
     line.append(journeyStep("→", first.start - departs, "journey-change", true));
@@ -1597,6 +1599,24 @@ function journeyLine(
     line.append(journeyStep("→", walkOut, "journey-change"));
   }
   return line;
+}
+
+// For minutes saved, with both journeys in `label`, says over the one with QueensLink's whole time
+// how much less it is than the one without, and by what percent,
+// in the room above it, rather than making the popup taller.
+function sayDifference(label: HTMLElement): void {
+  const totals = [...label.querySelectorAll<HTMLElement>(".journey-total")];
+  const [without, withQueensLink] = totals.map((total) => Number(total.dataset["seconds"]));
+  if (totals.length !== 2 || without === undefined || withQueensLink === undefined) {
+    return;
+  }
+  const change = withQueensLink - without;
+  const sign = change > 0 ? "+" : change < 0 ? "\u2212" : "";
+  const percent = without === 0 ? 0 : Math.round((100 * Math.abs(change)) / without);
+  const difference = document.createElement("span");
+  difference.className = "journey-difference";
+  difference.textContent = `${sign}${clock(Math.abs(change))} (${sign}${percent}%)`;
+  totals[1]?.append(difference);
 }
 
 // The street walks between stations that changing trains may walk, by `from|to`,
@@ -2034,6 +2054,7 @@ await loaded;
         label.append(line);
       }
     }
+    sayDifference(label);
     bandPopup
       .setLngLat([station.lon, station.lat])
       .setMaxWidth("none")
