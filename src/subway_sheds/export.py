@@ -200,6 +200,7 @@ def write(grid: Grid) -> None:
     for old in paths.WEB_DATA.rglob("*"):
         if not old.is_dir():
             old.unlink()
+    paths.WEB_DATA.mkdir(parents=True, exist_ok=True)
     files = _BrotliFiles()
 
     (paths.WEB_DATA / "grid.json").write_text(
