@@ -42,7 +42,13 @@ setWorkerUrl(workerUrl);
 type Scenario = "baseline" | "queenslink";
 type View = Scenario | "saved";
 
-const views: readonly View[] = ["baseline", "queenslink", "saved"];
+// What the minutes are: the time from the station, or the time saved by the projects added.
+const measures = ["time", "saved"] as const;
+type Measure = (typeof measures)[number];
+
+// The projects that can be added, by the names their checkboxes and links have.
+const projects = ["queenslink"] as const;
+type Project = (typeof projects)[number];
 
 // In the order the pipeline writes them, as `Day` lists them in `src/subway_sheds/scenarios.py`.
 const days = ["weekday", "saturday"] as const;
@@ -69,10 +75,6 @@ const shortViewNames: Record<View, readonly string[]> = {
   queenslink: ["with QueensLink", "w/ QL", "w/ QL"],
   saved: ["minutes saved", "min saved", "min saved"],
 };
-
-function isView(value: unknown): value is View {
-  return views.some((view) => view === value);
-}
 
 // As the pipeline writes them; see `src/subway_sheds/export.py`.
 interface Grid {
@@ -456,7 +458,8 @@ function element<T extends Element>(selector: string, type: new () => T): T {
 
 const controls = element("#controls", HTMLFormElement);
 const measureInputs = controls.elements.namedItem("measure");
-const queenslinkInput = element("input[name=queenslink]", HTMLInputElement);
+// A checkbox for each project that can be added, by its name, as `projects` lists them.
+const projectInputs = [...controls.querySelectorAll<HTMLInputElement>("input[name=with]")];
 const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
 const speedValue = element("#speed-value", HTMLOutputElement);
@@ -490,12 +493,13 @@ timeInfoButton.addEventListener("click", () => {
 fullMap.hidden = window.top === window.self;
 
 // The controls kept across reloads and in links, by their inputs' name.
-const savedControls = ["day", "view", "speed", "fare"] as const;
+// `with` lists the projects added, by name, joined by commas, empty for none.
+const savedControls = ["day", "measure", "with", "speed", "fare"] as const;
 
 // Prefixed, since every page on kkysen.github.io shares the same storage.
 const storageKey = (name: string): string => `subway-sheds:${name}`;
 
-// The URL's hash: the station, then the controls, as in `#H04&day=saturday&view=saved`,
+// The URL's hash: the station, then the controls, as in `#H04&day=saturday&measure=saved&with=queenslink`,
 // so that links from before the controls were in it, just `#H04`, still work.
 function parseHash(): { readonly station: string; readonly params: URLSearchParams } {
   const [station = "", ...params] = location.hash.slice(1).split("&");
@@ -517,9 +521,13 @@ function restoreControls(): void {
   for (const name of savedControls) {
     const value = params.get(name) ?? savedValue(name);
     const inputs = controls.elements.namedItem(name);
-    if (name === "view") {
-      if (isView(value)) {
-        setView(value);
+    if (name === "with") {
+      if (value !== null) {
+        const added = value.split(",");
+        setControls(
+          currentMeasure(),
+          projects.filter((project) => added.includes(project)),
+        );
       }
     } else if (value !== null && inputs instanceof RadioNodeList) {
       // Checks the radio with that value, if there still is one.
@@ -530,10 +538,8 @@ function restoreControls(): void {
   }
 }
 
-// A control's value, the view's as one, from what's measured and the projects added,
-// so that links and choices saved from before they were apart still work.
 function controlValue(data: FormData, name: (typeof savedControls)[number]): string {
-  return name === "view" ? currentView() : String(data.get(name));
+  return name === "with" ? data.getAll(name).join(",") : String(data.get(name));
 }
 
 function saveControls(): void {
@@ -645,19 +651,38 @@ function currentFare(): Fare {
   return fare;
 }
 
-// Time saved is only ever by QueensLink so far, so that it's added whenever time saved is.
-function currentView(): View {
-  if (measureInputs instanceof RadioNodeList && measureInputs.value === "saved") {
-    return "saved";
+function currentMeasure(): Measure {
+  const value = measureInputs instanceof RadioNodeList ? measureInputs.value : undefined;
+  const measure = measures.find((measure) => measure === value);
+  if (measure === undefined) {
+    throw new Error(`unknown measure ${String(value)}`);
   }
-  return queenslinkInput.checked ? "queenslink" : "baseline";
+  return measure;
 }
 
-function setView(view: View): void {
+function currentProjects(): Project[] {
+  return projects.filter((project) =>
+    projectInputs.some((input) => input.value === project && input.checked),
+  );
+}
+
+// Time saved is by the projects added, so that it's never with none of them.
+function setControls(measure: Measure, added: readonly Project[]): void {
+  const saved = measure === "saved" && added.length > 0;
   if (measureInputs instanceof RadioNodeList) {
-    measureInputs.value = view === "saved" ? "saved" : "time";
+    measureInputs.value = saved ? "saved" : "time";
   }
-  queenslinkInput.checked = view !== "baseline";
+  for (const input of projectInputs) {
+    input.checked = added.some((project) => project === input.value);
+  }
+}
+
+// What the map shows, of the runs there are: so far, only with and without QueensLink.
+function currentView(): View {
+  if (!currentProjects().includes("queenslink")) {
+    return "baseline";
+  }
+  return currentMeasure() === "saved" ? "saved" : "queenslink";
 }
 
 const map = new MapLibreMap({
@@ -2153,11 +2178,16 @@ addEventListener("hashchange", () => {
 });
 
 controls.addEventListener("change", (event) => {
-  // Time saved needs QueensLink to save it, so that choosing one without the other changes both.
-  if (event.target === queenslinkInput && !queenslinkInput.checked) {
-    setView("baseline");
-  } else if (event.target instanceof HTMLInputElement && event.target.name === "measure") {
-    queenslinkInput.checked ||= event.target.value === "saved";
+  // Time saved needs a project to save it, so that choosing it with none adds the first,
+  // and taking the last away goes back to time.
+  if (event.target instanceof HTMLInputElement && event.target.name === "measure") {
+    const added = currentProjects();
+    setControls(
+      currentMeasure(),
+      added.length > 0 || currentMeasure() === "time" ? added : projects.slice(0, 1),
+    );
+  } else if (event.target instanceof HTMLInputElement && event.target.name === "with") {
+    setControls(currentMeasure(), currentProjects());
   }
   saveControls();
   writeHash();
