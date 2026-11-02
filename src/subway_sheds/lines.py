@@ -46,11 +46,19 @@ class Segment:
     shortcut: bool
 
 
-def _point(lon: float, lat: float) -> Point:
-    return Point(*_to_meters.transform(lon, lat))
+def to_meters(lon: float, lat: float) -> tuple[float, float]:
+    return _to_meters.transform(lon, lat)
 
 
-def _between(line: LineString, a: Point, b: Point, reach: float) -> LineString | None:
+def to_degrees(x: float, y: float) -> tuple[float, float]:
+    return _to_degrees.transform(x, y)
+
+
+def point(lon: float, lat: float) -> Point:
+    return Point(*to_meters(lon, lat))
+
+
+def between(line: LineString, a: Point, b: Point, reach: float) -> LineString | None:
     """The piece of `line` from nearest `a` to nearest `b`, if it passes within `reach` of both."""
     if line.distance(a) > reach or line.distance(b) > reach:
         return None
@@ -95,7 +103,7 @@ def segments(feed_path: Path) -> list[Segment]:
         with feed.open("shapes.txt") as f:
             shape_rows = pd.read_csv(f, dtype={"shape_id": str})
     points = {
-        s["stop_id"]: _point(float(s["stop_lon"]), float(s["stop_lat"]))
+        s["stop_id"]: point(float(s["stop_lon"]), float(s["stop_lat"]))
         for s in stops
         if not s["parent_station"]
     }
@@ -145,7 +153,7 @@ def segments(feed_path: Path) -> list[Segment]:
             (
                 piece
                 for shape, reach in candidates
-                if (piece := _between(shapes[shape], a, b, reach))
+                if (piece := between(shapes[shape], a, b, reach))
             ),
             LineString([a, b]),
         )

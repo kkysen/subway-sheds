@@ -11,9 +11,12 @@ import math
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from enum import StrEnum
+from itertools import pairwise
 from pathlib import Path
 
-from subway_sheds import paths
+from shapely import LineString, STRtree
+
+from subway_sheds import lines, paths
 from subway_sheds.timetable import (
     Call,
     ServiceDay,
@@ -447,9 +450,82 @@ def queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     How many trips are held, or don't fit at all, at each, to report.
     """
     ends = {trip.id: trip.calls[-1].stop for trip in timetable.trips.values()}
+    stations = {trip.id: trip.stations() for trip in timetable.trips.values()}
     held = _queenslink(timetable)
     _headsigns(timetable, ends)
+    _shapes(timetable, stations)
     return held
+
+
+def _track() -> dict[tuple[str, str], list[tuple[float, float]]]:
+    """The new track each stretch is timed along, as (lon, lat), from `run_times`."""
+    out: dict[tuple[str, str], list[tuple[float, float]]] = defaultdict(list)
+    with paths.QUEENSLINK_TRACK.open() as f:
+        for r in csv.DictReader(f):
+            out[r["from_stop_id"], r["to_stop_id"]].append((float(r["lon"]), float(r["lat"])))
+    return out
+
+
+def _shapes(timetable: Timetable, stations: dict[str, list[str]]) -> None:
+    """
+    Give each trip now stopping elsewhere than `stations` says it did a shape of its own,
+    along the new track as it's timed along, and elsewhere along its old shape,
+    or another's passing both stations, as `lines` draws them.
+    """
+    feed = timetable.feed
+    points = {
+        s["stop_id"]: lines.point(float(s["stop_lon"]), float(s["stop_lat"]))
+        for s in feed.rows["stops.txt"]
+        if not s["parent_station"]
+    }
+    coords: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for r in sorted(feed.rows["shapes.txt"], key=lambda r: int(r["shape_pt_sequence"])):
+        coords[r["shape_id"]].append(
+            lines.to_meters(float(r["shape_pt_lon"]), float(r["shape_pt_lat"]))
+        )
+    shapes = {shape: LineString(c) for shape, c in coords.items() if len(c) > 1}
+    tree = STRtree(list(shapes.values()))
+    ids = list(shapes)
+    track = {
+        pair: LineString([lines.to_meters(lon, lat) for lon, lat in line])
+        for pair, line in _track().items()
+    }
+
+    def stretch(a: str, b: str, own: str) -> LineString:
+        if (a, b) in track:
+            return track[a, b]
+        pa, pb = points[a], points[b]
+        nearby = [ids[i] for i in tree.query(pa, predicate="dwithin", distance=lines.SHAPE_REACH)]
+        nearby.sort(key=lambda s: shapes[s].distance(pa) + shapes[s].distance(pb))
+        candidates = [(own, lines.SHAPE_REACH)] if own in shapes else []
+        candidates += [(s, lines.BORROWED_REACH) for s in nearby]
+        return next(
+            (p for s, reach in candidates if (p := lines.between(shapes[s], pa, pb, reach))),
+            LineString([pa, pb]),
+        )
+
+    made: dict[tuple[str, ...], str] = {}
+    for row in feed.rows["trips.txt"]:
+        trip = timetable.trips.get(row["trip_id"])
+        if trip is None or stations.get(trip.id) == trip.stations():
+            continue
+        key = tuple(trip.stations())
+        if key not in made:
+            made[key] = shape = f"{trip.route}..QL{len(made)}"
+            line: list[tuple[float, float]] = []
+            for a, b in pairwise(key):
+                piece = [(x, y) for x, y in stretch(a, b, row["shape_id"]).coords]
+                line += piece[1:] if line else piece
+            feed.rows["shapes.txt"] += [
+                {
+                    "shape_id": shape,
+                    "shape_pt_sequence": str(i),
+                    "shape_pt_lat": f"{lat:.6f}",
+                    "shape_pt_lon": f"{lon:.6f}",
+                }
+                for i, (lon, lat) in enumerate(lines.to_degrees(x, y) for x, y in line)
+            ]
+        row["shape_id"] = made[key]
 
 
 def _headsigns(timetable: Timetable, ends: dict[str, str]) -> None:
