@@ -22,7 +22,7 @@ SHAPE_REACH = 100
 # But another route's shape, borrowed for trips without their own, has to pass nearer,
 # as one passing 100 m off can be that route's on its way elsewhere:
 # the E and M's, curving off to Court Sq-23 St, for the G run on past Court Sq,
-# which QueensLink's feed gives no shape past there.
+# whose shape ends there.
 BORROWED_REACH = 30
 
 # A pair of stations is a shortcut if a path through others, at most this much longer, joins them:

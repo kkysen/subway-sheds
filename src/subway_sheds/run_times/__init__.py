@@ -78,7 +78,7 @@ LINES = [
     ),
 ]
 
-# The new track's stretches on OSM's branch; 63 Dr to Metropolitan Av-Parkside is the diagram's.
+# The new track's stretches in OSM; 63 Dr to Metropolitan Av-Parkside is the diagram's.
 BRANCH = [
     ("V01", "V02"),
     ("V02", "V01"),
@@ -89,6 +89,10 @@ BRANCH = [
     # Toward Rockaway, Aqueduct Racetrack has no platform, so the M runs on to Aqueduct-N Conduit.
     ("V04", "H02"),
     ("H01", "V04"),
+    # Not new, but no train's run on it since the G stopped running past Court Sq in 2010:
+    # the G's track between Court Sq and Queens Plaza's local platforms, which it'd run on again.
+    ("G22", "G21"),
+    ("G21", "G22"),
 ]
 DR_63 = "G10"
 METROPOLITAN_AV = "V01"

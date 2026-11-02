@@ -17,14 +17,13 @@ OSM_SOURCE_STATE = CACHE / "nyc-streets.source-state.txt"
 # NYC's land, from `nyc-subway-isochrones`, to keep the grid out of the water.
 SHORELINE = CACHE / "nyc-shoreline.json"
 
-# The QueensLink scenario feed, committed unpacked so its repairs are commits.
-QUEENSLINK_FEED = ROOT / "gtfs" / "queenslink"
-
 # QueensLink's new track: the OSM ways its run times are measured on, trimmed to what's used
 # (from Overpass, (c) OpenStreetMap contributors, ODbL), and the run times and their calibration.
 QUEENSLINK_OSM = ROOT / "data" / "queenslink" / "osm.json"
 QUEENSLINK_RUN_TIMES = ROOT / "data" / "queenslink" / "run_times.csv"
 QUEENSLINK_RUN_TIME_CALIBRATION = ROOT / "data" / "queenslink" / "run_time_calibration.csv"
+# QueensLink's new stations and their platforms, as `stops.txt` rows, where QueensLink puts them.
+QUEENSLINK_STOPS = ROOT / "data" / "queenslink" / "stops.csv"
 
 # The scenarios' feeds, zipped as routing reads them.
 GTFS = OUT / "gtfs"

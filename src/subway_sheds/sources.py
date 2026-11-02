@@ -10,9 +10,9 @@ from pathlib import Path
 
 from subway_sheds import paths
 
-# The Mobility Database's copy of MTA's subway feed that the QueensLink feed was made from
-# (https://mobilitydatabase.org/feeds/gtfs/mdb-516), 2025-11-02 to 2025-12-07.
-MTA_DATASET = "mdb-516-202511010043"
+# The Mobility Database's copy of MTA's latest subway feed
+# (https://mobilitydatabase.org/feeds/gtfs/mdb-516), 2026-11-01 to 2027-05-15.
+MTA_DATASET = "mdb-516-202610290031"
 
 # NYC's land, from `nyc-subway-isochrones`, to keep the grid out of the water.
 SHORELINE_URL = (

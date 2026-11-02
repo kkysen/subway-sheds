@@ -199,7 +199,7 @@ jobs:
       - name: data's inputs
         id: inputs
         run: |
-          tracked=$(git ls-files -s -- gtfs data src route web/times pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
+          tracked=$(git ls-files -s -- data src route web/times pyproject.toml uv.lock .python-version mise.toml | sha256sum | cut -d' ' -f1)
           streets=$(sha256sum .cache/nyc-streets.osm.pbf | cut -d' ' -f1)
           echo "key=data-$tracked-$streets" >> "$GITHUB_OUTPUT"
 

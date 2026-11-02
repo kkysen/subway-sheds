@@ -14,27 +14,32 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
 
 ## Data
 
-- **QueensLink**: the QueensLink scenario feed, made by Franklin Tang, in [`gtfs/queenslink/`](gtfs/queenslink).
-  It's MTA's subway feed for 2025-11-02 to 2025-12-07
-  (the Mobility Database's [`mdb-516-202511010043`](https://mobilitydatabase.org/feeds/gtfs/mdb-516))
-  with QueensLink's M replacing the M and the Rockaway Park shuttle,
-  and the G run on past Court Sq along the Queens Blvd local to Forest Hills.
-  Its F and M have also swapped tunnels, as they did after that feed,
-  the F via 53 St and the M via 63 St.
-  It also assumes Second Avenue Subway Phase 2 is open (the weekday Q to 125 St),
-  which neither scenario routes, cutting the Q back to 96 St,
-  so that the baseline is the subway now;
-  its stations stay in the data, to add back as a scenario of their own.
-  It runs the 7 on its regular schedule from an older feed,
-  rather than this one's, with no regular 7 express during construction.
-  It was committed as given, `B1_MVS.zip`, and the repairs routing it needed followed as commits.
-- **Baseline**: the QueensLink feed without QueensLink, so that QueensLink is all that differs:
-  its M turned at 63 Dr for Forest Hills-71 Av, as the M runs since the swap,
-  instead of branching off toward the Rockaways,
-  and running as often as MTA's M, hour by hour, rather than QueensLink's a little more often,
-  its G cut back to Court Sq,
-  and the Rockaway Park shuttle from MTA's feed.
-  On weekends, it runs MTA's M instead, which runs only between Middle Village and Essex St.
+- **Baseline**: MTA's latest subway feed, for 2026-11-01 to 2027-05-15
+  (the Mobility Database's [`mdb-516-202610290031`](https://mobilitydatabase.org/feeds/gtfs/mdb-516)),
+  with the 7 as it'll run once the Flushing Line's work is done,
+  which has run the 7X local toward Manhattan, and the 7 past 52 St and 69 St toward Flushing, since 2023:
+  the 7 and 7X of MTA's fall 2019 feed, after CBTC and before the work,
+  from the Wayback Machine, with as many trains as now,
+  quicker west of Queensboro Plaza wherever MTA's schedule now is.
+- **QueensLink**: the baseline with QueensLink,
+  as Franklin Tang's QueensLink scenario feed runs it, but made from the baseline by `src/subway_sheds/scenarios.py`:
+  - The M turns off the Queens Blvd local at 63 Dr-Rego Park onto the old Rockaway Beach Branch,
+    to Metropolitan Av-Parkside, Jamaica Ave, Atlantic Av-Woodhaven, and Liberty Av,
+    then along the A to Broad Channel and on to Rockaway Park,
+    instead of on to Forest Hills.
+    On weekends, it runs its weekday route, rather than only between Middle Village and Essex St,
+    timed as the weekday M at midday.
+    The new track's times are simulated (see below), and the A's and the Rockaway Park shuttle's are MTA's.
+  - With the M running on weekends, the F runs via 53 St every day, as on weekdays, rather than via 63 St.
+  - The G runs on past Court Sq on weekdays along the Queens Blvd local to Forest Hills, timed as the R.
+  - The A's few rush hour trips to Rockaway Park run to Far Rockaway,
+    and the Rockaway Park shuttle runs only late at night, when the M doesn't.
+
+  Every train added or moved runs at least 90 s from others on the same track, as MTA's own trains do,
+  waiting for a gap if it has to: the M at Essex St, 21 St-Queensbridge, and Liberty Av, the F at 47-50 Sts,
+  and the G at Court Sq, for at most 5 minutes;
+  the G runs on only if it fits, and `fetch` says how long they wait.
+  The feeds are made by `fetch` and not committed.
 - **Streets**: what's walked on (streets, sidewalks, footpaths, steps, and platforms)
   within NYC and a 2 km margin,
   filtered from Geofabrik's daily New York State OpenStreetMap extract to about 20 MB.
@@ -95,7 +100,7 @@ streets = { path = "../mta-od-data/streets" }
 `uv` doesn't see changes there, so rebuild after them with `uv sync --reinstall-package subway-sheds`.
 
 ```sh
-uv run subway-sheds fetch    # download the MTA feed, land, streets, and platforms, and make both feeds
+uv run subway-sheds fetch    # download the MTA feeds, land, streets, and platforms, and make both feeds
 uv run subway-sheds route    # route every station, in both scenarios
 uv run subway-sheds export   # for the web page, into `web/public/data/`
 npm --prefix web install

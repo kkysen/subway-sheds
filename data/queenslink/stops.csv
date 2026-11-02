@@ -1,0 +1,13 @@
+stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station
+V01,"Metropolitan Av-Parkside",40.710522,-73.857155,1,
+V01N,"Metropolitan Av-Parkside",40.710522,-73.857155,0,V01
+V01S,"Metropolitan Av-Parkside",40.710522,-73.857155,0,V01
+V02,"Jamaica Ave",40.694237,-73.846748,1,
+V02N,"Jamaica Ave",40.694237,-73.846748,0,V02
+V02S,"Jamaica Ave",40.694237,-73.846748,0,V02
+V03,"Atlantic Av-Woodhaven",40.689545,-73.844543,1,
+V03N,"Atlantic Av-Woodhaven",40.689545,-73.844284,0,V03
+V03S,"Atlantic Av-Woodhaven",40.689545,-73.844284,0,V03
+V04,"Liberty Av",40.682060,-73.840736,1,
+V04N,"Liberty Av",40.682060,-73.840736,0,V04
+V04S,"Liberty Av",40.682060,-73.840736,0,V04
