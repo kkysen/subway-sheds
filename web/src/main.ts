@@ -70,7 +70,7 @@ const shortDayNames: Record<Day, readonly string[]> = {
   saturday: ["Saturday @ 12 pm", "Sat @ 12 pm", "Sat 12 pm"],
 };
 
-// Each project's name, and its logo, for where its name doesn't fit.
+// Each project's name, for its logo's alt text, and its logo, which says it in the summary.
 const projectNames: Record<Project, { readonly name: string; readonly logo: string }> = {
   queenslink: { name: "QueensLink", logo: "/favicon-192.png" },
 };
@@ -84,7 +84,7 @@ function projectLogo(project: Project): HTMLImageElement {
 }
 
 // What's measured and the projects added, as the minutes' row says them,
-// each shorter than the last, as the days are, the shorter with the projects' logos, or "now" with none added.
+// each shorter than the last, as the days are, with the projects' logos, or "now" with none added.
 function shortMeasureNames(
   measure: Measure,
   added: readonly Project[],
@@ -92,11 +92,10 @@ function shortMeasureNames(
   if (added.length === 0) {
     return [["time now"], ["time now"], ["now"]];
   }
-  const names = added.map((project) => projectNames[project].name).join(", ");
   const logos = (): HTMLElement[] => added.map(projectLogo);
   const what = measure === "saved" ? "time saved" : "time";
   return [
-    [`${what} with ${names}`],
+    [`${what} with `, ...logos()],
     [`${what} w/ `, ...logos()],
     [measure === "saved" ? "saved w/ " : "w/ ", ...logos()],
   ];
