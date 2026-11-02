@@ -572,9 +572,11 @@ body,
 }
 
 /* The whole trip's time, before its steps,
-   right-aligned as wide as `h:mm:ss`, so that both journeys' seconds line up. */
+   right-aligned as wide as `h:mm:ss`, so that both journeys' seconds line up,
+   and as tall as the logos, so that the difference above it sits level with the percent above the logo. */
 .journey-total {
   align-self: center;
+  line-height: 1.4em;
   min-width: 6ch;
   text-align: right;
   position: relative;
@@ -599,7 +601,8 @@ body,
   left: 50%;
   transform: translateX(-50%);
   font-size: 0.75em;
-  line-height: 1.2;
+  /* As tall as the difference's 1.2 lines at its bigger size, so that they end level. */
+  line-height: 1.6;
   white-space: nowrap;
 }
 
