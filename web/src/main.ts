@@ -761,7 +761,6 @@ if (small) {
 const credits = document.createElement("span");
 credits.innerHTML = [
   '<a href="https://github.com/kkysen/subway-sheds">Map and code by Khyber Sen</a>',
-  "QueensLink GTFS by Franklin Tang",
   'Inspiration and shoreline from Chris Whong’s <a href="https://github.com/chriswhong/nyc-subway-isochrones">nyc-subway-isochrones</a>',
 ].join(" | ");
 const attribution = element(".maplibregl-ctrl-attrib-inner", HTMLElement);

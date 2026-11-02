@@ -22,7 +22,7 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   from the Wayback Machine, with as many trains as now,
   quicker west of Queensboro Plaza wherever MTA's schedule now is.
 - **QueensLink**: the baseline with QueensLink,
-  as Franklin Tang's QueensLink scenario feed runs it, but made from the baseline by `src/subway_sheds/scenarios.py`:
+  made from the baseline by `src/subway_sheds/scenarios.py`:
   - The M turns off the Queens Blvd local at 63 Dr-Rego Park onto the old Rockaway Beach Branch,
     to Metropolitan Av-Parkside, Jamaica Ave, Atlantic Av-Woodhaven, and Liberty Av,
     then along the A to Broad Channel and on to Rockaway Park,
