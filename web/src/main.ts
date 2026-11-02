@@ -384,9 +384,10 @@ function describeBand(band: number, view: View): string {
   return `${minutes} from ${selectedName} ${scenario}`;
 }
 
-// As `describeBand` says it, with QueensLink's logo for its name, for where there's room for it, as the band's popup.
-function describeBandWithLogo(band: number, view: View): (string | HTMLElement)[] {
-  return describeBand(band, view)
+// `words` with QueensLink's logo for its name, for where there's room for it, as the band's popup,
+// and "w/" for "with" if `short`.
+function withLogo(words: string, short: boolean): (string | HTMLElement)[] {
+  return (short ? words.replaceAll(" with ", " w/ ") : words)
     .split("QueensLink")
     .flatMap((words, i) => (i === 0 ? [words] : [projectLogo("queenslink"), words]));
 }
@@ -1206,8 +1207,6 @@ function bandAt(lngLat: LngLat): number {
   return most;
 }
 
-// MapLibre's own, which a band's description wraps in, unless the journey under it is wider.
-const BAND_TEXT_WIDTH = 240;
 // Wide enough for a journey on one line, but not past the edges of a phone's screen.
 const BAND_POPUP_WIDTH = "calc(100vw - 32px)";
 // From its top left corner, offset to wherever it keeps off the journey drawn (see `placeBandPopup`).
@@ -1348,13 +1347,12 @@ function showBand(band: number, lngLat: LngLat): void {
     }
   }, HOVER_PREFETCH_MS);
   const label = document.createElement("span");
-  // What the band is, wrapped at `BAND_TEXT_WIDTH`, or as wide as the journey under it.
+  // What the band is, on one line, unless that's wider than the map has room for.
   const text = document.createElement("span");
   text.className = "band-text";
-  text.style.maxWidth = `${BAND_TEXT_WIDTH}px`;
-  text.append(
-    ...(band === NOTHING ? [describeNoSaving(cell)] : describeBandWithLogo(band, currentView())),
-  );
+  const describe = (short: boolean): (string | HTMLElement)[] =>
+    withLogo(band === NOTHING ? describeNoSaving(cell) : describeBand(band, currentView()), short);
+  text.append(...describe(false));
   label.append(text);
   // The trains there, and the walk out of the last station at the speed chosen.
   for (const run of shownRuns()) {
@@ -1375,11 +1373,10 @@ function showBand(band: number, lngLat: LngLat): void {
   }
   sayDifference(label);
   bandPopup.setLngLat(lngLat).setMaxWidth(BAND_POPUP_WIDTH).setDOMContent(label).addTo(map);
-  // The journeys kept on one line, as far as the map has room for, and the text as wide as the widest.
-  const widths = [...label.querySelectorAll<HTMLElement>(".route-trains")].map(
-    (j) => j.offsetWidth,
-  );
-  text.style.maxWidth = `${Math.max(BAND_TEXT_WIDTH, ...widths)}px`;
+  // Shortened if it wraps, to keep it on one line if it can.
+  if (text.offsetHeight > parseFloat(getComputedStyle(text).lineHeight) * 1.5) {
+    text.replaceChildren(...describe(true));
+  }
   placeBandPopup();
 }
 

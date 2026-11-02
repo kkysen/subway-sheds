@@ -579,9 +579,11 @@ body,
   transform: rotate(45deg);
 }
 
-/* What a band is, over the journey there. */
+/* What a band is, over the journey there,
+   its lines as tall as the logo in it makes them, set so that `main.ts` can tell when it wraps. */
 .band-text {
   display: block;
+  line-height: 20px;
 }
 
 /* QueensLink's logo for its name, as tall as the text,
