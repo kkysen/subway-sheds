@@ -41,12 +41,10 @@
           <legend>Walking</legend>
           <input type="range" name="speed" min="1" max="5" step="0.25" value="3" aria-label="Walking speed out of stations, in miles an hour" />
           <output id="speed-value" for="speed">3 mph</output>
-        </fieldset>
-        <fieldset class="section">
-          <legend>Fare</legend>
-          <div class="segmented">
-            <label><input type="radio" name="fare" value="single" checked /> $3</label>
-            <label><input type="radio" name="fare" value="unlimited" /> Unlimited</label>
+          <!-- Paying once by default, as most riders won't pay again to change outside the system. -->
+          <div class="segmented fare">
+            <label title="One fare"><input type="radio" name="fare" value="single" checked aria-label="One fare" /> $3</label>
+            <label title="Including paid out-of-system transfers"><input type="radio" name="fare" value="unlimited" aria-label="Including paid out-of-system transfers" /> $∞</label>
           </div>
         </fieldset>
         <div class="section station-key">

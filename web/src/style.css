@@ -117,6 +117,12 @@ body,
   flex-basis: 100%;
 }
 
+/* The fare at the right end of the walking row, as it's about walking between stations, only as wide as its two buttons. */
+#controls .segmented.fare {
+  flex: none;
+  margin-left: auto;
+}
+
 #controls legend,
 #controls h2 {
   margin: 0 0 4px;
