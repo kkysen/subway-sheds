@@ -67,6 +67,11 @@ body,
   font-weight: 700;
 }
 
+/* QueensLink's site, as dark as the heading, underlined to show it's a link. */
+#controls h1 a {
+  color: inherit;
+}
+
 /* QueensLink's logo after its name, as tall as the heading's capitals. */
 #controls h1 .logo {
   height: 1.2em;
