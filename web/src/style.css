@@ -584,6 +584,13 @@ body,
   display: block;
 }
 
+/* QueensLink's logo for its name, as tall as the text,
+   under `#map`, where the popup is, to be as specific as the controls' logos. */
+#map .band-text .logo {
+  height: 1.2em;
+  vertical-align: -0.25em;
+}
+
 .route-trains {
   display: flex;
   flex-wrap: wrap;

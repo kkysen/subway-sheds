@@ -371,17 +371,24 @@ function stationMinutes(station: Station): number {
 // What the cells of class `band` are, as said when they're pointed at or tapped.
 function describeBand(band: number, view: View): string {
   if (view === "saved" && band === savedBands.length) {
-    return `Reached only with QueensLink, within ${ROUTED_MINUTES} minutes`;
+    return `Reached only with QueensLink, within ${ROUTED_MINUTES} min`;
   }
   const viewBands = bands(view);
   const [start = 0] = viewBands[band] ?? [];
   const end = viewBands[band + 1]?.[0] ?? (view === "saved" ? undefined : MAX_MINUTES);
-  const minutes = end === undefined ? `${start}+ minutes` : `${start} to ${end} minutes`;
+  const minutes = end === undefined ? `${start}+ min` : `${start}\u2013${end} min`;
   if (view === "saved") {
     return `${minutes} saved by QueensLink`;
   }
   const scenario = view === "baseline" ? "without QueensLink" : "with QueensLink";
   return `${minutes} from ${selectedName} ${scenario}`;
+}
+
+// As `describeBand` says it, with QueensLink's logo for its name, for where there's room for it, as the band's popup.
+function describeBandWithLogo(band: number, view: View): (string | HTMLElement)[] {
+  return describeBand(band, view)
+    .split("QueensLink")
+    .flatMap((words, i) => (i === 0 ? [words] : [projectLogo("queenslink"), words]));
 }
 
 // A band's key in the legend, highlighting it on the map when pointed at, and pinning it when clicked or tapped.
@@ -1345,7 +1352,9 @@ function showBand(band: number, lngLat: LngLat): void {
   const text = document.createElement("span");
   text.className = "band-text";
   text.style.maxWidth = `${BAND_TEXT_WIDTH}px`;
-  text.append(band === NOTHING ? describeNoSaving(cell) : describeBand(band, currentView()));
+  text.append(
+    ...(band === NOTHING ? [describeNoSaving(cell)] : describeBandWithLogo(band, currentView())),
+  );
   label.append(text);
   // The trains there, and the walk out of the last station at the speed chosen.
   for (const run of shownRuns()) {
