@@ -70,11 +70,37 @@ const shortDayNames: Record<Day, readonly string[]> = {
   saturday: ["Saturday @ 12 pm", "Sat @ 12 pm", "Sat 12 pm"],
 };
 
-const shortViewNames: Record<View, readonly string[]> = {
-  baseline: ["without QueensLink", "w/o QL", "w/o QL"],
-  queenslink: ["with QueensLink", "w/ QL", "w/ QL"],
-  saved: ["minutes saved", "min saved", "min saved"],
+// Each project's name, and its logo, for where its name doesn't fit.
+const projectNames: Record<Project, { readonly name: string; readonly logo: string }> = {
+  queenslink: { name: "QueensLink", logo: "/favicon-192.png" },
 };
+
+function projectLogo(project: Project): HTMLImageElement {
+  const logo = document.createElement("img");
+  logo.className = "logo";
+  logo.src = projectNames[project].logo;
+  logo.alt = projectNames[project].name;
+  return logo;
+}
+
+// What's measured and the projects added, as the minutes' row says them,
+// each shorter than the last, as the days are, the shorter with the projects' logos, or "now" with none added.
+function shortMeasureNames(
+  measure: Measure,
+  added: readonly Project[],
+): (string | HTMLElement)[][] {
+  if (added.length === 0) {
+    return [["time now"], ["time now"], ["now"]];
+  }
+  const names = added.map((project) => projectNames[project].name).join(", ");
+  const logos = (): HTMLElement[] => added.map(projectLogo);
+  const what = measure === "saved" ? "time saved" : "time";
+  return [
+    [`${what} with ${names}`],
+    [`${what} w/ `, ...logos()],
+    [measure === "saved" ? "saved w/ " : "w/ ", ...logos()],
+  ];
+}
 
 // As the pipeline writes them; see `src/subway_sheds/export.py`.
 interface Grid {
@@ -569,10 +595,10 @@ function showControls(): void {
 // It can only be measured while shown, so it's shown again on collapsing and resizing.
 function showSummaryStatus(): void {
   const days = shortDayNames[currentDay()];
-  const views = shortViewNames[currentView()];
+  const views = shortMeasureNames(currentMeasure(), currentProjects());
   summaryStatus.classList.remove("wraps");
   for (const [i, day] of days.entries()) {
-    summaryStatus.textContent = [selectedName, day, views[i]].join(" · ");
+    summaryStatus.replaceChildren(`${selectedName} · ${day} · `, ...(views[i] ?? []));
     if (summaryStatus.scrollWidth <= summaryStatus.clientWidth) {
       return;
     }

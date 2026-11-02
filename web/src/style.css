@@ -72,8 +72,9 @@ body,
   color: inherit;
 }
 
-/* QueensLink's logo after its name, as tall as the heading's capitals. */
-#controls h1 .logo {
+/* QueensLink's logo after its name, as tall as the heading's capitals,
+   and for its name in the summary where that doesn't fit. */
+#controls summary .logo {
   height: 1.2em;
   vertical-align: -0.25em;
 }
