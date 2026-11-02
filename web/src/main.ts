@@ -502,9 +502,17 @@ const fullMap = element("#full-map", HTMLAnchorElement);
 const smallScreen = window.matchMedia("(max-width: 600px), (max-height: 500px)");
 const small = smallScreen.matches;
 
-// Collapsed to start with on small screens.
+// The station last asked for, so that a slower fetch for an earlier one can't replace it,
+// declared before anything that can write the link, which waits for it.
+let selected = "";
+
+// Whether `name`, as the controls, is open, as the link says, else as it was last left, else `otherwise`.
+function linkedOpen(name: string, otherwise: boolean): boolean {
+  const value = parseHash().params.get(name) ?? savedValue(name);
+  return value === null ? otherwise : value === "open";
+}
+
 const details = element("#controls details", HTMLDetailsElement);
-details.open = !small;
 
 // Shown by clicking or tapping, as well as by pointing on devices that can.
 const timeInfoButton = element("#time-info-button", HTMLButtonElement);
@@ -635,6 +643,8 @@ element("#station-key-hide", HTMLButtonElement).addEventListener("click", () =>
 stationKeyShow.addEventListener("click", () => showStationKey(true));
 controls.classList.toggle("station-key-hidden", savedValue("station-key") === "hidden");
 
+// Collapsed to start with on small screens, unless the link says or they were left open.
+details.open = linkedOpen("legend", !small);
 restoreControls();
 showControls();
 fitControls();
@@ -643,6 +653,14 @@ document.fonts.ready.then(fitControls);
 document.fonts.addEventListener("loadingdone", fitControls);
 smallScreen.addEventListener("change", fitControls);
 details.addEventListener("toggle", showSummaryStatus);
+details.addEventListener("toggle", () => {
+  try {
+    localStorage.setItem(storageKey("legend"), details.open ? "open" : "closed");
+  } catch {
+    // Not saved, as when storage is unavailable.
+  }
+  writeHash();
+});
 window.addEventListener("resize", showSummaryStatus);
 
 function currentDay(): Day {
@@ -802,8 +820,6 @@ const stationsById = new Map(stations.map((station) => [station.id, station]));
 // Broad Channel, whose trip to most of the city QueensLink shortens.
 const DEFAULT_STATION = "H04";
 
-// The station last asked for, so that a slower fetch for an earlier one can't replace it.
-let selected = "";
 // When trains from the station shown reach every station.
 let selectedArrivals: Arrivals | undefined;
 // The journeys from the station shown.
@@ -1043,8 +1059,14 @@ function stationFromHash(): string {
 
 // Replaced rather than pushed, so that every click doesn't add to the history.
 function writeHash(): void {
+  // Not until a station is, so that the controls opening doesn't write over the station the link says.
+  if (selected === "") {
+    return;
+  }
   const data = new FormData(controls);
   const params = new URLSearchParams(savedControls.map((name) => [name, controlValue(data, name)]));
+  // Whether the controls are open, kept across reloads as their choices are.
+  params.set("legend", details.open ? "open" : "closed");
   history.replaceState(null, "", `#${encodeURIComponent(selected)}&${params}`);
   // Opens as it's shown here.
   fullMap.href = location.href;
@@ -2197,6 +2219,7 @@ await loaded;
 
 // As when a link to another station or view is followed from the page itself.
 addEventListener("hashchange", () => {
+  details.open = linkedOpen("legend", details.open);
   restoreControls();
   applyControls();
   void selectStation(stationFromHash());
