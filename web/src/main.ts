@@ -455,6 +455,8 @@ function element<T extends Element>(selector: string, type: new () => T): T {
 }
 
 const controls = element("#controls", HTMLFormElement);
+const measureInputs = controls.elements.namedItem("measure");
+const queenslinkInput = element("input[name=queenslink]", HTMLInputElement);
 const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
 const speedValue = element("#speed-value", HTMLOutputElement);
@@ -515,8 +517,12 @@ function restoreControls(): void {
   for (const name of savedControls) {
     const value = params.get(name) ?? savedValue(name);
     const inputs = controls.elements.namedItem(name);
-    // Checks the radio with that value, if there still is one.
-    if (value !== null && inputs instanceof RadioNodeList) {
+    if (name === "view") {
+      if (isView(value)) {
+        setView(value);
+      }
+    } else if (value !== null && inputs instanceof RadioNodeList) {
+      // Checks the radio with that value, if there still is one.
       inputs.value = value;
     } else if (value !== null && inputs instanceof HTMLInputElement) {
       inputs.value = value;
@@ -524,11 +530,17 @@ function restoreControls(): void {
   }
 }
 
+// A control's value, the view's as one, from what's measured and the projects added,
+// so that links and choices saved from before they were apart still work.
+function controlValue(data: FormData, name: (typeof savedControls)[number]): string {
+  return name === "view" ? currentView() : String(data.get(name));
+}
+
 function saveControls(): void {
   const data = new FormData(controls);
   try {
     for (const name of savedControls) {
-      localStorage.setItem(storageKey(name), String(data.get(name)));
+      localStorage.setItem(storageKey(name), controlValue(data, name));
     }
   } catch {
     // Not saved, as when storage is unavailable.
@@ -633,12 +645,19 @@ function currentFare(): Fare {
   return fare;
 }
 
+// Time saved is only ever by QueensLink so far, so that it's added whenever time saved is.
 function currentView(): View {
-  const value = new FormData(controls).get("view");
-  if (!isView(value)) {
-    throw new Error(`unknown view ${String(value)}`);
+  if (measureInputs instanceof RadioNodeList && measureInputs.value === "saved") {
+    return "saved";
   }
-  return value;
+  return queenslinkInput.checked ? "queenslink" : "baseline";
+}
+
+function setView(view: View): void {
+  if (measureInputs instanceof RadioNodeList) {
+    measureInputs.value = view === "saved" ? "saved" : "time";
+  }
+  queenslinkInput.checked = view !== "baseline";
 }
 
 const map = new MapLibreMap({
@@ -975,7 +994,7 @@ function stationFromHash(): string {
 // Replaced rather than pushed, so that every click doesn't add to the history.
 function writeHash(): void {
   const data = new FormData(controls);
-  const params = new URLSearchParams(savedControls.map((name) => [name, String(data.get(name))]));
+  const params = new URLSearchParams(savedControls.map((name) => [name, controlValue(data, name)]));
   history.replaceState(null, "", `#${encodeURIComponent(selected)}&${params}`);
   // Opens as it's shown here.
   fullMap.href = location.href;
@@ -2133,7 +2152,13 @@ addEventListener("hashchange", () => {
   void selectStation(stationFromHash());
 });
 
-controls.addEventListener("change", () => {
+controls.addEventListener("change", (event) => {
+  // Time saved needs QueensLink to save it, so that choosing one without the other changes both.
+  if (event.target === queenslinkInput && !queenslinkInput.checked) {
+    setView("baseline");
+  } else if (event.target instanceof HTMLInputElement && event.target.name === "measure") {
+    queenslinkInput.checked ||= event.target.value === "saved";
+  }
   saveControls();
   writeHash();
   applyControls();

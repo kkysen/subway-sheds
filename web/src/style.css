@@ -117,6 +117,15 @@ body,
   flex-basis: 100%;
 }
 
+/* Only as wide as the logos in them, rather than stretched as the other choices are. */
+#controls .segmented.projects {
+  flex: none;
+}
+
+#controls .projects .logo {
+  height: 1.2em;
+}
+
 /* The fare at the right end of the walking row, as it's about walking between stations, only as wide as its two buttons. */
 #controls .segmented.fare {
   flex: none;

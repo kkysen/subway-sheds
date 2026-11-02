@@ -31,11 +31,13 @@
         <fieldset class="section">
           <legend>Minutes</legend>
           <div class="segmented">
-            <label><input type="radio" name="view" value="baseline" /> Without</label>
-            <label><input type="radio" name="view" value="queenslink" checked /> With</label>
-            <label><input type="radio" name="view" value="saved" /> Saved By</label>
+            <label><input type="radio" name="measure" value="time" checked /> Time</label>
+            <label><input type="radio" name="measure" value="saved" /> Time Saved</label>
           </div>
-          <span>QueensLink</span>
+          <!-- The projects added, any of them, as buttons like the rest; only QueensLink so far. -->
+          <div class="segmented projects">
+            <label title="QueensLink"><input type="checkbox" name="queenslink" checked aria-label="QueensLink" /><img class="logo" src="/favicon-192.png" alt="" /></label>
+          </div>
         </fieldset>
         <fieldset class="section speed">
           <legend>Walking</legend>
