@@ -378,9 +378,10 @@ function describeBand(band: number, view: View): string {
   const end = viewBands[band + 1]?.[0] ?? (view === "saved" ? undefined : MAX_MINUTES);
   const minutes = end === undefined ? `${start}+ min` : `${start}\u2013${end} min`;
   if (view === "saved") {
-    return `${minutes} saved by QueensLink`;
+    return `${minutes} saved with QueensLink`;
   }
-  const scenario = view === "baseline" ? "without QueensLink" : "with QueensLink";
+  // As the minutes' row and the journeys say them: "now", without any projects, or with them.
+  const scenario = view === "baseline" ? "now" : "with QueensLink";
   return `${minutes} from ${selectedName} ${scenario}`;
 }
 
@@ -1172,8 +1173,8 @@ function journeysTo(cell: number): boolean {
 function describeNoSaving(cell: number): string {
   const saved = selectedSaved?.[cell] ?? 0;
   return saved < 0
-    ? `${-saved} minute${saved === -1 ? "" : "s"} slower with QueensLink`
-    : "Under a minute saved by QueensLink";
+    ? `${-saved} min slower with QueensLink`
+    : "Under a minute saved with QueensLink";
 }
 
 function bandAt(lngLat: LngLat): number {
