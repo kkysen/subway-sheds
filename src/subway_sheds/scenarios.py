@@ -431,7 +431,7 @@ def _f_via_53_st(timetable: Timetable, cbtc: set[str]) -> Counter[tuple[str, int
             rest = trip.calls[:rockefeller]
             shift(rest, via[0].departure - trip.calls[rockefeller].departure)
             trip.calls = rest + via[:-1] + trip.calls[at:]
-        _count(held, F, stages, _fit(trip, stages, toward_brooklyn, also, runs_anyway=True))
+        _count(held, F, stages, _fit(trip, stages, toward_brooklyn, also, None, runs_anyway=True))
     return held
 
 
@@ -463,7 +463,9 @@ def _g_to_forest_hills(timetable: Timetable, cbtc: set[str]) -> Counter[tuple[st
     local = Track(timetable, _platforms(*QUEENS_BLVD_LOCAL), _local("G20", "G13"), cbtc)
     held: Counter[tuple[str, int | None]] = Counter()
     trips = [t for t in timetable.of(G) if t.day is ServiceDay.WEEKDAY]
-    own = _own(timetable, G, {t.id for t in trips}, cbtc)
+    moving = {t.id for t in trips}
+    own = _own(timetable, G, moving, cbtc)
+    nudger = _Nudger(timetable, moving, cbtc, [local, own])
     for trip in sorted(trips, key=lambda t: t.calls[t.index(COURT_SQ)].departure):
         old = copy.deepcopy(trip.calls)
         at = trip.index(COURT_SQ)
@@ -477,11 +479,13 @@ def _g_to_forest_hills(timetable: Timetable, cbtc: set[str]) -> Counter[tuple[st
             at = len(stops) - 1
             later = False
         stages = [(COURT_SQ, [local])]
-        fitted = _fit(trip, stages, later, [own])
+        fitted = _fit(trip, stages, later, [own], nudger)
         if fitted is None:
             trip.calls = old
             own.add(trip)
+            nudger.network.add(trip)
         _count(held, G, stages, fitted)
+    held.update(nudger.nudged)
     return held
 
 
@@ -624,6 +628,8 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     ]
     weekend_ids = {t.id for t in extended}
     own = _own(timetable, M, moving, cbtc)
+    tracks = [broadway, six_av, sixty_third, queens_blvd, own, *rockaway[0][1]]
+    nudger = _Nudger(timetable, moving, cbtc, tracks)
     for trip in sorted(m, key=lambda t: t.calls[t.index(REGO_PARK)].departure):
         if trip.id in weekend_ids:
             stages, also = weekends + rockaway, [own, broadway]
@@ -631,7 +637,8 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
             # The weekday M already fits along the way, but has to stay clear if it moves.
             stages, also = rockaway, [own, broadway, six_av, sixty_third, queens_blvd]
         later = trip.stations()[-1] == ROCKAWAY_PARK
-        _count(held, M, stages, _fit(trip, stages, later, also, runs_anyway=True))
+        _count(held, M, stages, _fit(trip, stages, later, also, nudger, runs_anyway=True))
+    held.update(nudger.nudged)
     held.update(_g_to_forest_hills(timetable, cbtc))
     return held
 
@@ -664,6 +671,7 @@ def _fit(
     stages: list[tuple[str, list[Track]]],
     later: bool,
     also: list[Track],
+    nudger: _Nudger | None,
     runs_anyway: bool = False,
 ) -> Fitted:
     """
@@ -676,7 +684,10 @@ def _fit(
     Where MTA's own schedule already runs it closer than a track's floor to another train,
     as on Broadway with the J, it's kept at least that far there instead.
     How far it's moved and how long it waits at each,
-    or `None`, leaving it as it was, if nothing fits,
+    If nothing does, moving it as a whole as little as that takes,
+    the trains in its way are nudged, as `nudger` nudges them, if they can be,
+    and it doesn't wait.
+    Otherwise `None`, leaving it as it was,
     and adding it to the tracks anyway if it `runs_anyway`.
     """
     tracks = [track for _, at in stages for track in at] + also
@@ -700,14 +711,104 @@ def _fit(
         else:
             # Every track again, as waiting at one station can move it on another's.
             if all(track.clear(trip.service, trip.calls, least.get(id(track))) for track in tracks):
-                for track in tracks:
-                    track.add(trip)
-                return moved, waits
+                return _place(trip, tracks, nudger, moved, waits)
+    if nudger is not None:
+        for moved in sorted(range(-MOST_MOVED, MOST_MOVED + 1, STEP), key=abs):
+            trip.calls = copy.deepcopy(old)
+            shift(trip.calls, moved)
+            if trip.calls[0].departure < 0:
+                continue
+            blocking = set().union(
+                *(t.blocking(trip.service, trip.calls, least.get(id(t))) for t in tracks)
+            )
+            done = len(nudger.log)
+            if all(nudger.nudge(b) for b in sorted(blocking)) and all(
+                t.clear(trip.service, trip.calls, least.get(id(t))) for t in tracks
+            ):
+                return _place(trip, tracks, nudger, moved, [0] * len(stages))
+            nudger.undo(done)
     trip.calls = old
     if runs_anyway:
-        for track in tracks:
-            track.add(trip)
+        _place(trip, tracks, nudger, 0, [])
     return None
+
+
+def _place(
+    trip: Trip, tracks: list[Track], nudger: _Nudger | None, moved: int, waits: list[int]
+) -> tuple[int, list[int]]:
+    for track in tracks:
+        track.add(trip)
+    if nudger is not None:
+        nudger.network.add(trip)
+    return moved, waits
+
+
+# A train in the way of one added or moved that doesn't fit otherwise
+# moves as a whole by one of these, the least first, if it can.
+NUDGES = (30, -30, 60, -60)
+
+
+class _Nudger:
+    """
+    Nudges trains in the way of others, as a whole, by one of `NUDGES`,
+    where that keeps them clear of every other train at every platform they stop at,
+    by the floor, or by as much as MTA's own schedule already does where that's less.
+    """
+
+    def __init__(
+        self, timetable: Timetable, moving: set[str], cbtc: set[str], tracks: list[Track]
+    ) -> None:
+        self.timetable = timetable
+        stops = {call.stop for trip in timetable.trips.values() for call in trip.calls}
+        # Every train but those still `moving`, which are added as they're fitted.
+        self.network = Track(timetable, stops, lambda t: t.id not in moving, cbtc)
+        self.tracks = [*tracks, self.network]
+        # Each nudge, as the trip and how far, to undo.
+        self.log: list[tuple[Trip, int]] = []
+        # How far each trip nudged is from where MTA had it,
+        # and how near other trains MTA had it at each stop.
+        self.offset: Counter[str] = Counter()
+        self.least: dict[str, dict[str, float]] = {}
+
+    def _move(self, trip: Trip, by: int) -> None:
+        on = [track for track in self.tracks if trip.id in track.trips]
+        for track in on:
+            track.remove(trip)
+        shift(trip.calls, by)
+        for track in on:
+            track.add(trip)
+
+    def nudge(self, trip_id: str) -> bool:
+        """Nudge `trip_id`'s trip the least that keeps it clear, if any does."""
+        trip = self.timetable.trips[trip_id]
+        if trip.id not in self.least:
+            self.least[trip.id] = {
+                c.stop: self.network.gap(trip.service, c, trip.id) for c in trip.calls
+            }
+        least = self.least[trip.id]
+        for by in NUDGES:
+            if abs(self.offset[trip.id] + by) > max(NUDGES):
+                continue
+            self._move(trip, by)
+            if self.network.clear(trip.service, trip.calls, least, trip.id):
+                self.log.append((trip, by))
+                self.offset[trip.id] += by
+                return True
+            self._move(trip, -by)
+        return False
+
+    def undo(self, to: int) -> None:
+        """Undo the nudges after the first `to`."""
+        while len(self.log) > to:
+            trip, by = self.log.pop()
+            self._move(trip, -by)
+            self.offset[trip.id] -= by
+
+    @property
+    def nudged(self) -> Counter[tuple[str, int | None]]:
+        """How many trips of each route are nudged how far, in all."""
+        trips = self.timetable.trips
+        return Counter((f"{trips[t].route} nudged", by) for t, by in self.offset.items() if by)
 
 
 def _count(
@@ -729,7 +830,7 @@ def _count(
 def _wait(where: str, waited: int | None) -> str:
     if waited is None:
         return "no fit"
-    if where.endswith("moved"):
+    if where.endswith(("moved", "nudged")):
         return f"{waited:+} s" if waited else "not moved"
     return f"{waited} s" if waited else "on time"
 

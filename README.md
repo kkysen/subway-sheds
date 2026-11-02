@@ -42,7 +42,9 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   waiting for a gap if it has to, for at most a minute:
   the M at Essex St, 21 St-Queensbridge, and Liberty Av, the F at Jackson Hts and 47-50 Sts,
   and the G at Court Sq.
-  Where that isn't enough, the whole trip runs up to 5 minutes earlier or later instead;
+  Where that isn't enough, the whole trip runs up to 5 minutes earlier or later instead,
+  and if that's still not enough, the trains in its way run 30 s or 60 s earlier or later,
+  if that keeps them clear of every other train;
   the G runs on only if it fits, and `fetch` says how far they move and how long they wait.
   The feeds are made by `fetch` and not committed.
 - **Streets**: what's walked on (streets, sidewalks, footpaths, steps, and platforms)

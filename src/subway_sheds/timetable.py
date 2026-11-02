@@ -173,43 +173,81 @@ class Track:
     ) -> None:
         self.stops = stops
         self.cbtc = cbtc
-        self.times: defaultdict[tuple[str, str], list[int]] = defaultdict(list)
+        # Each train's departure and trip.
+        self.times: defaultdict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
+        self.trips: set[str] = set()
         for trip in timetable.trips.values():
             if on(trip):
                 self.add(trip)
 
     def add(self, trip: Trip) -> None:
+        self.trips.add(trip.id)
         for call in trip.calls:
             if call.stop in self.stops:
-                bisect.insort(self.times[trip.service, call.stop], call.departure)
+                bisect.insort(self.times[trip.service, call.stop], (call.departure, trip.id))
 
-    def gap(self, service: str, call: Call) -> float:
-        """How far `call` leaves its stop from the nearest other train."""
+    def remove(self, trip: Trip) -> None:
+        self.trips.discard(trip.id)
+        for call in trip.calls:
+            if call.stop in self.stops:
+                self.times[trip.service, call.stop].remove((call.departure, trip.id))
+
+    def _nearest(self, service: str, call: Call, trip: str) -> list[tuple[int, str]]:
+        """The trains, but `trip`, leaving `call`'s stop nearest before and after it."""
         times = self.times[service, call.stop]
-        i = bisect.bisect_left(times, call.departure)
-        return min((abs(t - call.departure) for t in times[max(i - 1, 0) : i + 1]), default=inf)
+        i = bisect.bisect_left(times, (call.departure, ""))
+        before = next((t for t in reversed(times[:i]) if t[1] != trip), None)
+        after = next((t for t in times[i:] if t[1] != trip), None)
+        return [t for t in (before, after) if t is not None]
+
+    def gap(self, service: str, call: Call, trip: str = "") -> float:
+        """How far `call` leaves its stop from the nearest other train than `trip`."""
+        return min(
+            (abs(t - call.departure) for t, _ in self._nearest(service, call, trip)), default=inf
+        )
+
+    def floor(self, stop: str) -> int:
+        return CBTC_FLOOR if stop[:-1] in self.cbtc else FLOOR
+
+    def blocking(
+        self,
+        service: str,
+        calls_: Iterable[Call],
+        least: dict[str, float] | None = None,
+        trip: str = "",
+    ) -> set[str]:
+        """
+        The trains, but `trip`, that `calls_` leave each of `stops` less than `floor` from,
+        or than `least` says, where it's less, at that stop.
+        """
+        out = set()
+        for call in calls_:
+            if call.stop in self.stops:
+                floor = min(self.floor(call.stop), (least or {}).get(call.stop, inf))
+                for t, other in self._nearest(service, call, trip):
+                    if abs(t - call.departure) < floor:
+                        out.add(other)
+        return out
 
     def clear(
-        self, service: str, calls_: Iterable[Call], least: dict[str, float] | None = None
+        self,
+        service: str,
+        calls_: Iterable[Call],
+        least: dict[str, float] | None = None,
+        trip: str = "",
     ) -> bool:
         """
-        Whether `calls_` leave each of `stops` at least `FLOOR` from every other train,
+        Whether `calls_` leave each of `stops` at least `FLOOR` from every other train than `trip`,
         or `CBTC_FLOOR` at those of the `cbtc` stations,
         or at least as far as `least` says, where it's less, at that stop.
         """
-        for call in calls_:
-            if call.stop in self.stops:
-                floor = CBTC_FLOOR if call.stop[:-1] in self.cbtc else FLOOR
-                floor = min(floor, (least or {}).get(call.stop, inf))
-                if self.gap(service, call) < floor:
-                    return False
-        return True
+        return not self.blocking(service, calls_, least, trip)
 
     def gaps(self, service: str, start: int, end: int) -> dict[str, int]:
         """The least time between trains leaving each of `stops` from `start` to `end`."""
         out: dict[str, int] = {}
         for stop in self.stops:
-            times = [t for t in self.times[service, stop] if start <= t < end]
+            times = [t for t, _ in self.times[service, stop] if start <= t < end]
             if len(times) > 1:
                 out[stop] = min(b - a for a, b in pairwise(times))
         return out
