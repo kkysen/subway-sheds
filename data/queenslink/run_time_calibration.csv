@@ -1,0 +1,75 @@
+from_stop_id,to_stop_id,track_m,run_s,mta_scheduled_s,model_scheduled_s,line,calibrates,padding
+G08,G09,831,62,120,106,Queens Blvd local,yes,1.224
+G09,G10,781,60,90,103,Queens Blvd local,yes,1.224
+G10,G09,781,60,90,103,Queens Blvd local,yes,1.224
+G10,G11,687,55,90,97,Queens Blvd local,yes,1.224
+G11,G10,687,55,90,97,Queens Blvd local,yes,1.224
+G11,G12,771,59,90,103,Queens Blvd local,yes,1.224
+G12,G11,771,59,120,103,Queens Blvd local,yes,1.224
+G12,G13,684,55,90,97,Queens Blvd local,yes,1.224
+G13,G12,684,55,90,97,Queens Blvd local,yes,1.224
+G13,G14,859,64,120,108,Queens Blvd local,yes,1.224
+G14,G13,859,64,120,108,Queens Blvd local,yes,1.224
+G14,G15,631,52,90,94,Queens Blvd local,yes,1.224
+G15,G14,631,52,90,94,Queens Blvd local,yes,1.224
+G15,G16,676,55,90,97,Queens Blvd local,yes,1.224
+G16,G15,676,55,90,97,Queens Blvd local,yes,1.224
+G16,G18,674,55,90,97,Queens Blvd local,yes,1.224
+G18,G16,674,55,90,97,Queens Blvd local,yes,1.224
+G18,G19,721,60,90,104,Queens Blvd local,yes,1.224
+G19,G18,721,63,120,107,Queens Blvd local,yes,1.224
+G19,G20,895,70,120,116,Queens Blvd local,yes,1.224
+G20,G19,895,72,120,118,Queens Blvd local,yes,1.224
+G20,G21,781,60,120,103,Queens Blvd local,yes,1.224
+G21,G20,781,60,120,103,Queens Blvd local,yes,1.224
+F01,F02,810,61,120,105,Queens Blvd past Forest Hills,no,1.224
+F01,F03,1692,105,180,159,Queens Blvd past Forest Hills,no,1.224
+F02,F03,823,62,90,106,Queens Blvd past Forest Hills,no,1.224
+F03,F02,823,62,180,106,Queens Blvd past Forest Hills,no,1.224
+F03,F04,611,51,90,93,Queens Blvd past Forest Hills,no,1.224
+F03,F06,2857,168,240,236,Queens Blvd past Forest Hills,no,1.224
+F04,F03,611,51,240,93,Queens Blvd past Forest Hills,no,1.224
+F04,F05,1117,81,150,129,Queens Blvd past Forest Hills,no,1.224
+F05,F04,1117,81,120,129,Queens Blvd past Forest Hills,no,1.224
+F05,F06,1022,72,120,118,Queens Blvd past Forest Hills,no,1.224
+F05,G07,739,58,90,101,Queens Blvd past Forest Hills,no,1.224
+F06,F03,2857,168,330,236,Queens Blvd past Forest Hills,no,1.224
+F06,F05,1022,72,120,118,Queens Blvd past Forest Hills,no,1.224
+F06,F07,640,53,120,95,Queens Blvd past Forest Hills,no,1.224
+F06,G07,1815,112,210,167,Queens Blvd past Forest Hills,no,1.224
+F06,G08,1346,88,180,138,Queens Blvd past Forest Hills,no,1.224
+F07,F06,640,53,120,95,Queens Blvd past Forest Hills,no,1.224
+F07,G08,657,54,120,96,Queens Blvd past Forest Hills,no,1.224
+G05,G06,550,48,90,89,Queens Blvd past Forest Hills,no,1.224
+G06,G07,886,67,150,112,Queens Blvd past Forest Hills,no,1.224
+G07,F05,739,58,90,101,Queens Blvd past Forest Hills,no,1.224
+G07,F06,1815,112,180,167,Queens Blvd past Forest Hills,no,1.224
+G07,G06,886,67,300,112,Queens Blvd past Forest Hills,no,1.224
+G08,F06,1346,88,150,138,Queens Blvd past Forest Hills,no,1.224
+G08,F07,657,54,120,96,Queens Blvd past Forest Hills,no,1.224
+D42,F39,555,59,90,102,Culver,no,1.224
+F27,F29,827,62,120,106,Culver,no,1.224
+F29,F27,827,62,120,106,Culver,no,1.224
+F29,F30,654,54,210,95,Culver,no,1.224
+F30,F29,654,54,120,95,Culver,no,1.224
+F30,F31,440,43,60,82,Culver,no,1.224
+F31,F30,440,43,60,82,Culver,no,1.224
+F31,F32,455,43,90,83,Culver,no,1.224
+F32,F31,455,43,90,83,Culver,no,1.224
+F32,F33,575,50,90,91,Culver,no,1.224
+F33,F32,575,50,90,91,Culver,no,1.224
+F33,F34,635,53,90,94,Culver,no,1.224
+F34,F33,635,53,90,94,Culver,no,1.224
+F34,F35,583,50,240,91,Culver,no,1.224
+F35,F34,583,50,90,91,Culver,no,1.224
+F35,F36,738,58,120,101,Culver,no,1.224
+F36,F35,738,58,120,101,Culver,no,1.224
+F36,F38,660,54,240,96,Culver,no,1.224
+F38,F36,660,54,120,96,Culver,no,1.224
+F38,F39,900,66,150,110,Culver,no,1.224
+F39,D42,555,51,120,93,Culver,no,1.224
+F39,F38,900,66,150,110,Culver,no,1.224
+G08,G14,4891,264,330,353,Queens Blvd express,no,1.224
+G14,G08,4891,264,360,353,Queens Blvd express,no,1.224
+G14,G21,4119,228,330,309,Queens Blvd express,no,1.224
+G21,G14,4119,228,360,309,Queens Blvd express,no,1.224

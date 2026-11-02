@@ -54,6 +54,20 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   which time changing trains within a complex as its `raptor`'s OSM transfers do:
   free on the same platform, up and over to another, a flight a level between stacked ones.
   QueensLink's new stations are taken to have one island platform each.
+- **QueensLink's new track**: scheduled times between its new stations,
+  in [`data/queenslink/run_times.csv`](data/queenslink/run_times.csv),
+  simulated from the track's curves and how trains run, by `src/subway_sheds/run_times/`.
+  The curves off the Queens Blvd local at Rego Park are traced from QueensLink's
+  [diagram](https://thequeenslink.org/wp-content/uploads/2023/07/QBL_RP.png),
+  georeferenced against OSM's streets,
+  and the rest from the old Rockaway Beach Branch in OSM,
+  trimmed to the ways used in [`data/queenslink/osm.json`](data/queenslink/osm.json)
+  (© OpenStreetMap contributors, ODbL).
+  Trains accelerate and brake as R188s were recorded doing under CBTC on the elevated 7,
+  up to 45 mph and each curve's limit,
+  and each run is padded as MTA pads the Queens Blvd local's, with a 30 s dwell,
+  fitted in [`data/queenslink/run_time_calibration.csv`](data/queenslink/run_time_calibration.csv).
+  `subway-sheds run-times` rebuilds both, to review and commit.
 - **Land**: `nyc-subway-isochrones`' NYC shoreline, which keeps the grid out of the water.
 
 Travel times are routed from every station to a grid of about 21,500 cells over the city's land,

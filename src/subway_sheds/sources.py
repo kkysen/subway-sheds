@@ -44,6 +44,15 @@ MTA_2019 = Archived(
 )
 
 
+# QueensLink's diagram of where its M's tracks leave the Queens Blvd local at Rego Park,
+# which `run_times.diagram` traces the curves from.
+QUEENSLINK_DIAGRAM = Archived(
+    "https://thequeenslink.org/wp-content/uploads/2023/07/QBL_RP.png",
+    "fb157d514ab4f1e357b52930ce2500d4ccaced72221bfc6d81f33fc205ab09ef",
+    paths.CACHE / "queenslink" / "QBL_RP.png",
+)
+
+
 def mta_feed() -> Path:
     return paths.CACHE / "mdb" / f"{MTA_DATASET}.zip"
 

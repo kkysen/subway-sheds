@@ -45,10 +45,12 @@ cache-keys = [
 [dependency-groups]
 dev = [
     "pandas-stubs>=3.0.5.260914",
+    "pillow>=13.0.0",
     "pre-commit>=4.7.0",
     "pyrefly>=1.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
+    "scipy>=1.18.1",
     "ty>=0.0.90",
     "types-geopandas>=1.1.4.20261006",
     "types-shapely>=2.1.0.20260728",
