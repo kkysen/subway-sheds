@@ -117,21 +117,6 @@ body,
   flex-basis: 100%;
 }
 
-/* Only as wide as the logos in them, rather than stretched as the other choices are. */
-#controls .segmented.projects {
-  flex: none;
-}
-
-#controls .projects .logo {
-  height: 1.2em;
-}
-
-/* The fare at the right end of the walking row, as it's about walking between stations, only as wide as its two buttons. */
-#controls .segmented.fare {
-  flex: none;
-  margin-left: auto;
-}
-
 #controls legend,
 #controls h2 {
   margin: 0 0 4px;
@@ -251,6 +236,28 @@ body,
     padding-inline: 8px;
     white-space: nowrap;
   }
+}
+
+/* Only as wide as their words and logos, rather than stretched as the other choices are. */
+#controls .segmented.measure,
+#controls .segmented.projects {
+  flex: none;
+}
+
+#controls .segmented.measure label {
+  flex: 1 1 auto;
+  padding-inline: 8px;
+  white-space: nowrap;
+}
+
+#controls .projects .logo {
+  height: 1.2em;
+}
+
+/* The fare at the right end of the walking row, as it's about walking between stations, only as wide as its two buttons. */
+#controls .segmented.fare {
+  flex: none;
+  margin-left: auto;
 }
 
 @media (max-width: 600px), (max-height: 500px) {
