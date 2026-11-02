@@ -17,8 +17,11 @@ from subway_sheds import gtfs
 # at each platform: the least MTA itself schedules between its trains in the morning peak,
 # on the Queens Blvd local toward Forest Hills, through 53 St, and on the 6 Av local.
 FLOOR = 90
+# Under CBTC, as on Queens Blvd and QueensLink's new track, trains can run 30 s apart,
+# but with their dwells, they're scheduled at least this far apart.
+CBTC_FLOOR = 60
 # A train added waits at most this long where it waits for a gap, in steps of `STEP`.
-MOST_HELD = 300
+MOST_HELD = 60
 STEP = 30
 
 
@@ -160,8 +163,15 @@ class Track:
     that express trains also stop at, on the express track beside it.
     """
 
-    def __init__(self, timetable: Timetable, stops: set[str], on: Callable[[Trip], bool]) -> None:
+    def __init__(
+        self,
+        timetable: Timetable,
+        stops: set[str],
+        on: Callable[[Trip], bool],
+        floor: int = FLOOR,
+    ) -> None:
         self.stops = stops
+        self.floor = floor
         self.times: defaultdict[tuple[str, str], list[int]] = defaultdict(list)
         for trip in timetable.trips.values():
             if on(trip):
@@ -172,7 +182,7 @@ class Track:
             if call.stop in self.stops:
                 bisect.insort(self.times[trip.service, call.stop], call.departure)
 
-    def clear(self, service: str, calls_: Iterable[Call], floor: int = FLOOR) -> bool:
+    def clear(self, service: str, calls_: Iterable[Call]) -> bool:
         """Whether `calls_` leave each of `stops` at least `floor` from every other train."""
         for call in calls_:
             if call.stop not in self.stops:
@@ -180,7 +190,7 @@ class Track:
             times = self.times[service, call.stop]
             i = bisect.bisect_left(times, call.departure)
             near = times[max(i - 1, 0) : i + 1]
-            if any(abs(t - call.departure) < floor for t in near):
+            if any(abs(t - call.departure) < self.floor for t in near):
                 return False
         return True
 

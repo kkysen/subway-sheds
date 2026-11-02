@@ -18,6 +18,9 @@ from shapely import LineString, STRtree
 
 from subway_sheds import lines, paths
 from subway_sheds.timetable import (
+    CBTC_FLOOR,
+    FLOOR,
+    STEP,
     Call,
     ServiceDay,
     Timetable,
@@ -340,8 +343,9 @@ def _f_via_53_st(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     timed as the E through 53 St, and as they were from Jackson Hts out to Jamaica.
     Via 53 St is quicker or slower than via 63 St by a minute or so,
     so the rest moves by the difference,
-    and waits at 47-50 Sts for a gap on the 6 Av and Culver locals if it has to.
-    How long they wait, to report.
+    and fits as `_fit` fits it, at Jackson Hts and 47-50 Sts,
+    for the E through 53 St and the 6 Av and Culver locals.
+    How far they're moved and how long they wait, to report.
     """
     weekdays = timetable.stretches([F], ServiceDay.WEEKDAY, HOURS)
     # Through 53 St, as the E on the same day, and on to 47-50 Sts as the F on weekdays.
@@ -354,13 +358,15 @@ def _f_via_53_st(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     ]
     moving = {t.id for t in trips}
 
-    def track(stations: list[str], on: Callable[[Trip], bool]) -> Track:
-        return Track(timetable, _platforms(*stations), lambda t: t.id not in moving and on(t))
+    def track(stations: list[str], on: Callable[[Trip], bool], floor: int = FLOOR) -> Track:
+        return Track(
+            timetable, _platforms(*stations), lambda t: t.id not in moving and on(t), floor
+        )
 
     # Where it waits for a gap if it has to, and the tracks past there it waits for:
     # at Jackson Hts for the E through 53 St, and at 47-50 Sts for the 6 Av and Culver locals.
     stages = [
-        (JACKSON_HTS, [track(VIA_53_ST[1:-1], _local("F11"))]),
+        (JACKSON_HTS, [track(VIA_53_ST[1:-1], _local("F11"), CBTC_FLOOR)]),
         (
             VIA_53_ST[-1],
             [
@@ -370,6 +376,7 @@ def _f_via_53_st(timetable: Timetable) -> Counter[tuple[str, int | None]]:
         ),
     ]
     held: Counter[tuple[str, int | None]] = Counter()
+    own = _own(timetable, F, moving)
     for trip in sorted(trips, key=lambda t: t.calls[t.index(JACKSON_HTS)].departure):
         at = trip.index(JACKSON_HTS)
         rockefeller = trip.index(VIA_53_ST[-1])
@@ -385,8 +392,7 @@ def _f_via_53_st(timetable: Timetable) -> Counter[tuple[str, int | None]]:
             rest = trip.calls[:rockefeller]
             shift(rest, via[0].departure - trip.calls[rockefeller].departure)
             trip.calls = rest + via[:-1] + trip.calls[at:]
-        for station, waited in _fit(trip, stages, toward_brooklyn):
-            held[f"F at {NAMES[station]}", waited] += 1
+        _count(held, F, stages, _fit(trip, stages, toward_brooklyn, own))
     return held
 
 
@@ -408,16 +414,17 @@ def _drop_shuttle(timetable: Timetable, m: list[Trip]) -> None:
     )
 
 
-def _g_to_forest_hills(timetable: Timetable) -> list[Trip]:
+def _g_to_forest_hills(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     """
     Run the G's weekday trips on past Court Sq to Forest Hills, as the R runs,
-    those that fit between the R and M with a wait at Court Sq of at most `MOST_HELD`.
-    The trips run on.
+    those `_fit` fits between the R and M at Court Sq.
+    How far they're moved and how long they wait, to report.
     """
     weekdays = _stretch(timetable.stretches([R], ServiceDay.WEEKDAY, HOURS), _run_times())
-    local = Track(timetable, _platforms(*QUEENS_BLVD_LOCAL), _local("G20", "G13"))
-    out = []
+    local = Track(timetable, _platforms(*QUEENS_BLVD_LOCAL), _local("G20", "G13"), CBTC_FLOOR)
+    held: Counter[tuple[str, int | None]] = Counter()
     trips = [t for t in timetable.of(G) if t.day is ServiceDay.WEEKDAY]
+    own = _own(timetable, G, {t.id for t in trips})
     for trip in sorted(trips, key=lambda t: t.calls[t.index(COURT_SQ)].departure):
         old = copy.deepcopy(trip.calls)
         at = trip.index(COURT_SQ)
@@ -430,24 +437,23 @@ def _g_to_forest_hills(timetable: Timetable) -> list[Trip]:
             trip.calls = ending(stops, old[at].departure, weekdays)[:-1] + trip.calls
             at = len(stops) - 1
             later = False
-        # Not those leaving Court Sq just after the service day starts, which would leave before.
-        if hold(trip, at, later, [local]) is None or trip.calls[0].departure < 0:
+        stages = [(COURT_SQ, [local])]
+        fitted = _fit(trip, stages, later, own)
+        if fitted is None:
             trip.calls = old
-            continue
-        local.add(trip)
-        out.append(trip)
-    return out
+            own.add(trip)
+        _count(held, G, stages, fitted)
+    return held
 
 
 def queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     """
     The baseline with QueensLink, as `_queenslink_m`, `_far_rockaway_a`, `_f_via_53_st`,
     `_drop_shuttle`, and `_g_to_forest_hills` run it,
-    every train added or moved fitting at least `FLOOR` from the others on the same track,
-    QueensLink's M waiting at Essex St on weekends and at Liberty Av for a gap,
-    and the G at Court Sq,
-    each trip run to another end given the headsign of the trips ending there.
-    How many trips are held, or don't fit at all, at each, to report.
+    every train added or moved fitting as `_fit` fits it,
+    each trip run to another end given the headsign of the trips ending there,
+    and each run elsewhere its own shape.
+    How far trips are moved and how long they wait, or how many don't fit, to report.
     """
     ends = {trip.id: trip.calls[-1].stop for trip in timetable.trips.values()}
     stations = {trip.id: trip.stations() for trip in timetable.trips.values()}
@@ -553,8 +559,10 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     _drop_shuttle(timetable, m)
     moving = {t.id for t in m}
 
-    def track(stations: list[str], on: Callable[[Trip], bool]) -> Track:
-        return Track(timetable, _platforms(*stations), lambda t: t.id not in moving and on(t))
+    def track(stations: list[str], on: Callable[[Trip], bool], floor: int = FLOOR) -> Track:
+        return Track(
+            timetable, _platforms(*stations), lambda t: t.id not in moving and on(t), floor
+        )
 
     six_av = [f"D{i}" for i in range(15, 22)]
     sixty_third = ["B04", "B06", "B08", "B10"]
@@ -564,7 +572,7 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     # and every day at Liberty Av for the A and on to Rockaway Park.
     weekends = [
         (ESSEX_ST, [track(six_av, _local("D18", "D19")), track(sixty_third, _local("B06"))]),
-        (QUEENSBRIDGE, [track(QUEENS_BLVD_LOCAL, _local("G20", "G13"))]),
+        (QUEENSBRIDGE, [track(QUEENS_BLVD_LOCAL, _local("G20", "G13"), CBTC_FLOOR)]),
     ]
     rockaway = [
         (
@@ -576,16 +584,18 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
         )
     ]
     weekend_ids = {t.id for t in extended}
+    own = _own(timetable, M, moving)
     for trip in sorted(m, key=lambda t: t.calls[t.index(REGO_PARK)].departure):
         stages = (weekends if trip.id in weekend_ids else []) + rockaway
-        for station, waited in _fit(trip, stages, trip.stations()[-1] == ROCKAWAY_PARK):
-            held[f"M at {NAMES[station]}", waited] += 1
-    weekday_g = sum(t.day is ServiceDay.WEEKDAY for t in timetable.of(G))
-    run_on = _g_to_forest_hills(timetable)
-    for trip in run_on:
-        call = trip.calls[trip.index(COURT_SQ)]
-        held["G at Court Sq", call.departure - call.arrival] += 1
-    held["G at Court Sq", None] += weekday_g - len(run_on)
+        fitted = _fit(trip, stages, trip.stations()[-1] == ROCKAWAY_PARK, own)
+        if fitted is None:
+            # It runs anyway, as it was.
+            for _, tracks in stages:
+                for t in tracks:
+                    t.add(trip)
+            own.add(trip)
+        _count(held, M, stages, fitted)
+    held.update(_g_to_forest_hills(timetable))
     return held
 
 
@@ -593,43 +603,92 @@ NAMES = {
     ESSEX_ST: "Essex St",
     QUEENSBRIDGE: "21 St-Queensbridge",
     LIBERTY_AV: "Liberty Av",
+    COURT_SQ: "Court Sq",
     JACKSON_HTS: "Jackson Hts",
     VIA_53_ST[-1]: "47-50 Sts",
 }
 
 
-# Trains that run anyway, rather than only if they fit, like the G past Court Sq,
-# wait at most this long for a gap, which a few late in the evening, and in the evening peak, need.
-MOST_HELD_RUNNING = 600
+# A trip added or moved runs at most this much earlier or later as a whole, to fit,
+# rather than waiting long where it joins other trains.
+MOST_MOVED = 300
+
+type Fitted = tuple[int, list[int]] | None
 
 
-def _fit(
-    trip: Trip, stages: list[tuple[str, list[Track]]], later: bool
-) -> list[tuple[str, int | None]]:
+def _own(timetable: Timetable, route: str, moving: set[str]) -> Track:
+    """Where `route`'s trains stop, with its trains not `moving`, to keep its own apart."""
+    stops = {call.stop for trip in timetable.of(route) for call in trip.calls}
+    return Track(timetable, stops, lambda t: t.route == route and t.id not in moving)
+
+
+def _fit(trip: Trip, stages: list[tuple[str, list[Track]]], later: bool, own: Track) -> Fitted:
     """
-    Hold `trip` at each of `stages`' stations in turn, the least that leaves its tracks clear,
-    the rest of the trip after it if `later`, else before it, then add it to the tracks.
-    How long it waits at each, `None` where nothing within `MOST_HELD_RUNNING` does.
+    Fit `trip`, moved as a whole the least, up to `MOST_MOVED`,
+    that lets it wait at each of `stages`' stations in turn at most `MOST_HELD`,
+    the rest of the trip after it if `later`, else before it,
+    for their tracks to be clear, and keeps it clear of its `own` route's trains,
+    then add it to those tracks.
+    How far it's moved and how long it waits at each,
+    or `None`, leaving it as it was, if nothing fits.
     """
-    waits = []
-    for station, tracks in stages:
-        waited = hold(trip, trip.index(station), later, tracks, MOST_HELD_RUNNING)
-        waits.append((station, waited))
-        for track in tracks:
-            track.add(trip)
-    return waits
+    old = copy.deepcopy(trip.calls)
+    for moved in sorted(range(-MOST_MOVED, MOST_MOVED + 1, STEP), key=abs):
+        trip.calls = copy.deepcopy(old)
+        shift(trip.calls, moved)
+        # Not leaving before the service day starts.
+        if trip.calls[0].departure < 0:
+            continue
+        waits = []
+        for station, tracks in stages:
+            waited = hold(trip, trip.index(station), later, tracks)
+            if waited is None:
+                break
+            waits.append(waited)
+        else:
+            if own.clear(trip.service, trip.calls):
+                for _, tracks in stages:
+                    for track in tracks:
+                        track.add(trip)
+                own.add(trip)
+                return moved, waits
+    trip.calls = old
+    return None
 
 
-def _wait(waited: int | None) -> str:
-    return "no gap" if waited is None else f"{waited} s" if waited else "on time"
+def _count(
+    held: Counter[tuple[str, int | None]],
+    route: str,
+    stages: list[tuple[str, list[Track]]],
+    fitted: Fitted,
+) -> None:
+    """Count how far a trip of `route` is moved and waits at each of `stages`, as `_fit` fit it."""
+    if fitted is None:
+        held[f"{route} moved", None] += 1
+        return
+    moved, waits = fitted
+    held[f"{route} moved", moved] += 1
+    for (station, _), waited in zip(stages, waits, strict=True):
+        held[f"{route} at {NAMES[station]}", waited] += 1
+
+
+def _wait(where: str, waited: int | None) -> str:
+    if waited is None:
+        return "no fit"
+    if where.endswith("moved"):
+        return f"{waited:+} s" if waited else "not moved"
+    return f"{waited} s" if waited else "on time"
 
 
 def describe(held: Counter[tuple[str, int | None]]) -> list[str]:
-    """`queenslink`'s waits, a line for each place, e.g. `G at Court Sq: 84 on time, 29 30 s`."""
+    """
+    `queenslink`'s moves and waits, a line for each route and place,
+    e.g. `G moved: 120 not moved, 20 -30 s, 4 no fit`, `G at Court Sq: 84 on time, 29 30 s`.
+    """
     lines = []
     for where in sorted({where for where, _ in held}):
         waits = sorted(
             (w for p, w in held if p == where), key=lambda w: math.inf if w is None else w
         )
-        lines.append(f"{where}: " + ", ".join(f"{held[where, w]} {_wait(w)}" for w in waits))
+        lines.append(f"{where}: " + ", ".join(f"{held[where, w]} {_wait(where, w)}" for w in waits))
     return lines

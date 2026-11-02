@@ -36,9 +36,12 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
     and the Rockaway Park shuttle runs only late at night, when the M doesn't.
 
   Every train added or moved runs at least 90 s from others on the same track, as MTA's own trains do,
-  waiting for a gap if it has to: the M at Essex St, 21 St-Queensbridge, and Liberty Av, the F at 47-50 Sts,
-  and the G at Court Sq, for at most 5 minutes;
-  the G runs on only if it fits, and `fetch` says how long they wait.
+  or 60 s on Queens Blvd and through 53 St, under CBTC,
+  waiting for a gap if it has to, for at most a minute:
+  the M at Essex St, 21 St-Queensbridge, and Liberty Av, the F at Jackson Hts and 47-50 Sts,
+  and the G at Court Sq.
+  Where that isn't enough, the whole trip runs up to 5 minutes earlier or later instead;
+  the G runs on only if it fits, and `fetch` says how far they move and how long they wait.
   The feeds are made by `fetch` and not committed.
 - **Streets**: what's walked on (streets, sidewalks, footpaths, steps, and platforms)
   within NYC and a 2 km margin,
