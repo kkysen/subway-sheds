@@ -12,10 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from shapely import LineString
 
 from subway_sheds import gtfs
 from subway_sheds.run_times import diagram, train
-from subway_sheds.run_times.track import Graph, is_track, load, radii, to_m
+from subway_sheds.run_times.track import Graph, is_track, load, radii, to_lonlat, to_m
 
 DWELL = 30
 # Weekday trips leaving their first stop in these hours,
@@ -24,6 +25,8 @@ HOURS = (6, 20)
 # OSM's track is smoothed until it's this far (m RMS) from OSM's points;
 # the times are the same from 0.5 m to 2 m.
 OSM_NOISE = 1.0
+# The track each stretch is timed along is kept to this far (m) from it, to draw the line with.
+DRAWN = 0.5
 
 # QueensLink's new stations, where its feed puts them, as (lon, lat).
 NEW_STATIONS = {
@@ -104,6 +107,8 @@ class Stretch:
     to_stop: str
     track_m: int
     run_s: float
+    # The track it's timed along, in meters.
+    points: np.ndarray
 
 
 def _stations(mta: gtfs.Feed) -> dict[str, tuple[float, float]]:
@@ -144,14 +149,20 @@ def _scheduled(mta: gtfs.Feed, line: Line) -> dict[tuple[str, str], float]:
 def _osm_stretch(graph: Graph, stations: dict[str, tuple[float, float]], a: str, b: str) -> Stretch:
     points = graph.path(to_m(*stations[a]), to_m(*stations[b]))
     r = radii(points, OSM_NOISE)
-    return Stretch(a, b, len(r), train.run_time(train.head_limits(train.curve_limits(r))))
+    run = train.run_time(train.head_limits(train.curve_limits(r)))
+    return Stretch(a, b, len(r), run, points)
 
 
 type Row = dict[str, str | int]
 
 
-def compute(mta: gtfs.Feed, osm: Path, diagram_image: Path) -> tuple[list[Row], list[Row]]:
-    """The new stretches' scheduled times, and the calibration they're padded by, as CSV rows."""
+def compute(
+    mta: gtfs.Feed, osm: Path, diagram_image: Path
+) -> tuple[list[Row], list[Row], list[Row]]:
+    """
+    The new stretches' scheduled times, the calibration they're padded by,
+    and the track they're timed along, as CSV rows.
+    """
     ways = load(osm)
     graph = Graph([w for w in ways if is_track(w)])
     stations = _stations(mta)
@@ -188,13 +199,13 @@ def compute(mta: gtfs.Feed, osm: Path, diagram_image: Path) -> tuple[list[Row], 
     curves = diagram.radii(diagram_image, ways, NEW_STATIONS[METROPOLITAN_AV])
     stretches = []
     for name, (a, b) in [("eb", (DR_63, METROPOLITAN_AV)), ("wb", (METROPOLITAN_AV, DR_63))]:
-        limits = train.curve_limits(curves[name])
+        points, curve = curves[name]
+        limits = train.curve_limits(curve)
         grade = diagram.grades(len(limits))
         if name == "wb":
-            limits, grade = limits[::-1], -grade[::-1]
-        stretches.append(
-            Stretch(a, b, len(limits), train.run_time(train.head_limits(limits), grade=grade))
-        )
+            points, limits, grade = points[::-1], limits[::-1], -grade[::-1]
+        run = train.run_time(train.head_limits(limits), grade=grade)
+        stretches.append(Stretch(a, b, len(limits), run, points))
     stretches += [_osm_stretch(graph, stations, a, b) for a, b in BRANCH]
     rows = [
         {
@@ -206,7 +217,20 @@ def compute(mta: gtfs.Feed, osm: Path, diagram_image: Path) -> tuple[list[Row], 
         }
         for s in stretches
     ]
-    return rows, calibration_rows
+    track_rows = [
+        {
+            "from_stop_id": s.from_stop,
+            "to_stop_id": s.to_stop,
+            "sequence": i,
+            "lon": f"{lon:.6f}",
+            "lat": f"{lat:.6f}",
+        }
+        for s in stretches
+        for i, (lon, lat) in enumerate(
+            to_lonlat(x, y) for x, y in LineString(s.points).simplify(DRAWN).coords
+        )
+    ]
+    return rows, calibration_rows, track_rows
 
 
 def write_csv(rows: list[Row], dest: Path) -> None:

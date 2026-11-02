@@ -45,6 +45,10 @@ def to_m(lon: float, lat: float) -> Point:
     return ((lon - LON0) * KX, (lat - LAT0) * KY)
 
 
+def to_lonlat(x: float, y: float) -> Point:
+    return (LON0 + x / KX, LAT0 + y / KY)
+
+
 def load(path: Path) -> list[Way]:
     """The OSM ways in `path`."""
     return json.loads(path.read_text())["elements"]

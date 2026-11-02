@@ -167,14 +167,18 @@ def run_times() -> None:
     """
     Time QueensLink's new track from its curves,
     calibrated against MTA's schedule on the Queens Blvd local,
-    into `data/queenslink/`, which the scenarios' feeds are made with.
+    into `data/queenslink/`, which the scenarios' feeds are made with,
+    with the track it's timed along, which they draw it with.
     """
     from subway_sheds import run_times as rt
 
     _fetch_archived(sources.QUEENSLINK_DIAGRAM, False)
     mta = gtfs.read_feed(sources.mta_feed())
-    rows, calibration = rt.compute(mta, paths.QUEENSLINK_OSM, sources.QUEENSLINK_DIAGRAM.dest)
+    rows, calibration, track = rt.compute(
+        mta, paths.QUEENSLINK_OSM, sources.QUEENSLINK_DIAGRAM.dest
+    )
     rt.write_csv(rows, paths.QUEENSLINK_RUN_TIMES)
+    rt.write_csv(track, paths.QUEENSLINK_TRACK)
     rt.write_csv(calibration, paths.QUEENSLINK_RUN_TIME_CALIBRATION)
     echo(f"padding {calibration[0]['padding']} on runs, with {rt.DWELL} s dwells")
 

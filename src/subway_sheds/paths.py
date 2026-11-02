@@ -18,10 +18,12 @@ OSM_SOURCE_STATE = CACHE / "nyc-streets.source-state.txt"
 SHORELINE = CACHE / "nyc-shoreline.json"
 
 # QueensLink's new track: the OSM ways its run times are measured on, trimmed to what's used
-# (from Overpass, (c) OpenStreetMap contributors, ODbL), and the run times and their calibration.
+# (from Overpass, (c) OpenStreetMap contributors, ODbL), the run times and their calibration,
+# and the track each stretch is timed along.
 QUEENSLINK_OSM = ROOT / "data" / "queenslink" / "osm.json"
 QUEENSLINK_RUN_TIMES = ROOT / "data" / "queenslink" / "run_times.csv"
 QUEENSLINK_RUN_TIME_CALIBRATION = ROOT / "data" / "queenslink" / "run_time_calibration.csv"
+QUEENSLINK_TRACK = ROOT / "data" / "queenslink" / "track.csv"
 # QueensLink's new stations and their platforms, as `stops.txt` rows, where QueensLink puts them.
 QUEENSLINK_STOPS = ROOT / "data" / "queenslink" / "stops.csv"
 

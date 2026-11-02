@@ -265,9 +265,10 @@ def _sub_line(line: LineString, a: float, b: float) -> np.ndarray:
 
 def radii(
     diagram: Path, ways: list[Way], metropolitan_av: tuple[float, float]
-) -> dict[str, np.ndarray]:
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """
-    Each track's radius (m), every meter from 63 Dr's platform center to Metropolitan Av-Parkside,
+    Each track's points (m) and radius (m) at them,
+    every meter from 63 Dr's platform center to Metropolitan Av-Parkside,
     for "eb" (toward Rockaway) and "wb" (toward 63 Dr, but also measured from 63 Dr).
     """
     image = np.asarray(Image.open(diagram).convert("RGB")).astype(int)
@@ -282,6 +283,7 @@ def radii(
     dr63 = platform.mean(0)
     metro = np.array(to_m(*metropolitan_av))
     out = {}
+    paths = {}
     for name, pixels in trace(image).items():
         drawn = np.c_[pixels, np.ones(len(pixels))] @ affine
         # The local track the trace starts on, east from 63 Dr's platform.
@@ -302,6 +304,7 @@ def radii(
         rest = rest + (drawn[-1] - rest[0])
         points = np.r_[qbl, drawn[1:], rest[1:]]
         joins = (len(qbl), len(qbl) + len(drawn) - 1)
+        paths[name] = points
         out[name] = _smoothed_radii(points, joins)
     # Where westbound is drawn under the other tracks, its curve isn't seen:
     # the radius on either side of the gap, across it, not the bridging cubic's.
@@ -313,7 +316,7 @@ def radii(
     # OSM maps the branch as one track for its last stretch here, so eastbound jogs 4 m onto it;
     # a double track wouldn't.
     out["eb"][2450:] = np.inf
-    return out
+    return {name: (paths[name], out[name]) for name in out}
 
 
 def _smoothed_radii(points: np.ndarray, joins: tuple[int, int]) -> np.ndarray:
