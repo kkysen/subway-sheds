@@ -463,7 +463,7 @@ const projectInputs = [...controls.querySelectorAll<HTMLInputElement>("input[nam
 const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
 const speedValue = element("#speed-value", HTMLOutputElement);
-const speedSlider = element("input[name=speed]", HTMLInputElement);
+const speedSlider = element("input[name=walking_speed_mph]", HTMLInputElement);
 const summaryStatus = element("#summary-status", HTMLElement);
 // Kept apart from the stations, which load after the controls are first shown.
 let selectedName = "…";
@@ -494,7 +494,7 @@ fullMap.hidden = window.top === window.self;
 
 // The controls kept across reloads and in links, by their inputs' name.
 // `with` lists the projects added, by name, joined by commas, empty for none.
-const savedControls = ["day", "measure", "with", "speed", "fare"] as const;
+const savedControls = ["day", "measure", "with", "walking_speed_mph", "fare"] as const;
 
 // Prefixed, since every page on kkysen.github.io shares the same storage.
 const storageKey = (name: string): string => `subway-sheds:${name}`;
@@ -630,7 +630,7 @@ function currentDay(): Day {
 
 // The reader's walking speed out of stations, in miles an hour.
 function currentSpeed(): number {
-  return Number(new FormData(controls).get("speed"));
+  return Number(new FormData(controls).get("walking_speed_mph"));
 }
 
 function showSpeed(): void {
@@ -944,7 +944,7 @@ timesWorker.addEventListener("error", (event) => {
 
 // Recomputed as the speed slides.
 controls.addEventListener("input", (event) => {
-  if (event.target instanceof HTMLInputElement && event.target.name === "speed") {
+  if (event.target instanceof HTMLInputElement && event.target.name === "walking_speed_mph") {
     showSpeed();
     recompute();
   }
