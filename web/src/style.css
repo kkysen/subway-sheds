@@ -260,6 +260,14 @@ body,
   height: 1.2em;
 }
 
+/* The walking speed's slider as wide as browsers draw it, but narrower where the row's short of room,
+   so that the fare and its (i) stay beside it, as flex wraps them before shrinking it otherwise. */
+#controls .speed input[type="range"] {
+  flex: 1 1 60px;
+  min-width: 60px;
+  max-width: 130px;
+}
+
 /* The fare at the right end of the walking row, as it's about walking between stations, only as wide as its two buttons. */
 #controls .segmented.fare {
   flex: none;

@@ -524,12 +524,13 @@ function linkedOpen(name: string, otherwise: boolean): boolean {
 const details = element("#controls details", HTMLDetailsElement);
 
 // Shown by clicking or tapping, as well as by pointing on devices that can.
-const timeInfoButton = element("#time-info-button", HTMLButtonElement);
-const timeInfo = element("#time-info", HTMLElement);
-timeInfoButton.addEventListener("click", () => {
-  const open = timeInfo.classList.toggle("open");
-  timeInfoButton.setAttribute("aria-expanded", String(open));
-});
+for (const button of controls.querySelectorAll<HTMLButtonElement>(".info-button")) {
+  const info = element(`#${button.getAttribute("aria-controls")}`, HTMLElement);
+  button.addEventListener("click", () => {
+    const open = info.classList.toggle("open");
+    button.setAttribute("aria-expanded", String(open));
+  });
+}
 
 // Only when embedded, as on thequeenslink.org, since it's already the full map otherwise.
 fullMap.hidden = window.top === window.self;
