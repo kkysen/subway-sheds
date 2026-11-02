@@ -18,8 +18,6 @@ from shapely import LineString, STRtree
 
 from subway_sheds import lines, paths
 from subway_sheds.timetable import (
-    CBTC_FLOOR,
-    FLOOR,
     STEP,
     Call,
     ServiceDay,
@@ -245,6 +243,41 @@ COURT_SQ = "G22"
 QUEENS_BLVD_LOCAL = [f"G{i}" for i in (21, 20, 19, 18, 16, 15, 14, 13, 12, 11, 10, "09", "08")]
 
 
+# Stations of the E's Archer Av branch, the one stretch of it without CBTC.
+ARCHER_AV = {"G05", "G06", "G07"}
+CONEY_ISLAND = "D43"
+FIFTY_NINTH_ST = "A24"
+QUEENSLINK = {"V01", "V02", "V03", "V04"}
+
+
+def _cbtc(timetable: Timetable) -> set[str]:
+    """
+    The stations with CBTC once MTA's current projects are done:
+    every station of the G, of the E but the Archer Av branch,
+    of the F but past W 8 St to Coney Island, of the A from 59 St south,
+    and of the M from Essex St on toward Queens, and QueensLink's new stations.
+    """
+    out = set(QUEENSLINK)
+    for trip in timetable.of(G, E, F, A, M):
+        stations = trip.stations()
+        if trip.route == G:
+            out.update(stations)
+        elif trip.route == E:
+            out.update(set(stations) - ARCHER_AV)
+        elif trip.route == F:
+            out.update(set(stations) - {CONEY_ISLAND})
+        elif trip.route == A:
+            if FIFTY_NINTH_ST in stations:
+                at = stations.index(FIFTY_NINTH_ST)
+                out.update(
+                    stations[at:] if trip.calls[-1].stop.endswith("S") else stations[: at + 1]
+                )
+        elif ESSEX_ST in stations:
+            # The M's stations from Essex St to Queens, not those along Broadway and Myrtle Av.
+            out.update(s for s in stations if not s.startswith("M") or s == ESSEX_ST)
+    return out
+
+
 def _run_times() -> dict[tuple[str, str], int]:
     with paths.QUEENSLINK_RUN_TIMES.open() as f:
         return {
@@ -337,7 +370,7 @@ def _far_rockaway_a(timetable: Timetable) -> None:
             trip.calls = ending(back, time, stretch)[:-1] + trip.calls[at:]
 
 
-def _f_via_53_st(timetable: Timetable) -> Counter[tuple[str, int | None]]:
+def _f_via_53_st(timetable: Timetable, cbtc: set[str]) -> Counter[tuple[str, int | None]]:
     """
     Run the F's weekend trips via 63 St via 53 St instead, as on weekdays,
     timed as the E through 53 St, and as they were from Jackson Hts out to Jamaica.
@@ -358,15 +391,13 @@ def _f_via_53_st(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     ]
     moving = {t.id for t in trips}
 
-    def track(stations: list[str], on: Callable[[Trip], bool], floor: int = FLOOR) -> Track:
-        return Track(
-            timetable, _platforms(*stations), lambda t: t.id not in moving and on(t), floor
-        )
+    def track(stations: list[str], on: Callable[[Trip], bool]) -> Track:
+        return Track(timetable, _platforms(*stations), lambda t: t.id not in moving and on(t), cbtc)
 
     # Where it waits for a gap if it has to, and the tracks past there it waits for:
     # at Jackson Hts for the E through 53 St, and at 47-50 Sts for the 6 Av and Culver locals.
     stages = [
-        (JACKSON_HTS, [track(VIA_53_ST[1:-1], _local("F11"), CBTC_FLOOR)]),
+        (JACKSON_HTS, [track(VIA_53_ST[1:-1], _local("F11"))]),
         (
             VIA_53_ST[-1],
             [
@@ -379,11 +410,10 @@ def _f_via_53_st(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     # Where it runs but doesn't wait, to stay clear if it moves:
     # its own route's trains, and the Queens Blvd express with the E.
     also = [
-        _own(timetable, F, moving),
+        _own(timetable, F, moving, cbtc),
         track(
             ["G08", "G14"],
             lambda t: "G14" in t.stations() and "G15" not in t.stations(),
-            CBTC_FLOOR,
         ),
     ]
     for trip in sorted(trips, key=lambda t: t.calls[t.index(JACKSON_HTS)].departure):
@@ -423,17 +453,17 @@ def _drop_shuttle(timetable: Timetable, m: list[Trip]) -> None:
     )
 
 
-def _g_to_forest_hills(timetable: Timetable) -> Counter[tuple[str, int | None]]:
+def _g_to_forest_hills(timetable: Timetable, cbtc: set[str]) -> Counter[tuple[str, int | None]]:
     """
     Run the G's weekday trips on past Court Sq to Forest Hills, as the R runs,
     those `_fit` fits between the R and M at Court Sq.
     How far they're moved and how long they wait, to report.
     """
     weekdays = _stretch(timetable.stretches([R], ServiceDay.WEEKDAY, HOURS), _run_times())
-    local = Track(timetable, _platforms(*QUEENS_BLVD_LOCAL), _local("G20", "G13"), CBTC_FLOOR)
+    local = Track(timetable, _platforms(*QUEENS_BLVD_LOCAL), _local("G20", "G13"), cbtc)
     held: Counter[tuple[str, int | None]] = Counter()
     trips = [t for t in timetable.of(G) if t.day is ServiceDay.WEEKDAY]
-    own = _own(timetable, G, {t.id for t in trips})
+    own = _own(timetable, G, {t.id for t in trips}, cbtc)
     for trip in sorted(trips, key=lambda t: t.calls[t.index(COURT_SQ)].departure):
         old = copy.deepcopy(trip.calls)
         at = trip.index(COURT_SQ)
@@ -562,23 +592,22 @@ def _headsigns(timetable: Timetable, ends: dict[str, str]) -> None:
 
 
 def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
+    cbtc = _cbtc(timetable)
     _far_rockaway_a(timetable)
-    held = _f_via_53_st(timetable)
+    held = _f_via_53_st(timetable, cbtc)
     m, extended = _queenslink_m(timetable)
     _drop_shuttle(timetable, m)
     moving = {t.id for t in m}
 
-    def track(stations: list[str], on: Callable[[Trip], bool], floor: int = FLOOR) -> Track:
-        return Track(
-            timetable, _platforms(*stations), lambda t: t.id not in moving and on(t), floor
-        )
+    def track(stations: list[str], on: Callable[[Trip], bool]) -> Track:
+        return Track(timetable, _platforms(*stations), lambda t: t.id not in moving and on(t), cbtc)
 
     # The tracks QueensLink's M shares: the J's along Broadway,
     # the F's on the 6 Av local and 63 St, and the R's on the Queens Blvd local.
     broadway = track(["M11", "M12", "M13", "M14", "M16", "M18"], _local("M13"))
     six_av = track([f"D{i}" for i in range(15, 22)], _local("D18", "D19"))
     sixty_third = track(["B04", "B06", "B08", "B10"], _local("B06"))
-    queens_blvd = track(QUEENS_BLVD_LOCAL, _local("G20", "G13"), CBTC_FLOOR)
+    queens_blvd = track(QUEENS_BLVD_LOCAL, _local("G20", "G13"))
     # Where it waits for a gap if it has to, and the tracks past there it waits for:
     # on weekends, at Essex St for the 6 Av local and 63 St,
     # and at 21 St-Queensbridge for the Queens Blvd local, where the weekday M already fits,
@@ -594,7 +623,7 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
         )
     ]
     weekend_ids = {t.id for t in extended}
-    own = _own(timetable, M, moving)
+    own = _own(timetable, M, moving, cbtc)
     for trip in sorted(m, key=lambda t: t.calls[t.index(REGO_PARK)].departure):
         if trip.id in weekend_ids:
             stages, also = weekends + rockaway, [own, broadway]
@@ -603,7 +632,7 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
             stages, also = rockaway, [own, broadway, six_av, sixty_third, queens_blvd]
         later = trip.stations()[-1] == ROCKAWAY_PARK
         _count(held, M, stages, _fit(trip, stages, later, also, runs_anyway=True))
-    held.update(_g_to_forest_hills(timetable))
+    held.update(_g_to_forest_hills(timetable, cbtc))
     return held
 
 
@@ -624,10 +653,10 @@ MOST_MOVED = 300
 type Fitted = tuple[int, list[int]] | None
 
 
-def _own(timetable: Timetable, route: str, moving: set[str]) -> Track:
+def _own(timetable: Timetable, route: str, moving: set[str], cbtc: set[str]) -> Track:
     """Where `route`'s trains stop, with its trains not `moving`, to keep its own apart."""
     stops = {call.stop for trip in timetable.of(route) for call in trip.calls}
-    return Track(timetable, stops, lambda t: t.route == route and t.id not in moving)
+    return Track(timetable, stops, lambda t: t.route == route and t.id not in moving, cbtc)
 
 
 def _fit(

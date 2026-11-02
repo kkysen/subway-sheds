@@ -36,7 +36,9 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
     and the Rockaway Park shuttle runs only late at night, when the M doesn't.
 
   Every train added or moved runs at least 90 s from others on the same track, as MTA's own trains do,
-  or 60 s on Queens Blvd and through 53 St, under CBTC,
+  or 60 s under CBTC, as if MTA's current projects are done:
+  the whole G, the E but the Archer Av branch, the F but W 8 St to Coney Island,
+  the A from 59 St south, the M from Essex St on to Queens, and QueensLink's new track,
   waiting for a gap if it has to, for at most a minute:
   the M at Essex St, 21 St-Queensbridge, and Liberty Av, the F at Jackson Hts and 47-50 Sts,
   and the G at Court Sq.

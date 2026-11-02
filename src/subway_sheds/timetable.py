@@ -6,7 +6,7 @@ which `scenarios` makes its feeds with.
 import bisect
 import statistics
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import pairwise
@@ -18,7 +18,7 @@ from subway_sheds import gtfs
 # at each platform: the least MTA itself schedules between its trains in the morning peak,
 # on the Queens Blvd local toward Forest Hills, through 53 St, and on the 6 Av local.
 FLOOR = 90
-# Under CBTC, as on Queens Blvd and QueensLink's new track, trains can run 30 s apart,
+# Under CBTC, trains can run 30 s apart,
 # but with their dwells, they're scheduled at least this far apart.
 CBTC_FLOOR = 60
 # A train added waits at most this long where it waits for a gap, in steps of `STEP`.
@@ -169,10 +169,10 @@ class Track:
         timetable: Timetable,
         stops: set[str],
         on: Callable[[Trip], bool],
-        floor: int = FLOOR,
+        cbtc: Collection[str] = frozenset(),
     ) -> None:
         self.stops = stops
-        self.floor = floor
+        self.cbtc = cbtc
         self.times: defaultdict[tuple[str, str], list[int]] = defaultdict(list)
         for trip in timetable.trips.values():
             if on(trip):
@@ -193,12 +193,14 @@ class Track:
         self, service: str, calls_: Iterable[Call], least: dict[str, float] | None = None
     ) -> bool:
         """
-        Whether `calls_` leave each of `stops` at least `floor` from every other train,
+        Whether `calls_` leave each of `stops` at least `FLOOR` from every other train,
+        or `CBTC_FLOOR` at those of the `cbtc` stations,
         or at least as far as `least` says, where it's less, at that stop.
         """
         for call in calls_:
             if call.stop in self.stops:
-                floor = min(self.floor, (least or {}).get(call.stop, inf))
+                floor = CBTC_FLOOR if call.stop[:-1] in self.cbtc else FLOOR
+                floor = min(floor, (least or {}).get(call.stop, inf))
                 if self.gap(service, call) < floor:
                     return False
         return True
