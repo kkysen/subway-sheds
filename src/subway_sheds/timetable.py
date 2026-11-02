@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import pairwise
+from math import inf
 
 from subway_sheds import gtfs
 
@@ -182,16 +183,24 @@ class Track:
             if call.stop in self.stops:
                 bisect.insort(self.times[trip.service, call.stop], call.departure)
 
-    def clear(self, service: str, calls_: Iterable[Call]) -> bool:
-        """Whether `calls_` leave each of `stops` at least `floor` from every other train."""
+    def gap(self, service: str, call: Call) -> float:
+        """How far `call` leaves its stop from the nearest other train."""
+        times = self.times[service, call.stop]
+        i = bisect.bisect_left(times, call.departure)
+        return min((abs(t - call.departure) for t in times[max(i - 1, 0) : i + 1]), default=inf)
+
+    def clear(
+        self, service: str, calls_: Iterable[Call], least: dict[str, float] | None = None
+    ) -> bool:
+        """
+        Whether `calls_` leave each of `stops` at least `floor` from every other train,
+        or at least as far as `least` says, where it's less, at that stop.
+        """
         for call in calls_:
-            if call.stop not in self.stops:
-                continue
-            times = self.times[service, call.stop]
-            i = bisect.bisect_left(times, call.departure)
-            near = times[max(i - 1, 0) : i + 1]
-            if any(abs(t - call.departure) < self.floor for t in near):
-                return False
+            if call.stop in self.stops:
+                floor = min(self.floor, (least or {}).get(call.stop, inf))
+                if self.gap(service, call) < floor:
+                    return False
         return True
 
     def gaps(self, service: str, start: int, end: int) -> dict[str, int]:
