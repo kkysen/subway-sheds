@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import itertools
 import re
@@ -8,7 +9,7 @@ import httpx
 import pandas as pd
 from typer import Argument, Option, Typer, echo
 
-from subway_sheds import access, export, gtfs, osm, paths, scenarios, travel_times
+from subway_sheds import access, export, gtfs, osm, paths, scenarios, sources, travel_times
 from subway_sheds.grid import land_grid
 from subway_sheds.scenarios import Day, Fare, Scenario
 
@@ -18,10 +19,6 @@ app = Typer(no_args_is_help=True)
 # and its `state.txt`, which names the OSM data's version (its replication sequence number).
 NEW_YORK_OSM_URL = "https://download.geofabrik.de/north-america/us/new-york-latest.osm.pbf"
 NEW_YORK_OSM_STATE_URL = "https://download.geofabrik.de/north-america/us/new-york-updates/state.txt"
-SHORELINE_URL = (
-    "https://raw.githubusercontent.com/chriswhong/nyc-subway-isochrones"
-    "/master/data/nyc-shoreline-clip-multi.json"
-)
 
 
 def _download(url: str, dest: Path) -> None:
@@ -104,6 +101,26 @@ def _fetch_streets(force: bool) -> None:
     echo(f"kept {kept} ways")
 
 
+def _fetch_archived(archived: sources.Archived, force: bool) -> None:
+    """
+    Download `archived` unless already cached, ungzipping it if the archive served it gzipped
+    without saying so, and check it against its SHA-256.
+    """
+    if not force and archived.dest.exists():
+        return
+    echo(f"downloading {archived.url}")
+    partial = archived.dest.with_name(archived.dest.name + ".download")
+    _download(archived.url, partial)
+    data = partial.read_bytes()
+    partial.unlink()
+    if data.startswith(b"\x1f\x8b"):
+        data = gzip.decompress(data)
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != archived.sha256:
+        raise RuntimeError(f"{archived.url} has SHA-256 {actual}, not {archived.sha256}")
+    archived.dest.write_bytes(data)
+
+
 MTA_OD_DATA_RAW = "https://raw.githubusercontent.com/kkysen/mta-od-data"
 
 
@@ -111,14 +128,15 @@ MTA_OD_DATA_RAW = "https://raw.githubusercontent.com/kkysen/mta-od-data"
 def fetch(
     force: Annotated[bool, Option(help="Download again even if already cached.")] = False,
 ) -> None:
-    """Download the MTA feed, shoreline, streets, and platforms, and make both scenarios' feeds."""
+    """Download the MTA feeds, shoreline, streets, and platforms, and make both scenarios' feeds."""
     for url, dest in [
-        (scenarios.mta_feed_url(), scenarios.mta_feed()),
-        (SHORELINE_URL, paths.SHORELINE),
+        (sources.mta_feed_url(), sources.mta_feed()),
+        (sources.SHORELINE_URL, paths.SHORELINE),
     ]:
         if force or not dest.exists():
             echo(f"downloading {url}")
             _download(url, dest)
+    _fetch_archived(sources.MTA_2019, force)
     _fetch_streets(force)
     rev = re.search(r'rev = "(\w+)"', (paths.ROOT / "route" / "Cargo.toml").read_text())
     assert rev, "`route/Cargo.toml` pins `mta-od-data` by `rev`"
@@ -126,7 +144,7 @@ def fetch(
         dest = paths.PLATFORMS.with_name(name)
         if force or not dest.exists():
             _download(f"{MTA_OD_DATA_RAW}/{rev[1]}/src/mta_od_data/ridership/{name}", dest)
-    mta = gtfs.read_feed(scenarios.mta_feed())
+    mta = gtfs.read_feed(sources.mta_feed())
     gtfs.write_feed(scenarios.queenslink_feed(mta), Scenario.QUEENSLINK.gtfs)
     gtfs.write_feed(scenarios.baseline_feed(mta), Scenario.BASELINE.gtfs)
 

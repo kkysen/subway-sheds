@@ -148,13 +148,18 @@ jobs:
       - name: uv sync
         run: uv sync --locked
 
-      # The MTA feed and shoreline, which never change.
+      # The MTA feeds and shoreline, which never change but for their pins in `sources.py`,
+      # and the 2019 feed from the Wayback Machine, which can be slow or limit downloads.
+      # A changed pin restores the downloads from before, so that `fetch` only downloads
+      # what it doesn't have, not the Wayback Machine's again.
       - uses: actions/cache@v6.1.0
         with:
           path: |
             .cache/mdb
+            .cache/wayback
             .cache/nyc-shoreline.json
-          key: downloads-v1
+          key: downloads-${{ hashFiles('src/subway_sheds/sources.py') }}
+          restore-keys: downloads-
 
       # The streets filtered from Geofabrik's New York State extract, the newest cached,
       # which `fetch` sees whether Geofabrik has newer OSM data than (daily at most),

@@ -4,10 +4,6 @@ from pathlib import Path
 
 from subway_sheds import gtfs, paths
 
-# The Mobility Database's copy of MTA's subway feed that the QueensLink feed was made from
-# (https://mobilitydatabase.org/feeds/gtfs/mdb-516), 2025-11-02 to 2025-12-07.
-BASELINE_DATASET = "mdb-516-202511010043"
-
 # The baseline is the QueensLink feed without QueensLink, so that QueensLink is all that differs,
 # rather than MTA's, from before the F and M swapped tunnels, which the QueensLink feed has.
 # QueensLink's M branches off the Queens Blvd local at 63 Dr toward the Rockaways;
@@ -91,15 +87,6 @@ class Scenario(StrEnum):
     @property
     def gtfs(self) -> Path:
         return paths.GTFS / f"{self}.zip"
-
-
-def mta_feed() -> Path:
-    return paths.CACHE / "mdb" / f"{BASELINE_DATASET}.zip"
-
-
-def mta_feed_url() -> str:
-    feed = BASELINE_DATASET.rsplit("-", 1)[0]
-    return f"https://files.mobilitydatabase.org/{feed}/{BASELINE_DATASET}/{BASELINE_DATASET}.zip"
 
 
 def _mta_stations(mta: gtfs.Feed, route: str) -> set[str]:
