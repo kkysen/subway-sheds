@@ -442,9 +442,35 @@ def queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     `_drop_shuttle`, and `_g_to_forest_hills` run it,
     every train added or moved fitting at least `FLOOR` from the others on the same track,
     QueensLink's M waiting at Essex St on weekends and at Liberty Av for a gap,
-    and the G at Court Sq.
+    and the G at Court Sq,
+    each trip run to another end given the headsign of the trips ending there.
     How many trips are held, or don't fit at all, at each, to report.
     """
+    ends = {trip.id: trip.calls[-1].stop for trip in timetable.trips.values()}
+    held = _queenslink(timetable)
+    _headsigns(timetable, ends)
+    return held
+
+
+def _headsigns(timetable: Timetable, ends: dict[str, str]) -> None:
+    """
+    Give each trip now ending elsewhere than `ends` says it did
+    the headsign most of the trips still ending where it now ends have.
+    """
+    rows = timetable.feed.rows["trips.txt"]
+    trips = timetable.trips
+    kept: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    for row in rows:
+        trip = trips.get(row["trip_id"])
+        if trip is not None and ends.get(trip.id) == trip.calls[-1].stop:
+            kept[trip.calls[-1].stop][row["trip_headsign"]] += 1
+    for row in rows:
+        trip = trips.get(row["trip_id"])
+        if trip is not None and ends.get(trip.id) != trip.calls[-1].stop:
+            row["trip_headsign"] = kept[trip.calls[-1].stop].most_common(1)[0][0]
+
+
+def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     _far_rockaway_a(timetable)
     held = _f_via_53_st(timetable)
     m, extended = _queenslink_m(timetable)
