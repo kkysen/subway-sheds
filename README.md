@@ -39,9 +39,16 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   or 60 s under CBTC, as if MTA's current projects are done:
   the whole G, the E but the Archer Av branch, the F but W 8 St to Coney Island,
   the A from 59 St south, the M from Essex St on to Queens, and QueensLink's new track,
-  waiting for a gap if it has to, for at most a minute:
-  the M at Essex St, 21 St-Queensbridge, and Liberty Av, the F at Jackson Hts and 47-50 Sts,
-  and the G at Court Sq.
+  or else counts as a conflict.
+  The M is fitted with CP-SAT, by `src/subway_sheds/fit.py`, two hours at a time:
+  each M runs up to 3 minutes earlier or later as a whole,
+  and waits up to a minute, or makes up 30 s where it has time to spare,
+  at Myrtle Av, Essex St, 21 St-Queensbridge, and Liberty Av,
+  and the J, Z, F, R, A and E trains it shares track with run up to 60 s earlier or later,
+  for the least cost, with a wait costing most,
+  and gaps on the Broadway, 6 Av and Queens Blvd locals shorter than even costing too.
+  The F and G wait for a gap if they have to, for at most a minute,
+  the F at Jackson Hts and 47-50 Sts, and the G at Court Sq.
   Where that isn't enough, the whole trip runs up to 5 minutes earlier or later instead,
   and if that's still not enough, the trains in its way run 30 s or 60 s earlier or later,
   if that keeps them clear of every other train;

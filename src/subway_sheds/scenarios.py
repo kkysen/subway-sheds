@@ -16,7 +16,7 @@ from pathlib import Path
 
 from shapely import LineString, STRtree
 
-from subway_sheds import lines, paths
+from subway_sheds import fit, lines, paths
 from subway_sheds.timetable import (
     STEP,
     Call,
@@ -597,48 +597,19 @@ def _headsigns(timetable: Timetable, ends: dict[str, str]) -> None:
 
 def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     cbtc = _cbtc(timetable)
+    # The quickest any train runs each stretch, before any are added or moved,
+    # for where an M can make up time.
+    fastest: dict[tuple[str, str], int] = {}
+    for trip in timetable.trips.values():
+        for a, b in pairwise(trip.calls):
+            fastest[a.stop, b.stop] = min(
+                fastest.get((a.stop, b.stop), 10**9), b.arrival - a.departure
+            )
     _far_rockaway_a(timetable)
     held = _f_via_53_st(timetable, cbtc)
-    m, extended = _queenslink_m(timetable)
+    m, _ = _queenslink_m(timetable)
     _drop_shuttle(timetable, m)
-    moving = {t.id for t in m}
-
-    def track(stations: list[str], on: Callable[[Trip], bool]) -> Track:
-        return Track(timetable, _platforms(*stations), lambda t: t.id not in moving and on(t), cbtc)
-
-    # The tracks QueensLink's M shares: the J's along Broadway,
-    # the F's on the 6 Av local and 63 St, and the R's on the Queens Blvd local.
-    broadway = track(["M11", "M12", "M13", "M14", "M16", "M18"], _local("M13"))
-    six_av = track([f"D{i}" for i in range(15, 22)], _local("D18", "D19"))
-    sixty_third = track(["B04", "B06", "B08", "B10"], _local("B06"))
-    queens_blvd = track(QUEENS_BLVD_LOCAL, _local("G20", "G13"))
-    # Where it waits for a gap if it has to, and the tracks past there it waits for:
-    # on weekends, at Essex St for the 6 Av local and 63 St,
-    # and at 21 St-Queensbridge for the Queens Blvd local, where the weekday M already fits,
-    # and every day at Liberty Av for the A and on to Rockaway Park.
-    weekends = [(ESSEX_ST, [six_av, sixty_third]), (QUEENSBRIDGE, [queens_blvd])]
-    rockaway = [
-        (
-            LIBERTY_AV,
-            [
-                track(["H01", "H02", "H03", "H04"], _local("H03")),
-                track(["H12", "H13", "H14", "H15"], _local("H13")),
-            ],
-        )
-    ]
-    weekend_ids = {t.id for t in extended}
-    own = _own(timetable, M, moving, cbtc)
-    tracks = [broadway, six_av, sixty_third, queens_blvd, own, *rockaway[0][1]]
-    nudger = _Nudger(timetable, moving, cbtc, tracks)
-    for trip in sorted(m, key=lambda t: t.calls[t.index(REGO_PARK)].departure):
-        if trip.id in weekend_ids:
-            stages, also = weekends + rockaway, [own, broadway]
-        else:
-            # The weekday M already fits along the way, but has to stay clear if it moves.
-            stages, also = rockaway, [own, broadway, six_av, sixty_third, queens_blvd]
-        later = trip.stations()[-1] == ROCKAWAY_PARK
-        _count(held, M, stages, _fit(trip, stages, later, also, nudger, runs_anyway=True))
-    held.update(nudger.nudged)
+    held.update(fit.fit_m(timetable, m, cbtc, fastest))
     held.update(_g_to_forest_hills(timetable, cbtc))
     return held
 
