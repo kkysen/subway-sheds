@@ -33,7 +33,8 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
     leaving 23 St halfway between two Fs, so it alternates with the F and R.
     On weekdays, MTA's own Ms run as they do, and before and after them,
     late at night and early in the morning, Ms run halfway between two Fs too.
-    The new track's times are simulated (see below), and the A's and the Rockaway Park shuttle's are MTA's.
+    The new track's times are simulated (see below), and the A's and the Rockaway Park shuttle's are MTA's,
+    the A's as it runs in the same hour, as MTA allows it up to 4 minutes more some hours.
   - With the M running on weekends, the F runs via 53 St every day, as on weekdays, rather than via 63 St.
   - The G runs on past Court Sq on weekdays along the Queens Blvd local to Forest Hills, timed as the R.
   - The A's few rush hour trips to Rockaway Park run to Far Rockaway,

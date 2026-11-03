@@ -138,6 +138,26 @@ class Timetable:
                 times[a.stop, b.stop].append(b.departure - a.departure)
         return {pair: round(statistics.median(ts)) for pair, ts in times.items()}
 
+    def stretches_by_hour(
+        self, routes: Iterable[str], day: ServiceDay
+    ) -> dict[int, dict[tuple[str, str], int]]:
+        """
+        The median time between consecutive platforms of `routes`' trips on `day`,
+        leaving one to leaving the next, by the hour of the day they leave the first in.
+        """
+        times: defaultdict[int, defaultdict[tuple[str, str], list[int]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        for trip in self.of(*routes):
+            if trip.day is not day:
+                continue
+            for a, b in pairwise(trip.calls):
+                times[a.departure // 3600 % 24][a.stop, b.stop].append(b.departure - a.departure)
+        return {
+            hour: {pair: round(statistics.median(ts)) for pair, ts in pairs.items()}
+            for hour, pairs in times.items()
+        }
+
     def write(self) -> None:
         """Write the trips back into the feed, numbering their stops anew."""
         self.feed.rows["trips.txt"] = [
