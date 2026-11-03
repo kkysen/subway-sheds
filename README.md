@@ -88,7 +88,11 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   Trains accelerate and brake as R188s were recorded doing under CBTC on the elevated 7,
   up to 45 mph and each curve's limit,
   and each run is padded as MTA pads the Queens Blvd local's, with a 30 s dwell,
-  fitted in [`data/queenslink/run_time_calibration.csv`](data/queenslink/run_time_calibration.csv).
+  fitted in [`data/queenslink/run_time_calibration.csv`](data/queenslink/run_time_calibration.csv):
+  as its weekday median, 1.25 times the run, toward Manhattan at weekday rush hours,
+  6 to 10 am and 3 to 8 pm, where the M merges into the local at its busiest,
+  and otherwise as its quickest on any day, 1.05 times,
+  as nothing's merged into toward Rockaway, and little off-peak.
   `subway-sheds run-times` rebuilds both, to review and commit.
 - **Land**: `nyc-subway-isochrones`' NYC shoreline, which keeps the grid out of the water.
 

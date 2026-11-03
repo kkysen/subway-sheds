@@ -278,11 +278,16 @@ def _cbtc(timetable: Timetable) -> set[str]:
     return out
 
 
-def _run_times() -> dict[tuple[str, str], int]:
+def _run_times(column: str = "scheduled_s") -> dict[tuple[str, str], int]:
+    """QueensLink's new stretches' times, padded as `column` of `run_times.csv` says."""
     with paths.QUEENSLINK_RUN_TIMES.open() as f:
-        return {
-            (r["from_stop_id"], r["to_stop_id"]): int(r["scheduled_s"]) for r in csv.DictReader(f)
-        }
+        return {(r["from_stop_id"], r["to_stop_id"]): int(r[column]) for r in csv.DictReader(f)}
+
+
+# Weekday hours the M toward Manhattan is padded fully on QueensLink's new track,
+# by when it leaves 63 Dr-Rego Park, to merge into the Queens Blvd local at its busiest.
+# Otherwise, and toward Rockaway, where nothing's merged into, it's padded leanly.
+RUSH_HOURS = ((6, 10), (15, 20))
 
 
 def _stretch(*tables: dict[tuple[str, str], int]) -> Callable[[str, str], int]:
@@ -304,17 +309,26 @@ def _queenslink_m(timetable: Timetable) -> tuple[list[Trip], list[Trip]]:
     Run the M along QueensLink's branch, every day:
     its trips to and from Forest Hills turn off at 63 Dr-Rego Park instead,
     and on weekends, its trips to and from Essex St run on as on weekdays.
+    The new track is padded as `RUSH_HOURS` says.
     Those, then those of them running on past Essex St.
     """
-    run_times = _run_times()
-    branch = {
+    full, lean = _run_times(), _run_times("lean_s")
+    rockaway = {
         day: (
-            run_times,
             timetable.stretches([A], day, HOURS),
             timetable.stretches([ROCKAWAY_PARK_SHUTTLE], day, HOURS),
         )
         for day in ServiceDay
     }
+
+    def branch(
+        day: ServiceDay, toward_manhattan: bool, time: int
+    ) -> tuple[dict[tuple[str, str], int], ...]:
+        rush = day is ServiceDay.WEEKDAY and any(
+            lo * 3600 <= time % 86400 < hi * 3600 for lo, hi in RUSH_HOURS
+        )
+        return (full if toward_manhattan and rush else lean, *rockaway[day])
+
     # Weekends' M runs past Essex St as weekdays' does at midday.
     midday = timetable.stretches([M], ServiceDay.WEEKDAY, (10, 16))
     weekdays = next(
@@ -330,14 +344,14 @@ def _queenslink_m(timetable: Timetable) -> tuple[list[Trip], list[Trip]]:
             at = trip.index(REGO_PARK)
             time = trip.calls[at].departure
             if stations[-1] == FOREST_HILLS:
-                added = calls(TOWARD_ROCKAWAY, time, _stretch(*branch[trip.day]))
+                added = calls(TOWARD_ROCKAWAY, time, _stretch(*branch(trip.day, False, time)))
                 trip.calls = trip.calls[: at + 1] + added[1:]
             else:
-                added = ending(TOWARD_MANHATTAN, time, _stretch(*branch[trip.day]))
+                added = ending(TOWARD_MANHATTAN, time, _stretch(*branch(trip.day, True, time)))
                 trip.calls = added[:-1] + trip.calls[at:]
             branched.append(trip)
         elif trip.day is not ServiceDay.WEEKDAY and ESSEX_ST in (stations[0], stations[-1]):
-            via = _stretch(midday, *branch[trip.day])
+            via = _stretch(midday, *branch(trip.day, stations[0] != ESSEX_ST, 0))
             if stations[-1] == ESSEX_ST:
                 added = calls(toward + TOWARD_ROCKAWAY, trip.calls[-1].departure, via)
                 trip.calls = trip.calls + added[1:]

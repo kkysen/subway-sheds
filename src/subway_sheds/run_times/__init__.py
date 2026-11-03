@@ -118,15 +118,17 @@ def _stations(mta: gtfs.Feed) -> dict[str, tuple[float, float]]:
     return out | NEW_STATIONS
 
 
-def _scheduled(mta: gtfs.Feed, line: Line) -> dict[tuple[str, str], float]:
+def _scheduled(mta: gtfs.Feed, line: Line) -> dict[tuple[str, str], tuple[float, int]]:
     """
     The median weekday time from departing one of `line`'s stations to departing the next,
-    on its routes, but for each trip's last stretch, slowed by congestion at its terminal.
+    on its routes, but for each trip's last stretch, slowed by congestion at its terminal,
+    and the quickest on any day.
     """
-    trips = {
+    trips = {t["trip_id"] for t in mta.rows["trips.txt"] if t["route_id"] in line.routes}
+    weekdays = {
         t["trip_id"]
         for t in mta.rows["trips.txt"]
-        if t["route_id"] in line.routes and "Weekday" in t["service_id"]
+        if "Weekday" in t["service_id"] and t["trip_id"] in trips
     }
     stops: dict[str, list[tuple[int, str, int]]] = defaultdict(list)
     for st in mta.rows["stop_times.txt"]:
@@ -136,14 +138,16 @@ def _scheduled(mta: gtfs.Feed, line: Line) -> dict[tuple[str, str], float]:
                 (int(st["stop_sequence"]), st["stop_id"][:3], h * 3600 + m * 60 + s)
             )
     times: dict[tuple[str, str], list[int]] = defaultdict(list)
-    for trip in stops.values():
+    quickest: dict[tuple[str, str], int] = {}
+    for trip_id, trip in stops.items():
         trip.sort()
-        if not HOURS[0] * 3600 <= trip[0][2] < HOURS[1] * 3600:
-            continue
+        median = trip_id in weekdays and HOURS[0] * 3600 <= trip[0][2] < HOURS[1] * 3600
         for (_, a, ta), (_, b, tb) in list(zip(trip, trip[1:], strict=False))[:-1]:
             if a in line.stations and b in line.stations:
-                times[(a, b)].append(tb - ta)
-    return {pair: statistics.median(t) for pair, t in sorted(times.items())}
+                quickest[a, b] = min(quickest.get((a, b), tb - ta), tb - ta)
+                if median:
+                    times[a, b].append(tb - ta)
+    return {pair: (statistics.median(t), quickest[pair]) for pair, t in sorted(times.items())}
 
 
 def _osm_stretch(graph: Graph, stations: dict[str, tuple[float, float]], a: str, b: str) -> Stretch:
@@ -168,17 +172,24 @@ def compute(
     stations = _stations(mta)
 
     calibration = [
-        (line, _osm_stretch(graph, stations, a, b), sched)
+        (line, _osm_stretch(graph, stations, a, b), sched, quickest)
         for line in LINES
-        for (a, b), sched in _scheduled(mta, line).items()
+        for (a, b), (sched, quickest) in _scheduled(mta, line).items()
     ]
     # The padding, as a factor on the run,
-    # that best fits the calibrating lines' schedule with `DWELL`, by least squares.
-    runs = np.array([s.run_s for line, s, _ in calibration if line.calibrates])
-    over = np.array([sched - DWELL for line, _, sched in calibration if line.calibrates])
-    padding = float((runs * over).sum() / (runs * runs).sum())
+    # that best fits the calibrating lines' schedule with `DWELL`, by least squares,
+    # and the lean padding, that best fits their quickest,
+    # for where nothing's merged into, as QueensLink's track toward Rockaway.
+    runs = np.array([s.run_s for line, s, _, _ in calibration if line.calibrates])
 
-    def scheduled(run_s: float) -> int:
+    def fit(times: list[float]) -> float:
+        over = np.array(times) - DWELL
+        return float((runs * over).sum() / (runs * runs).sum())
+
+    padding = fit([sched for line, _, sched, _ in calibration if line.calibrates])
+    lean = fit([quickest for line, _, _, quickest in calibration if line.calibrates])
+
+    def scheduled(run_s: float, padding: float = padding) -> int:
         return round(DWELL + padding * run_s)
 
     calibration_rows = [
@@ -189,11 +200,14 @@ def compute(
             "run_s": round(s.run_s),
             "mta_scheduled_s": round(sched),
             "model_scheduled_s": scheduled(s.run_s),
+            "mta_quickest_s": quickest,
+            "model_lean_s": scheduled(s.run_s, lean),
             "line": line.name,
             "calibrates": "yes" if line.calibrates else "no",
             "padding": f"{padding:.3f}",
+            "lean_padding": f"{lean:.3f}",
         }
-        for line, s, sched in calibration
+        for line, s, sched, quickest in calibration
     ]
 
     curves = diagram.radii(diagram_image, ways, NEW_STATIONS[METROPOLITAN_AV])
@@ -214,6 +228,7 @@ def compute(
             "track_m": s.track_m,
             "run_s": round(s.run_s),
             "scheduled_s": scheduled(s.run_s),
+            "lean_s": scheduled(s.run_s, lean),
         }
         for s in stretches
     ]

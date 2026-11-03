@@ -180,7 +180,9 @@ def run_times() -> None:
     rt.write_csv(rows, paths.QUEENSLINK_RUN_TIMES)
     rt.write_csv(track, paths.QUEENSLINK_TRACK)
     rt.write_csv(calibration, paths.QUEENSLINK_RUN_TIME_CALIBRATION)
-    echo(f"padding {calibration[0]['padding']} on runs, with {rt.DWELL} s dwells")
+    padding = calibration[0]["padding"]
+    lean = calibration[0]["lean_padding"]
+    echo(f"padding {padding} on runs, or {lean} lean, with {rt.DWELL} s dwells")
 
 
 def _save(times: pd.DataFrame, dest: Path, routed: set[str] | None) -> None:
