@@ -663,7 +663,7 @@ def fit_m(
         trip.id: [
             (i, _phys(trip, c.stop), c.departure)
             for i, c in enumerate(trip.calls)
-            if c.stop in SHARED
+            if _phys(trip, c.stop) in SHARED
         ]
         for trip in timetable.trips.values()
     }
