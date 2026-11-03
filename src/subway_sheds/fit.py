@@ -368,7 +368,33 @@ class _Window:
             def need(s: str) -> int:
                 return min(self.floor(s), apart(s))
 
+            def ahead(s: str) -> bool:
+                return a.trip.calls[ia[s]].departure < b.trip.calls[ib[s]].departure
+
+            if len({ahead(s) for s in common}) > 1:
+                # Where MTA's own schedule has one pass the other, as the F passes the R
+                # around Jackson Hts late on weekends, in MTA's order at each.
+                self.passing(a, b, [(ia[s], ib[s], need(s), ahead(s)) for s in common])
+                return
+
         self.pair(a, b, [(ia[s], ib[s], need(s)) for s in common], even)
+
+    def passing(self, a: _Plan, b: _Plan, stops: list[tuple[int, int, int, bool]]) -> None:
+        """
+        `a` and `b` a floor apart at each of `stops`, `(call in a, call in b, floor, a first)`,
+        in the order given at each, or else a conflict.
+        """
+        clash = self.model.new_bool()
+        self.conflicts.append((clash, a.trip.id, b.trip.id))
+        self.cost.append((clash, CONFLICT))
+        self.partners[a.trip.id].add(b.trip.id)
+        self.partners[b.trip.id].add(a.trip.id)
+        for ia, ib, need, first in stops:
+            x, y = self.dep(a, ia), self.dep(b, ib)
+            if first:
+                self.at_least(y, x, need, [~clash])
+            else:
+                self.at_least(x, y, need, [~clash])
 
     def myrtle_av(self) -> None:
         """An M toward Middle Village crosses the Manhattan-bound J and Z tracks at grade."""
