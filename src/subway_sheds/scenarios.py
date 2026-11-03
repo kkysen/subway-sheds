@@ -439,6 +439,43 @@ def _m_between_f(timetable: Timetable, m: list[Trip], extended: list[Trip]) -> l
     return [t for t in out if t.id not in dropped]
 
 
+def _m_along_a_by_hour(timetable: Timetable, m: list[Trip]) -> None:
+    """
+    Time each of `m` along the A, past Liberty Av, as the A runs that stretch in that hour,
+    or all day where it doesn't run it that hour, or as the Rockaway Park shuttle,
+    as MTA slows the A much more some hours than others,
+    from 1:30 to 5:30 between Aqueduct-North Conduit Av and Howard Beach.
+    It runs as before to and from Aqueduct, on QueensLink's own track.
+    """
+    hourly = {day: timetable.stretches_by_hour([A], day) for day in ServiceDay}
+    daily = {
+        day: (
+            timetable.stretches([A], day, HOURS),
+            timetable.stretches([ROCKAWAY_PARK_SHUTTLE], day, HOURS),
+        )
+        for day in ServiceDay
+    }
+
+    def stretch(day: ServiceDay, a: str, b: str, time: int) -> int:
+        """The time from `a` to `b` on `day`, leaving `a` around `time`."""
+        return _stretch(hourly[day].get(time // 3600 % 24, {}), *daily[day])(a, b)
+
+    for trip in m:
+        at = trip.index(LIBERTY_AV)
+        if trip.calls[-1].stop[:-1] == ROCKAWAY_PARK:
+            for prev, call in pairwise(trip.calls[at + 1 :]):
+                call.arrival = call.departure = prev.departure + stretch(
+                    trip.day, prev.stop, call.stop, prev.departure
+                )
+        else:
+            for call, after in reversed(list(pairwise(trip.calls[:at]))):
+                # Leaving `call` about one stretch before leaving `after`.
+                time = after.departure - stretch(trip.day, call.stop, after.stop, after.departure)
+                call.arrival = call.departure = after.departure - stretch(
+                    trip.day, call.stop, after.stop, time
+                )
+
+
 def _far_rockaway_a(timetable: Timetable) -> None:
     """
     Run the A's few weekday trips to and from Rockaway Park to and from Far Rockaway instead,
@@ -702,6 +739,7 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     held = _f_via_53_st(timetable, cbtc)
     m, extended = _queenslink_m(timetable)
     m = _m_between_f(timetable, m, extended)
+    _m_along_a_by_hour(timetable, m)
     _drop_shuttle(timetable, m)
     held.update(fit.fit_m(timetable, m, cbtc, fastest))
     held.update(_g_to_forest_hills(timetable, cbtc))
