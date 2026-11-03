@@ -332,7 +332,13 @@ class _Window:
         even = None
         if gap > self.floor(stop):
             even = (ia[stop], ib[stop], gap)
-        self.pair(a, b, [(ia[s], ib[s], self.floor(s)) for s in common], even)
+        need = self.floor
+        if a.trip.id not in self.m_ids and b.trip.id not in self.m_ids:
+            # Or as close as MTA's own schedule already runs them, if closer.
+            def need(s: str) -> int:
+                return min(self.floor(s), apart(s))
+
+        self.pair(a, b, [(ia[s], ib[s], need(s)) for s in common], even)
 
     def myrtle_av(self) -> None:
         """An M toward Middle Village crosses the Manhattan-bound J and Z tracks at grade."""
