@@ -156,6 +156,8 @@ class _Window:
     # The day's trips stopping on a track the M shares,
     # with those stops, as `(call, platform, departure)`, the platform as `_phys` has it.
     on_shared: dict[str, list[tuple[int, str, int]]]
+    # Each trip's departures, in units.
+    units: dict[str, list[int]]
     m_ids: set[str]
     day: str
     start: int
@@ -168,12 +170,13 @@ class _Window:
     # The trains each train is kept apart from on a shared track, both free to move.
     partners: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     plans: dict[str, _Plan] = field(default_factory=dict)
+    floors: dict[str, int] = field(default_factory=dict)
 
     def dep_of(self, trip: Trip, i: int) -> Linear:
         """`trip`'s departure at call `i`, as `dep`, if it's in the window, or as solved before."""
         if trip.id in self.plans:
             return self.dep(self.plans[trip.id], i)
-        return [], _u(trip.calls[i].departure) + self.done.get(trip.id, {}).get(i, 0)
+        return [], self.units[trip.id][i] + self.done.get(trip.id, {}).get(i, 0)
 
     def short_of(self, x: Linear, y: Linear, gap: int, weight: int) -> None:
         """Cost `weight` for each unit `x` is less than `gap` after `y`."""
@@ -182,11 +185,13 @@ class _Window:
         self.cost.append((short, weight))
 
     def floor(self, stop: str) -> int:
-        return _u(CBTC_FLOOR if stop[:-1] in self.cbtc else FLOOR)
+        if stop not in self.floors:
+            self.floors[stop] = _u(CBTC_FLOOR if stop[:-1] in self.cbtc else FLOOR)
+        return self.floors[stop]
 
     def dep(self, p: _Plan, i: int) -> Linear:
         """The departure at call `i`, in units, as `(terms, offset)`."""
-        base = _u(p.trip.calls[i].departure)
+        base = self.units[p.trip.id][i]
         if p.kind == "fixed":
             return [], base + self.done.get(p.trip.id, {}).get(i, 0)
         if p.kind == "nudge":
@@ -336,7 +341,7 @@ class _Window:
                     continue
                 at = {s: i for i, s, _ in self.on_shared[p.trip.id] if s in track.stops}
                 if at:
-                    times = [_u(p.trip.calls[i].departure) for i in at.values()]
+                    times = [self.units[p.trip.id][i] for i in at.values()]
                     members.append((min(times), max(times), p, at))
             members.sort(key=lambda m: m[0])
             for k, (_, last, a, ia) in enumerate(members):
@@ -349,7 +354,7 @@ class _Window:
 
     def shared_pair(self, a: _Plan, b: _Plan, ia: dict[str, int], ib: dict[str, int]) -> None:
         def apart(s: str) -> int:
-            return abs(_u(a.trip.calls[ia[s]].departure) - _u(b.trip.calls[ib[s]].departure))
+            return abs(self.units[a.trip.id][ia[s]] - self.units[b.trip.id][ib[s]])
 
         reach = self.flex(a) + self.flex(b)
         # Only where they could come within the floor of each other, or swap.
@@ -413,7 +418,7 @@ class _Window:
                 ib = next((i for i, c in enumerate(b.trip.calls) if c.stop == MYRTLE_AV), None)
                 if ib is None:
                     continue
-                diff = _u(a.trip.calls[ia].departure) - _u(b.trip.calls[ib].departure)
+                diff = self.units[a.trip.id][ia] - self.units[b.trip.id][ib]
                 if abs(diff) < self.flex(a) + self.flex(b) + 3:
                     self.pair(a, b, [(ia, ib, 3)], None)
 
@@ -422,30 +427,34 @@ class _Window:
         for track in TRACKS:
             if not track.spread:
                 continue
-            for stop in sorted(track.stops):
-                starts = []
-                for p in self.plans.values():
-                    if not (track.on(p.trip) or p.trip.id in self.m_ids):
-                        continue
-                    for i, c in enumerate(p.trip.calls):
-                        if (
-                            _phys(p.trip, c.stop) != stop
-                            or not self.start - 3600 <= c.departure < self.end + 3600
-                        ):
-                            continue
-                        terms, offset = self.dep(p, i)
-                        if len(terms) > 1:
-                            # CP-SAT takes one variable in an interval's start.
-                            d = self.model.new_int(-self.flex(p), self.flex(p))
-                            self.model.add_linear(_merge((terms, 1), ([(d, 1)], -1)), 0, 0)
-                            terms = [(d, 1)]
-                        interval = self.model.new_interval(terms, offset, _u(SPREAD))
-                        starts.append((interval, _u(c.departure)))
-                if len(starts) <= ROW:
+            at: dict[str, list[tuple[_Plan, int]]] = defaultdict(list)
+            for p in self.plans.values():
+                if not (track.on(p.trip) or p.trip.id in self.m_ids):
                     continue
-                times = sorted(t for _, t in starts)
-                most = max(sum(1 for t in times if s <= t < s + _u(SPREAD)) for s in times)
-                self.model.add_cumulative([v for v, _ in starts], max(ROW, most))
+                for i, stop, departure in self.on_shared[p.trip.id]:
+                    if stop in track.stops and self.start - 3600 <= departure < self.end + 3600:
+                        at[stop].append((p, i))
+            for stop in sorted(at):
+                if len(at[stop]) <= ROW:
+                    continue
+                starts = []
+                for p, i in at[stop]:
+                    terms, offset = self.dep(p, i)
+                    if len(terms) > 1:
+                        # CP-SAT takes one variable in an interval's start.
+                        d = self.model.new_int(-self.flex(p), self.flex(p))
+                        self.model.add_linear(_merge((terms, 1), ([(d, 1)], -1)), 0, 0)
+                        terms = [(d, 1)]
+                    starts.append(self.model.new_interval(terms, offset, _u(SPREAD)))
+                # The most MTA's own schedule already has in any `SPREAD` there.
+                times = sorted(self.units[p.trip.id][i] for p, i in at[stop])
+                most = 0
+                lo = 0
+                for hi, t in enumerate(times):
+                    while times[lo] <= t - _u(SPREAD):
+                        lo += 1
+                    most = max(most, hi - lo + 1)
+                self.model.add_cumulative(starts, max(ROW, most))
 
     def headways(self) -> None:
         """
@@ -458,13 +467,12 @@ class _Window:
             if p.trip.id in self.m_ids:
                 by_direction[p.trip.stations()[-1] == ROCKAWAY_PARK].append(p)
         for ps in by_direction.values():
-            for stop in {c.stop for p in ps for c in p.trip.calls}:
-                at = sorted(
-                    (p.trip.calls[i].departure, p, i)
-                    for p in ps
-                    for i, c in enumerate(p.trip.calls)
-                    if c.stop == stop
-                )
+            calls_at: dict[str, list[tuple[int, _Plan, int]]] = defaultdict(list)
+            for p in ps:
+                for i, c in enumerate(p.trip.calls):
+                    calls_at[c.stop].append((c.departure, p, i))
+            for stop, at in calls_at.items():
+                at.sort(key=lambda x: x[0])
                 for (ta, pa, ia), (tb, pb, ib) in pairwise(at):
                     if pa.trip.service != pb.trip.service or pa.kind == pb.kind == "fixed":
                         continue
@@ -599,6 +607,18 @@ class _Window:
             held["M in conflict", None] += clashes
 
 
+class _Units(dict[str, list[int]]):
+    """Each trip's departures, in units, found the first time they're needed."""
+
+    def __init__(self, timetable: Timetable) -> None:
+        super().__init__()
+        self.timetable = timetable
+
+    def __missing__(self, trip_id: str) -> list[int]:
+        self[trip_id] = [_u(c.departure) for c in self.timetable.trips[trip_id].calls]
+        return self[trip_id]
+
+
 def _apply(trip: Trip, offsets: dict[int, int]) -> None:
     """
     Move `trip`'s departures by `offsets`, in units, and each arrival as the departure before,
@@ -653,6 +673,7 @@ def fit_m(
         first = min(c.departure for t in ms for c in t.calls) // 3600
         last = max(c.departure for t in ms for c in t.calls) // 3600
         done: dict[str, dict[int, int]] = {}
+        units = _Units(timetable)
         on_shared = {
             t: calls
             for t, calls in shared_calls.items()
@@ -667,6 +688,7 @@ def fit_m(
                 own,
                 every,
                 on_shared,
+                units,
                 m_ids,
                 day,
                 hour * 3600,
