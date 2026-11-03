@@ -104,6 +104,9 @@ TRACKS = [
 
 # Every platform on a track the M shares.
 SHARED = set().union(*(t.stops for t in TRACKS))
+# Where the even gap counts in full, not just up to three floors:
+# the 6 Av and Queens Blvd locals, where the M's riders share the most stations.
+UNCAPPED = _platforms(*QUEENS_BLVD, *(f"D{i}" for i in range(15, 22)))
 
 
 def _phys(trip: Trip, stop: str) -> str:
@@ -366,7 +369,8 @@ class _Window:
         if a.trip.id not in self.m_ids and b.trip.id not in self.m_ids:
             # Only spacing worse than MTA's own, between trains MTA already runs.
             gap = min(gap, apart(stop))
-        gap = min(gap, 3 * self.floor(stop))
+        if stop not in UNCAPPED:
+            gap = min(gap, 3 * self.floor(stop))
         even = None
         if gap > self.floor(stop):
             even = (ia[stop], ib[stop], gap)
