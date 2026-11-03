@@ -46,7 +46,10 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   at Myrtle Av, Essex St, 21 St-Queensbridge, and Liberty Av,
   and the J, Z, F, R, A and E trains it shares track with run up to 60 s earlier or later,
   for the least cost, with a wait costing most,
-  and gaps on the Broadway, 6 Av and Queens Blvd locals shorter than even costing too.
+  and gaps shorter than even costing too:
+  between trains on each shared track, between each M and the M before it,
+  where it also keeps at least 80% of its scheduled gap,
+  and between each train nudged and its own route's trains before and after it.
   The F and G wait for a gap if they have to, for at most a minute,
   the F at Jackson Hts and 47-50 Sts, and the G at Court Sq.
   Where that isn't enough, the whole trip runs up to 5 minutes earlier or later instead,

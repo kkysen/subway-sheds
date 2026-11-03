@@ -8,6 +8,7 @@ Every pair of trains near each other on a shared track stays a floor apart at ea
 or else counts as a conflict, which costs far more than anything else.
 """
 
+import bisect
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,7 +24,7 @@ UNIT = 30
 SPREAD = 480
 ROW = 4
 # Each M keeps at least this share of its scheduled gap to the M before it.
-KEPT = 2 / 3
+KEPT = 0.8
 # How far an M runs earlier or later as a whole, waits at a junction, or another train is nudged.
 MOST_MOVED = 180
 MOST_HELD = 60
@@ -33,18 +34,22 @@ CAP = 30.0
 WORKERS = 8
 
 # Costs, per `UNIT`: an M moved, held, or catching up, another train nudged,
-# a pair falling short of its even gap, and a conflict.
+# a pair of trains on a shared track falling short of its even gap,
+# an M falling short of its scheduled gap to the M before it,
+# a train nudged falling short of MTA's gap to its own route's trains before and after it,
+# and a conflict.
 MOVE = 1
 HOLD = 4
 CATCH_UP = 3
 NUDGE = 4
 UNEVEN = 2
+UNEVEN_M = 3
+UNEVEN_OWN = 2
 CONFLICT = 1000
 
 NUDGEABLE = {"J", "Z", "F", "R", "A", "E"}
 # Myrtle Av, Essex St, 21 St-Queensbridge, and Liberty Av.
 JUNCTIONS = ["M11", "M18", "B04", "V04"]
-SHARED_LOCALS = ("Broadway local", "6 Av local", "Queens Blvd local")
 ROCKAWAY_PARK = "H15"
 # MTA labels the M's platforms along Broadway by its own direction, opposite the J's:
 # the J's S is toward Manhattan there, but the M's N is. So compare them as the J's.
@@ -140,6 +145,8 @@ class _Window:
     cbtc: set[str]
     fastest: dict[tuple[str, str], int]
     leaving: dict[tuple[str, str, int], int]
+    # Each route's trains at each platform, by service, in order, as `(departure, trip, call)`.
+    own: dict[tuple[str, str, str], list[tuple[int, str, int]]]
     m_ids: set[str]
     day: str
     start: int
@@ -149,6 +156,18 @@ class _Window:
     cost: list[tuple[int, int]] = field(default_factory=list)
     conflicts: list[int] = field(default_factory=list)
     plans: dict[str, _Plan] = field(default_factory=dict)
+
+    def dep_of(self, trip: Trip, i: int) -> Linear:
+        """`trip`'s departure at call `i`, as `dep`, if it's in the window, or as solved before."""
+        if trip.id in self.plans:
+            return self.dep(self.plans[trip.id], i)
+        return [], _u(trip.calls[i].departure) + self.done.get(trip.id, {}).get(i, 0)
+
+    def short_of(self, x: Linear, y: Linear, gap: int, weight: int) -> None:
+        """Cost `weight` for each unit `x` is less than `gap` after `y`."""
+        short = self.model.new_int(0, gap)
+        self.at_least((x[0] + [(short, 1)], x[1]), y, gap, [])
+        self.cost.append((short, weight))
 
     def floor(self, stop: str) -> int:
         return _u(CBTC_FLOOR if stop[:-1] in self.cbtc else FLOOR)
@@ -311,7 +330,7 @@ class _Window:
             gap = min(gap, apart(stop))
         gap = min(gap, 3 * self.floor(stop))
         even = None
-        if track.name in SHARED_LOCALS and gap > self.floor(stop):
+        if gap > self.floor(stop):
             even = (ia[stop], ib[stop], gap)
         self.pair(a, b, [(ia[s], ib[s], self.floor(s)) for s in common], even)
 
@@ -364,11 +383,15 @@ class _Window:
                 self.model.add_cumulative([v for v, _ in starts], max(ROW, most))
 
     def headways(self) -> None:
-        """The Ms in each direction keep their order and `KEPT` of their gaps, at each platform."""
+        """
+        The Ms in each direction keep their order and `KEPT` of their gaps, at each platform,
+        costing how far short of their scheduled gap they are
+        at each junction and the platform before it, so on each stretch between junctions.
+        """
         by_direction: dict[bool, list[_Plan]] = defaultdict(list)
         for p in self.plans.values():
-            if p.kind == "flex":
-                by_direction[p.later].append(p)
+            if p.trip.id in self.m_ids:
+                by_direction[p.trip.stations()[-1] == ROCKAWAY_PARK].append(p)
         for ps in by_direction.values():
             for stop in {c.stop for p in ps for c in p.trip.calls}:
                 at = sorted(
@@ -378,9 +401,42 @@ class _Window:
                     if c.stop == stop
                 )
                 for (ta, pa, ia), (tb, pb, ib) in pairwise(at):
-                    if pa.trip.service == pb.trip.service:
-                        need = max(self.floor(stop), int(KEPT * _u(tb - ta)))
-                        self.at_least(self.dep(pb, ib), self.dep(pa, ia), need, [])
+                    if pa.trip.service != pb.trip.service or pa.kind == pb.kind == "fixed":
+                        continue
+                    x, y = self.dep(pb, ib), self.dep(pa, ia)
+                    need = max(self.floor(stop), int(KEPT * _u(tb - ta)))
+                    self.at_least(x, y, need, [])
+                    calls = pb.trip.calls
+                    if any(calls[j].stop[:-1] in JUNCTIONS for j in (ib, ib + 1) if j < len(calls)):
+                        self.short_of(x, y, _u(tb - ta), UNEVEN_M)
+
+    def own_headways(self) -> None:
+        """
+        Each train nudged costs how far short it falls of MTA's gap
+        to its own route's trains before and after it,
+        where it first stops on a track the M shares in the window.
+        """
+        for p in self.plans.values():
+            if p.kind != "nudge":
+                continue
+            i = next(
+                i
+                for i, c in enumerate(p.trip.calls)
+                if any(_phys(p.trip, c.stop) in t.stops for t in TRACKS)
+                and self.start <= c.departure < self.end
+            )
+            trains = self.own[p.trip.service, p.trip.route, p.trip.calls[i].stop]
+            at = bisect.bisect_left(trains, (p.trip.calls[i].departure, p.trip.id, i))
+            for k in (at - 1, at + 1):
+                if not 0 <= k < len(trains):
+                    continue
+                t, other, j = trains[k]
+                gap = _u(abs(t - p.trip.calls[i].departure))
+                ours, theirs = self.dep(p, i), self.dep_of(self.timetable.trips[other], j)
+                if k > at:
+                    self.short_of(theirs, ours, gap, UNEVEN_OWN)
+                else:
+                    self.short_of(ours, theirs, gap, UNEVEN_OWN)
 
     def solve(self, held: Counter[tuple[str, int | None]]) -> None:
         """Solve, and keep the trains first on a shared track in the window's first hour."""
@@ -389,6 +445,7 @@ class _Window:
         self.myrtle_av()
         self.spread()
         self.headways()
+        self.own_headways()
         self.model.minimize(self.cost)
         status, _, _, _, values = self.model.solve(CAP, 600, WORKERS)
         if not values:
@@ -447,6 +504,13 @@ def fit_m(
     for trip in timetable.trips.values():
         for c in trip.calls:
             leaving[trip.service, _phys(trip, c.stop), c.departure // 3600] += 1
+    own: dict[tuple[str, str, str], list[tuple[int, str, int]]] = defaultdict(list)
+    for trip in timetable.trips.values():
+        if trip.route in NUDGEABLE:
+            for i, c in enumerate(trip.calls):
+                own[trip.service, trip.route, c.stop].append((c.departure, trip.id, i))
+    for trains in own.values():
+        trains.sort()
     m_ids = {t.id for t in m}
     held: Counter[tuple[str, int | None]] = Counter()
     for day in sorted({d for t in m for d in ("Weekday", "Saturday", "Sunday") if d in t.service}):
@@ -456,7 +520,16 @@ def fit_m(
         done: dict[str, dict[int, int]] = {}
         for hour in range(first, last + 1):
             window = _Window(
-                timetable, cbtc, fastest, leaving, m_ids, day, hour * 3600, (hour + 2) * 3600, done
+                timetable,
+                cbtc,
+                fastest,
+                leaving,
+                own,
+                m_ids,
+                day,
+                hour * 3600,
+                (hour + 2) * 3600,
+                done,
             )
             window.solve(held)
         for trip_id, offsets in done.items():
