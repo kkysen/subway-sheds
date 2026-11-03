@@ -21,6 +21,12 @@ rustc-hash = "2.1.3"
 # The page's travel times (`web/times/`), to find which walks out of stations it needs.
 times = { package = "subway-sheds-times", path = "../web/times" }
 streets = { git = "https://github.com/kkysen/mta-od-data", rev = "5d48d10a4e658cfe236290300836434942e4454d" }
+cp_sat = "0.4.1"
 
 [build-dependencies]
 pyo3-build-config = "0.30.1"
+
+# Unoptimized, the `cp_sat` crate's C++ wrapper calls Abseil's logging itself, out of line,
+# which the crate doesn't link.
+[profile.dev.package.cp_sat]
+opt-level = 3

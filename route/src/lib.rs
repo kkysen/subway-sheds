@@ -5,6 +5,7 @@
 //! Python drives it through the `subway_sheds._route` module.
 
 mod feed;
+mod sat;
 mod walks;
 
 use std::path::{Path, PathBuf};
@@ -908,6 +909,7 @@ fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(station_pairs, m)?)?;
     m.add_function(wrap_pyfunction!(used_exits, m)?)?;
     m.add_function(wrap_pyfunction!(exit_trees, m)?)?;
+    m.add_class::<sat::Model>()?;
     Ok(())
 }
 

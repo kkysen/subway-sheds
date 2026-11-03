@@ -35,9 +35,21 @@ jobs:
             web/times/src/**/*.rs
 
       # Node, as `mise.toml` pins it, but not `uv`, which `setup-uv` installed.
+      # OR-Tools' C++ library, which the `route` crate links against,
+      # restored before `mise install` would download it (see `scripts/fetch-ortools.sh`),
+      # and kept with the `route` crate's build, which records where it is.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: .cache/ortools
+          key: ortools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'scripts/fetch-ortools.sh') }}
+
       - uses: jdx/mise-action@v5.2.3
         env:
           MISE_DISABLE_TOOLS: uv
+
+      # In case `mise install` had nothing to install, and so didn't run it.
+      - name: OR-Tools
+        run: scripts/fetch-ortools.sh
 
       # The `route` crate's dependencies and build, which `uv` compiles through `maturin`,
       # in every job that runs `uv`, as the runner's Rust has it.
@@ -127,9 +139,21 @@ jobs:
             web/times/Cargo.toml
             web/times/src/**/*.rs
 
+      # OR-Tools' C++ library, which the `route` crate links against,
+      # restored before `mise install` would download it (see `scripts/fetch-ortools.sh`),
+      # and kept with the `route` crate's build, which records where it is.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: .cache/ortools
+          key: ortools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'scripts/fetch-ortools.sh') }}
+
       - uses: jdx/mise-action@v5.2.3
         env:
           MISE_DISABLE_TOOLS: uv
+
+      # In case `mise install` had nothing to install, and so didn't run it.
+      - name: OR-Tools
+        run: scripts/fetch-ortools.sh
 
       # The `route` crate's dependencies and build, which `uv` compiles through `maturin`,
       # in every job that runs `uv`, as the runner's Rust has it.

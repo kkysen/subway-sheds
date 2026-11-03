@@ -5,3 +5,14 @@
 node = "26.12.1"
 pre-commit = "4.7.0"
 uv = "0.13.5"
+
+# OR-Tools' C++ library, with CP-SAT, which the `route` crate links against.
+# `scripts/fetch-ortools.sh` downloads it, after `mise install`.
+[env]
+ORTOOLS_VERSION = "9.15.6755"
+ORTOOLS_PREFIX = "{{config_root}}/.cache/ortools/{{env.ORTOOLS_VERSION}}"
+# `prost-build`, in the `cp_sat` crate, compiles CP-SAT's protos with OR-Tools' own `protoc`.
+PROTOC = "{{env.ORTOOLS_PREFIX}}/bin/protoc"
+
+[hooks]
+postinstall = "scripts/fetch-ortools.sh"
