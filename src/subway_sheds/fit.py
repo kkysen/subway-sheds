@@ -12,7 +12,7 @@ import bisect
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from itertools import combinations, pairwise
+from itertools import pairwise
 
 from subway_sheds._route import CpModel
 from subway_sheds.timetable import CBTC_FLOOR, FLOOR, Timetable, Trip
@@ -102,6 +102,10 @@ TRACKS = [
 ]
 
 
+# Every platform on a track the M shares.
+SHARED = set().union(*(t.stops for t in TRACKS))
+
+
 def _phys(trip: Trip, stop: str) -> str:
     """`stop` as the platform it physically is, by the J's letters along Broadway."""
     if trip.route == "M" and stop[:-1] in BROADWAY:
@@ -149,6 +153,9 @@ class _Window:
     own: dict[tuple[str, str, str], list[tuple[int, str, int]]]
     # Every train at each platform, by service, in order, the same way.
     every: dict[tuple[str, str], list[tuple[int, str, int]]]
+    # The day's trips stopping on a track the M shares,
+    # with those stops, as `(call, platform, departure)`, the platform as `_phys` has it.
+    on_shared: dict[str, list[tuple[int, str, int]]]
     m_ids: set[str]
     day: str
     start: int
@@ -220,31 +227,28 @@ class _Window:
         self.cost.append((a, weight))
 
     def touches(self, trip: Trip) -> bool:
-        return any(
-            any(c.stop in t.stops for t in TRACKS) and self.start <= c.departure < self.end
-            for c in trip.calls
-        )
+        return any(self.start <= d < self.end for _, _, d in self.on_shared[trip.id])
 
     def plan(self) -> None:
-        trips = [t for t in self.timetable.trips.values() if self.day in t.service]
+        trips = [self.timetable.trips[t] for t in self.on_shared]
         # Where the window's Ms run on shared tracks past its end, as they run a while,
         # to take in the trains they meet there too.
         later: dict[str, list[int]] = defaultdict(list)
         for trip in trips:
             if trip.id in self.m_ids and trip.id not in self.done and self.touches(trip):
-                for c in trip.calls:
-                    if c.departure >= self.end and any(c.stop in t.stops for t in TRACKS):
-                        later[_phys(trip, c.stop)].append(c.departure)
+                for _, stop, departure in self.on_shared[trip.id]:
+                    if departure >= self.end:
+                        later[stop].append(departure)
         for times in later.values():
             times.sort()
         reach = MOST_MOVED + len(JUNCTIONS) * MOST_HELD + MOST_NUDGED + FLOOR
 
         def meets(trip: Trip) -> bool:
-            for c in trip.calls:
-                times = later.get(_phys(trip, c.stop))
+            for _, stop, departure in self.on_shared[trip.id]:
+                times = later.get(stop)
                 if times:
-                    k = bisect.bisect_left(times, c.departure - reach)
-                    if k < len(times) and times[k] <= c.departure + reach:
+                    k = bisect.bisect_left(times, departure - reach)
+                    if k < len(times) and times[k] <= departure + reach:
                         return True
             return False
 
@@ -323,28 +327,27 @@ class _Window:
 
     def shared(self) -> None:
         """Floors on each shared track: which goes first, per pair, no overtaking."""
+        # As far apart as two trains' times on a track can be and still come near.
+        reach = 2 * (_u(MOST_MOVED) + len(JUNCTIONS) * (_u(MOST_HELD) + 1)) + _u(FLOOR)
         for track in TRACKS:
-            members = [
-                p
-                for p in self.plans.values()
-                if (track.on(p.trip) or p.trip.id in self.m_ids)
-                and any(_phys(p.trip, c.stop) in track.stops for c in p.trip.calls)
-            ]
-            for a, b in combinations(members, 2):
-                if a.kind == "fixed" and b.kind == "fixed" or a.trip.service != b.trip.service:
+            members = []
+            for p in self.plans.values():
+                if not (track.on(p.trip) or p.trip.id in self.m_ids):
                     continue
-                self.shared_pair(track, a, b)
+                at = {s: i for i, s, _ in self.on_shared[p.trip.id] if s in track.stops}
+                if at:
+                    times = [_u(p.trip.calls[i].departure) for i in at.values()]
+                    members.append((min(times), max(times), p, at))
+            members.sort(key=lambda m: m[0])
+            for k, (_, last, a, ia) in enumerate(members):
+                for first, _, b, ib in members[k + 1 :]:
+                    if first > last + reach:
+                        break
+                    if a.kind == "fixed" and b.kind == "fixed" or a.trip.service != b.trip.service:
+                        continue
+                    self.shared_pair(a, b, ia, ib)
 
-    def shared_pair(self, track: SharedTrack, a: _Plan, b: _Plan) -> None:
-        def calls(p: _Plan) -> dict[str, int]:
-            return {
-                s: i
-                for i, c in enumerate(p.trip.calls)
-                if (s := _phys(p.trip, c.stop)) in track.stops
-            }
-
-        ia, ib = calls(a), calls(b)
-
+    def shared_pair(self, a: _Plan, b: _Plan, ia: dict[str, int], ib: dict[str, int]) -> None:
         def apart(s: str) -> int:
             return abs(_u(a.trip.calls[ia[s]].departure) - _u(b.trip.calls[ib[s]].departure))
 
@@ -572,11 +575,7 @@ class _Window:
             if p.kind == "fixed":
                 continue
             first = min(
-                (
-                    c.departure
-                    for c in p.trip.calls
-                    if any(c.stop in t.stops for t in TRACKS) and c.departure >= self.start
-                ),
+                (d for _, _, d in self.on_shared[p.trip.id] if d >= self.start),
                 default=self.end,
             )
             if first < self.start + 3600:
@@ -640,12 +639,25 @@ def fit_m(
     for trains in every.values():
         trains.sort()
     m_ids = {t.id for t in m}
+    shared_calls = {
+        trip.id: [
+            (i, _phys(trip, c.stop), c.departure)
+            for i, c in enumerate(trip.calls)
+            if c.stop in SHARED
+        ]
+        for trip in timetable.trips.values()
+    }
     held: Counter[tuple[str, int | None]] = Counter()
     for day in sorted({d for t in m for d in ("Weekday", "Saturday", "Sunday") if d in t.service}):
         ms = [t for t in m if day in t.service]
         first = min(c.departure for t in ms for c in t.calls) // 3600
         last = max(c.departure for t in ms for c in t.calls) // 3600
         done: dict[str, dict[int, int]] = {}
+        on_shared = {
+            t: calls
+            for t, calls in shared_calls.items()
+            if calls and day in timetable.trips[t].service
+        }
         for hour in range(first, last + 1):
             window = _Window(
                 timetable,
@@ -654,6 +666,7 @@ def fit_m(
                 leaving,
                 own,
                 every,
+                on_shared,
                 m_ids,
                 day,
                 hour * 3600,
