@@ -363,6 +363,82 @@ def _queenslink_m(timetable: Timetable) -> tuple[list[Trip], list[Trip]]:
     return branched, extended
 
 
+# Where the M added is timed between the Fs: 23 St on the 6 Av local.
+TWENTY_THIRD_ST = "D18"
+# The next stop past Myrtle Av toward Manhattan, where the Ms only to Middle Village don't stop.
+FLUSHING_AV = "M12"
+# How far the weekday Ms added run from MTA's own first and last, at least.
+APART = 600
+
+
+def _m_between_f(timetable: Timetable, m: list[Trip], extended: list[Trip]) -> list[Trip]:
+    """
+    Run the M along its whole route at all hours, as often as the F where MTA's M doesn't,
+    dropping the Ms only between Middle Village and Myrtle Av.
+    On weekends, every M, its `extended` trips and copies of them,
+    leaves 23 St halfway between two Fs in the same direction, all day,
+    so it alternates evenly with the F along 6 Av,
+    and with the R on the Queens Blvd local, which runs as often on weekends.
+    On weekdays, MTA's own Ms of `m` run as they do,
+    and copies of its first and last run halfway between two Fs before and after them,
+    at least `APART` from them.
+    `m` as it now is.
+    """
+    rows = {t["trip_id"]: t for t in timetable.feed.rows["trips.txt"]}
+
+    def at(trip: Trip) -> int:
+        return trip.calls[trip.index(TWENTY_THIRD_ST)].departure
+
+    def fs(service: str, stop: str) -> list[int]:
+        times = sorted(
+            c.departure
+            for t in timetable.of(F)
+            if t.service == service
+            for c in t.calls
+            if c.stop == stop
+        )
+        return [round((a + b) / 2 / STEP) * STEP for a, b in pairwise(times)]
+
+    def copy_of(trip: Trip, time: int, n: int) -> Trip:
+        calls_ = [Call(c.stop, c.arrival, c.departure) for c in trip.calls]
+        shift(calls_, time - at(trip))
+        new = Trip(f"{trip.id}-QL{n}", trip.route, trip.service, calls_)
+        timetable.add(new, rows[trip.id] | {"trip_id": new.id})
+        return new
+
+    weekend = {t.id for t in extended}
+    groups: defaultdict[tuple[str, str], list[Trip]] = defaultdict(list)
+    for trip in m:
+        if trip.day is not ServiceDay.WEEKDAY and trip.id not in weekend:
+            continue
+        groups[trip.service, trip.calls[trip.index(TWENTY_THIRD_ST)].stop].append(trip)
+    out = [t for t in m if t.day is ServiceDay.WEEKDAY]
+    dropped: set[str] = set()
+    for (service, stop), trips in groups.items():
+        trips.sort(key=at)
+        halfway = fs(service, stop)
+        if trips[0].day is ServiceDay.WEEKDAY:
+            # Before and after MTA's own, at least `APART` from them.
+            first, last = at(trips[0]), at(trips[-1])
+            for n, time in enumerate(halfway):
+                if time <= first - APART or time >= last + APART:
+                    near = trips[0] if time < first else trips[-1]
+                    out.append(copy_of(near, time, n))
+            continue
+        for n, time in enumerate(halfway):
+            if n < len(trips):
+                shift(trips[n].calls, time - at(trips[n]))
+                out.append(trips[n])
+            else:
+                out.append(copy_of(trips[-1], time, n))
+        dropped.update(t.id for t in trips[len(halfway) :])
+    dropped.update(
+        t.id for t in timetable.of(M) if FLUSHING_AV not in t.stations() and t.id not in dropped
+    )
+    timetable.drop(dropped)
+    return [t for t in out if t.id not in dropped]
+
+
 def _far_rockaway_a(timetable: Timetable) -> None:
     """
     Run the A's few weekday trips to and from Rockaway Park to and from Far Rockaway instead,
@@ -594,7 +670,8 @@ def _shapes(timetable: Timetable, stations: dict[str, list[str]]) -> None:
 def _headsigns(timetable: Timetable, ends: dict[str, str]) -> None:
     """
     Give each trip now ending elsewhere than `ends` says it did
-    the headsign most of the trips still ending where it now ends have.
+    the headsign most of the trips still ending where it now ends have,
+    or the name of where it ends, if none do.
     """
     rows = timetable.feed.rows["trips.txt"]
     trips = timetable.trips
@@ -603,10 +680,12 @@ def _headsigns(timetable: Timetable, ends: dict[str, str]) -> None:
         trip = trips.get(row["trip_id"])
         if trip is not None and ends.get(trip.id) == trip.calls[-1].stop:
             kept[trip.calls[-1].stop][row["trip_headsign"]] += 1
+    names = {s["stop_id"]: s["stop_name"] for s in timetable.feed.rows["stops.txt"]}
     for row in rows:
         trip = trips.get(row["trip_id"])
         if trip is not None and ends.get(trip.id) != trip.calls[-1].stop:
-            row["trip_headsign"] = kept[trip.calls[-1].stop].most_common(1)[0][0]
+            end = trip.calls[-1].stop
+            row["trip_headsign"] = kept[end].most_common(1)[0][0] if kept[end] else names[end]
 
 
 def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
@@ -621,7 +700,8 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
             )
     _far_rockaway_a(timetable)
     held = _f_via_53_st(timetable, cbtc)
-    m, _ = _queenslink_m(timetable)
+    m, extended = _queenslink_m(timetable)
+    m = _m_between_f(timetable, m, extended)
     _drop_shuttle(timetable, m)
     held.update(fit.fit_m(timetable, m, cbtc, fastest))
     held.update(_g_to_forest_hills(timetable, cbtc))

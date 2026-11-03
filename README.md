@@ -27,13 +27,17 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
     to Metropolitan Av-Parkside, Jamaica Ave, Atlantic Av-Woodhaven, and Liberty Av,
     then along the A to Broad Channel and on to Rockaway Park,
     instead of on to Forest Hills.
+    It runs its whole route at all hours, with no shuttle between Middle Village and Myrtle Av.
     On weekends, it runs its weekday route, rather than only between Middle Village and Essex St,
-    timed as the weekday M at midday.
+    timed as the weekday M at midday, and as often as the F,
+    leaving 23 St halfway between two Fs, so it alternates with the F and R.
+    On weekdays, MTA's own Ms run as they do, and before and after them,
+    late at night and early in the morning, Ms run halfway between two Fs too.
     The new track's times are simulated (see below), and the A's and the Rockaway Park shuttle's are MTA's.
   - With the M running on weekends, the F runs via 53 St every day, as on weekdays, rather than via 63 St.
   - The G runs on past Court Sq on weekdays along the Queens Blvd local to Forest Hills, timed as the R.
   - The A's few rush hour trips to Rockaway Park run to Far Rockaway,
-    and the Rockaway Park shuttle runs only late at night, when the M doesn't.
+    and the Rockaway Park shuttle doesn't run, as the M always does.
 
   Every train added or moved runs at least 90 s from others on the same track, as MTA's own trains do,
   or 60 s under CBTC, as if MTA's current projects are done:
