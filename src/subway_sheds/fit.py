@@ -154,7 +154,10 @@ class _Window:
     done: dict[str, dict[int, int]]
     model: CpModel = field(default_factory=CpModel)
     cost: list[tuple[int, int]] = field(default_factory=list)
-    conflicts: list[int] = field(default_factory=list)
+    # Each pair's conflict, with the two trips.
+    conflicts: list[tuple[int, str, str]] = field(default_factory=list)
+    # The trains each train is kept apart from on a shared track, both free to move.
+    partners: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     plans: dict[str, _Plan] = field(default_factory=dict)
 
     def dep_of(self, trip: Trip, i: int) -> Linear:
@@ -221,8 +224,30 @@ class _Window:
         )
 
     def plan(self) -> None:
-        for trip in self.timetable.trips.values():
-            if self.day not in trip.service or not self.touches(trip):
+        trips = [t for t in self.timetable.trips.values() if self.day in t.service]
+        # Where the window's Ms run on shared tracks past its end, as they run a while,
+        # to take in the trains they meet there too.
+        later: dict[str, list[int]] = defaultdict(list)
+        for trip in trips:
+            if trip.id in self.m_ids and trip.id not in self.done and self.touches(trip):
+                for c in trip.calls:
+                    if c.departure >= self.end and any(c.stop in t.stops for t in TRACKS):
+                        later[_phys(trip, c.stop)].append(c.departure)
+        for times in later.values():
+            times.sort()
+        reach = MOST_MOVED + len(JUNCTIONS) * MOST_HELD + MOST_NUDGED + FLOOR
+
+        def meets(trip: Trip) -> bool:
+            for c in trip.calls:
+                times = later.get(_phys(trip, c.stop))
+                if times:
+                    k = bisect.bisect_left(times, c.departure - reach)
+                    if k < len(times) and times[k] <= c.departure + reach:
+                        return True
+            return False
+
+        for trip in trips:
+            if not (self.touches(trip) or meets(trip)):
                 continue
             if trip.id in self.done:
                 self.plans[trip.id] = _Plan(trip, "fixed")
@@ -277,7 +302,10 @@ class _Window:
         """
         first = self.model.new_bool()
         clash = self.model.new_bool()
-        self.conflicts.append(clash)
+        self.conflicts.append((clash, a.trip.id, b.trip.id))
+        if a.kind != "fixed" and b.kind != "fixed":
+            self.partners[a.trip.id].add(b.trip.id)
+            self.partners[b.trip.id].add(a.trip.id)
         self.cost.append((clash, CONFLICT))
         for ia, ib, need in stops:
             x, y = self.dep(a, ia), self.dep(b, ib)
@@ -429,7 +457,7 @@ class _Window:
                 i
                 for i, c in enumerate(p.trip.calls)
                 if any(_phys(p.trip, c.stop) in t.stops for t in TRACKS)
-                and self.start <= c.departure < self.end
+                and self.start <= c.departure
             )
             trains = self.own[p.trip.service, p.trip.route, p.trip.calls[i].stop]
             at = bisect.bisect_left(trains, (p.trip.calls[i].departure, p.trip.id, i))
@@ -454,14 +482,15 @@ class _Window:
         self.own_headways()
         self.model.minimize(self.cost)
         status, _, _, _, values = self.model.solve(CAP, 600, WORKERS)
-        if not values:
+        if status not in ("OPTIMAL", "FEASIBLE"):
             raise RuntimeError(f"no fit for the M on {self.day} from {self.start}: {status}")
-        if clashes := sum(values[c] for c in self.conflicts):
-            held["M in conflict", None] += clashes
+        # Kept are those first on a shared track in the window's first hour,
+        # and the trains kept apart from the Ms kept, as the Ms count on where they are;
+        # the rest are solved again, with the next hour in view.
+        kept = set()
         for p in self.plans.values():
             if p.kind == "fixed":
                 continue
-            # The rest are solved again, with the next hour in view.
             first = min(
                 (
                     c.departure
@@ -470,9 +499,13 @@ class _Window:
                 ),
                 default=self.end,
             )
-            if first >= self.start + 3600:
-                continue
-            self.done[p.trip.id] = {
+            if first < self.start + 3600:
+                kept.add(p.trip.id)
+                if p.kind == "flex":
+                    kept |= self.partners[p.trip.id]
+        for trip_id in kept:
+            p = self.plans[trip_id]
+            self.done[trip_id] = {
                 i: sum(values[v] * c for v, c in self.dep(p, i)[0])
                 for i in range(len(p.trip.calls))
             }
@@ -482,6 +515,9 @@ class _Window:
                 held["M waits in all", waited * UNIT] += 1
             elif values[p.nudged]:
                 held[f"{p.trip.route} nudged", values[p.nudged] * UNIT] += 1
+        # Each conflict once, in the window that keeps one of its trains.
+        if clashes := sum(values[c] for c, a, b in self.conflicts if a in kept or b in kept):
+            held["M in conflict", None] += clashes
 
 
 def _apply(trip: Trip, offsets: dict[int, int]) -> None:
