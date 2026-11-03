@@ -147,6 +147,8 @@ class _Window:
     leaving: dict[tuple[str, str, int], int]
     # Each route's trains at each platform, by service, in order, as `(departure, trip, call)`.
     own: dict[tuple[str, str, str], list[tuple[int, str, int]]]
+    # Every train at each platform, by service, in order, the same way.
+    every: dict[tuple[str, str], list[tuple[int, str, int]]]
     m_ids: set[str]
     day: str
     start: int
@@ -472,6 +474,57 @@ class _Window:
                 else:
                     self.short_of(ours, theirs, gap, UNEVEN_OWN)
 
+    def clear(self) -> None:
+        """
+        Each train nudged stays clear of every other train but the Ms on the same track,
+        from the same station before or to the same one after,
+        at every platform it stops at, in the same order,
+        by the floor, or by as much as MTA's own schedule does where that's less,
+        or else counts as a conflict.
+        Trains both nudged on a track the M shares are kept apart there by `shared` instead.
+        """
+        shared = set().union(*(t.stops for t in TRACKS))
+        reach = _u(MOST_NUDGED)
+
+        def around(trip: Trip, i: int) -> tuple[str | None, str | None]:
+            calls = trip.calls
+            return (
+                calls[i - 1].stop[:-1] if i > 0 else None,
+                calls[i + 1].stop[:-1] if i + 1 < len(calls) else None,
+            )
+
+        for p in self.plans.values():
+            if p.kind != "nudge":
+                continue
+            for i, c in enumerate(p.trip.calls):
+                before, after = around(p.trip, i)
+                trains = self.every[p.trip.service, _phys(p.trip, c.stop)]
+                at = bisect.bisect_left(trains, (c.departure, p.trip.id, i))
+                for side in range(at - 1, -1, -1), range(at + 1, len(trains)):
+                    for j in side:
+                        t, other, oi = trains[j]
+                        apart = _u(abs(t - c.departure))
+                        need = min(self.floor(c.stop), apart)
+                        if apart >= 2 * reach + need:
+                            break
+                        trip = self.timetable.trips[other]
+                        if other in self.m_ids:
+                            continue
+                        q = self.plans.get(other)
+                        if q is not None and q.kind == "nudge" and c.stop in shared:
+                            continue
+                        b, a = around(trip, oi)
+                        if (before is None or before != b) and (after is None or after != a):
+                            continue
+                        ours, theirs = self.dep(p, i), self.dep_of(trip, oi)
+                        clash = self.model.new_bool()
+                        self.conflicts.append((clash, p.trip.id, other))
+                        self.cost.append((clash, CONFLICT))
+                        if j > at:
+                            self.at_least(theirs, ours, need, [~clash])
+                        else:
+                            self.at_least(ours, theirs, need, [~clash])
+
     def solve(self, held: Counter[tuple[str, int | None]]) -> None:
         """Solve, and keep the trains first on a shared track in the window's first hour."""
         self.plan()
@@ -480,6 +533,7 @@ class _Window:
         self.spread()
         self.headways()
         self.own_headways()
+        self.clear()
         self.model.minimize(self.cost)
         status, _, _, _, values = self.model.solve(CAP, 600, WORKERS)
         if status not in ("OPTIMAL", "FEASIBLE"):
@@ -553,6 +607,12 @@ def fit_m(
                 own[trip.service, trip.route, c.stop].append((c.departure, trip.id, i))
     for trains in own.values():
         trains.sort()
+    every: dict[tuple[str, str], list[tuple[int, str, int]]] = defaultdict(list)
+    for trip in timetable.trips.values():
+        for i, c in enumerate(trip.calls):
+            every[trip.service, _phys(trip, c.stop)].append((c.departure, trip.id, i))
+    for trains in every.values():
+        trains.sort()
     m_ids = {t.id for t in m}
     held: Counter[tuple[str, int | None]] = Counter()
     for day in sorted({d for t in m for d in ("Weekday", "Saturday", "Sunday") if d in t.service}):
@@ -567,6 +627,7 @@ def fit_m(
                 fastest,
                 leaving,
                 own,
+                every,
                 m_ids,
                 day,
                 hour * 3600,
