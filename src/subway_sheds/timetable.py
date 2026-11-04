@@ -17,10 +17,10 @@ from subway_sheds import gtfs
 # The least time a train added or moved is scheduled behind another on the same track,
 # at each platform: the least MTA itself schedules between its trains in the morning peak,
 # on the Queens Blvd local toward Forest Hills, through 53 St, and on the 6 Av local.
-FLOOR = 90
+MIN_HEADWAY = 90
 # Under CBTC, trains can run 30 s apart,
 # but with their dwells, they're scheduled at least this far apart.
-CBTC_FLOOR = 60
+CBTC_MIN_HEADWAY = 60
 # A train added waits at most this long where it waits for a gap, in steps of `STEP`.
 MOST_HELD = 60
 STEP = 30
@@ -226,8 +226,8 @@ class Track:
             (abs(t - call.departure) for t, _ in self._nearest(service, call, trip)), default=inf
         )
 
-    def floor(self, stop: str) -> int:
-        return CBTC_FLOOR if stop[:-1] in self.cbtc else FLOOR
+    def min_headway(self, stop: str) -> int:
+        return CBTC_MIN_HEADWAY if stop[:-1] in self.cbtc else MIN_HEADWAY
 
     def blocking(
         self,
@@ -237,15 +237,15 @@ class Track:
         trip: str = "",
     ) -> set[str]:
         """
-        The trains, but `trip`, that `calls_` leave each of `stops` less than `floor` from,
-        or than `least` says, where it's less, at that stop.
+        The trains, but `trip`, that `calls_` leave each of `stops`
+        less than the minimum headway from, or than `least` says, where it's less, at that stop.
         """
         out = set()
         for call in calls_:
             if call.stop in self.stops:
-                floor = min(self.floor(call.stop), (least or {}).get(call.stop, inf))
+                need = min(self.min_headway(call.stop), (least or {}).get(call.stop, inf))
                 for t, other in self._nearest(service, call, trip):
-                    if abs(t - call.departure) < floor:
+                    if abs(t - call.departure) < need:
                         out.add(other)
         return out
 
@@ -257,8 +257,9 @@ class Track:
         trip: str = "",
     ) -> bool:
         """
-        Whether `calls_` leave each of `stops` at least `FLOOR` from every other train than `trip`,
-        or `CBTC_FLOOR` at those of the `cbtc` stations,
+        Whether `calls_` leave each of `stops` at least `MIN_HEADWAY`
+        from every other train than `trip`,
+        or `CBTC_MIN_HEADWAY` at those of the `cbtc` stations,
         or at least as far as `least` says, where it's less, at that stop.
         """
         return not self.blocking(service, calls_, least, trip)

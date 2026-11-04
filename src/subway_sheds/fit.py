@@ -4,7 +4,8 @@ a two-hour window at a time, keeping each window's first hour.
 
 Each M may run earlier or later as a whole, and wait or make up 30 s at its junctions;
 trains of other routes on the tracks it shares may be nudged as a whole.
-Every pair of trains near each other on a shared track stays a floor apart at each platform,
+Every pair of trains near each other on a shared track stays the minimum headway apart
+at each platform,
 or else counts as a conflict, which costs far more than anything else.
 """
 
@@ -15,7 +16,7 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 
 from subway_sheds._route import CpModel
-from subway_sheds.timetable import CBTC_FLOOR, FLOOR, Timetable, Trip
+from subway_sheds.timetable import CBTC_MIN_HEADWAY, MIN_HEADWAY, Timetable, Trip
 
 # Times are solved in steps of this many seconds.
 UNIT = 30
@@ -104,7 +105,7 @@ TRACKS = [
 
 # Every platform on a track the M shares.
 SHARED = set().union(*(t.stops for t in TRACKS))
-# Where the even gap counts in full, not just up to three floors:
+# Where the even gap counts in full, not just up to three minimum headways:
 # the 6 Av and Queens Blvd locals, where the M's riders share the most stations.
 UNCAPPED = _platforms(*QUEENS_BLVD, *(f"D{i}" for i in range(15, 22)))
 
@@ -173,7 +174,7 @@ class _Window:
     # The trains each train is kept apart from on a shared track, both free to move.
     partners: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     plans: dict[str, _Plan] = field(default_factory=dict)
-    floors: dict[str, int] = field(default_factory=dict)
+    min_headways: dict[str, int] = field(default_factory=dict)
 
     def dep_of(self, trip: Trip, i: int) -> Linear:
         """`trip`'s departure at call `i`, as `dep`, if it's in the window, or as solved before."""
@@ -187,10 +188,12 @@ class _Window:
         self.at_least((x[0] + [(short, 1)], x[1]), y, gap, [])
         self.cost.append((short, weight))
 
-    def floor(self, stop: str) -> int:
-        if stop not in self.floors:
-            self.floors[stop] = _u(CBTC_FLOOR if stop[:-1] in self.cbtc else FLOOR)
-        return self.floors[stop]
+    def min_headway(self, stop: str) -> int:
+        if stop not in self.min_headways:
+            self.min_headways[stop] = _u(
+                CBTC_MIN_HEADWAY if stop[:-1] in self.cbtc else MIN_HEADWAY
+            )
+        return self.min_headways[stop]
 
     def dep(self, p: _Plan, i: int) -> Linear:
         """The departure at call `i`, in units, as `(terms, offset)`."""
@@ -249,7 +252,7 @@ class _Window:
                         later[stop].append(departure)
         for times in later.values():
             times.sort()
-        reach = MOST_MOVED + len(JUNCTIONS) * MOST_HELD + MOST_NUDGED + FLOOR
+        reach = MOST_MOVED + len(JUNCTIONS) * MOST_HELD + MOST_NUDGED + MIN_HEADWAY
 
         def meets(trip: Trip) -> bool:
             for _, stop, departure in self.on_shared[trip.id]:
@@ -310,7 +313,7 @@ class _Window:
         even: tuple[int, int, int] | None,
     ) -> None:
         """
-        `a` and `b` a floor apart at each of `stops`, `(call in a, call in b, floor)`,
+        `a` and `b` the minimum headway apart at each of `stops`, `(call in a, call in b, headway)`,
         in the same order, or else a conflict,
         and if `even`, `(call in a, call in b, gap)`, costing how far short of `gap` they are.
         """
@@ -334,9 +337,9 @@ class _Window:
             self.cost.append((short, UNEVEN))
 
     def shared(self) -> None:
-        """Floors on each shared track: which goes first, per pair, no overtaking."""
+        """Minimum headways on each shared track: which goes first, per pair, no overtaking."""
         # As far apart as two trains' times on a track can be and still come near.
-        reach = 2 * (_u(MOST_MOVED) + len(JUNCTIONS) * (_u(MOST_HELD) + 1)) + _u(FLOOR)
+        reach = 2 * (_u(MOST_MOVED) + len(JUNCTIONS) * (_u(MOST_HELD) + 1)) + _u(MIN_HEADWAY)
         for track in TRACKS:
             members = []
             for p in self.plans.values():
@@ -360,8 +363,8 @@ class _Window:
             return abs(self.units[a.trip.id][ia[s]] - self.units[b.trip.id][ib[s]])
 
         reach = self.flex(a) + self.flex(b)
-        # Only where they could come within the floor of each other, or swap.
-        common = [s for s in ia.keys() & ib.keys() if apart(s) < reach + self.floor(s)]
+        # Only where they could come within the minimum headway of each other, or swap.
+        common = [s for s in ia.keys() & ib.keys() if apart(s) < reach + self.min_headway(s)]
         if not common:
             return
         stop = min(common, key=lambda s: ia[s])
@@ -370,15 +373,15 @@ class _Window:
             # Only spacing worse than MTA's own, between trains MTA already runs.
             gap = min(gap, apart(stop))
         if stop not in UNCAPPED:
-            gap = min(gap, 3 * self.floor(stop))
+            gap = min(gap, 3 * self.min_headway(stop))
         even = None
-        if gap > self.floor(stop):
+        if gap > self.min_headway(stop):
             even = (ia[stop], ib[stop], gap)
-        need = self.floor
+        need = self.min_headway
         if a.trip.id not in self.m_ids and b.trip.id not in self.m_ids:
             # Or as close as MTA's own schedule already runs them, if closer.
             def need(s: str) -> int:
-                return min(self.floor(s), apart(s))
+                return min(self.min_headway(s), apart(s))
 
             def ahead(s: str) -> bool:
                 return a.trip.calls[ia[s]].departure < b.trip.calls[ib[s]].departure
@@ -393,7 +396,8 @@ class _Window:
 
     def passing(self, a: _Plan, b: _Plan, stops: list[tuple[int, int, int, bool]]) -> None:
         """
-        `a` and `b` a floor apart at each of `stops`, `(call in a, call in b, floor, a first)`,
+        `a` and `b` the minimum headway apart at each of `stops`,
+        `(call in a, call in b, headway, a first)`,
         in the order given at each, or else a conflict.
         """
         clash = self.model.new_bool()
@@ -481,7 +485,7 @@ class _Window:
                     if pa.trip.service != pb.trip.service or pa.kind == pb.kind == "fixed":
                         continue
                     x, y = self.dep(pb, ib), self.dep(pa, ia)
-                    need = max(self.floor(stop), int(KEPT * _u(tb - ta)))
+                    need = max(self.min_headway(stop), int(KEPT * _u(tb - ta)))
                     self.at_least(x, y, need, [])
                     calls = pb.trip.calls
                     if any(calls[j].stop[:-1] in JUNCTIONS for j in (ib, ib + 1) if j < len(calls)):
@@ -520,7 +524,7 @@ class _Window:
         Each train nudged stays clear of every other train but the Ms on the same track,
         from the same station before or to the same one after,
         at every platform it stops at, in the same order,
-        by the floor, or by as much as MTA's own schedule does where that's less,
+        by the minimum headway, or by as much as MTA's own schedule does where that's less,
         or else counts as a conflict.
         Trains both nudged on a track the M shares are kept apart there by `shared` instead.
         """
@@ -545,7 +549,7 @@ class _Window:
                     for j in side:
                         t, other, oi = trains[j]
                         apart = _u(abs(t - c.departure))
-                        need = min(self.floor(c.stop), apart)
+                        need = min(self.min_headway(c.stop), apart)
                         if apart >= 2 * reach + need:
                             break
                         trip = self.timetable.trips[other]

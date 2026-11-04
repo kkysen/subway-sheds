@@ -799,7 +799,7 @@ def _fit(
     for their tracks to be clear, and keeps it clear of `also`'s tracks,
     where it runs but doesn't wait, as its own route's,
     then add it to all those tracks.
-    Where MTA's own schedule already runs it closer than a track's floor to another train,
+    Where MTA's own schedule already runs it closer than a track's minimum headway to another train,
     as on Broadway with the J, it's kept at least that far there instead.
     How far it's moved and how long it waits at each,
     If nothing does, moving it as a whole as little as that takes,
@@ -870,7 +870,7 @@ class _Nudger:
     """
     Nudges trains in the way of others, as a whole, by one of `NUDGES`,
     where that keeps them clear of every other train at every platform they stop at,
-    by the floor, or by as much as MTA's own schedule already does where that's less.
+    by the minimum headway, or by as much as MTA's own schedule already does where that's less.
     """
 
     def __init__(
