@@ -87,15 +87,22 @@ def _fetch_streets(force: bool) -> None:
     ):
         return
     extract = paths.CACHE / "new-york-latest.osm.pbf"
-    echo(f"downloading {NEW_YORK_OSM_URL}")
-    md5 = _get_text(f"{NEW_YORK_OSM_URL}.md5")
-    _download(NEW_YORK_OSM_URL, extract)
-    with extract.open("rb") as f:
-        actual = hashlib.file_digest(f, "md5").hexdigest()
-    expected = md5.split()[0]
-    if actual != expected:
+    md5_url = f"{NEW_YORK_OSM_URL}.md5"
+    for attempt in range(3):
+        echo(f"downloading {NEW_YORK_OSM_URL}")
+        expected = _get_text(md5_url).split()[0]
+        _download(NEW_YORK_OSM_URL, extract)
+        with extract.open("rb") as f:
+            actual = hashlib.file_digest(f, "md5").hexdigest()
+        # Geofabrik may publish the next day's extract between its MD5 and the download,
+        # as it did once during CI; its MD5 then is the new one's.
+        if actual in (expected, _get_text(md5_url).split()[0]):
+            break
         extract.unlink()
-        raise RuntimeError(f"{NEW_YORK_OSM_URL} has MD5 {actual}, not {expected}")
+        if attempt == 2:
+            raise RuntimeError(f"{NEW_YORK_OSM_URL} has MD5 {actual}, not {expected}")
+    # The version downloaded, which may be newer than the one checked for.
+    latest = _get_text(NEW_YORK_OSM_STATE_URL)
     kept = osm.filter_streets(extract, paths.OSM_PBF)
     extract.unlink()
     paths.OSM_SOURCE_STATE.write_text(latest)
