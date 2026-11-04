@@ -9,7 +9,7 @@ import httpx
 import pandas as pd
 from typer import Argument, Option, Typer, echo
 
-from subway_sheds import access, export, gtfs, osm, paths, scenarios, sources, travel_times
+from subway_sheds import access, export, gtfs, osm, paths, scenarios, sources, tracks, travel_times
 from subway_sheds.grid import land_grid
 from subway_sheds.scenarios import Day, Fare, Scenario
 from subway_sheds.timetable import Timetable
@@ -213,6 +213,15 @@ def access_() -> None:
     """
     table = access.write()
     echo(f"{len(table)} entrances of {table['station'].nunique()} stations")
+
+
+@app.command(name="tracks")
+def tracks_() -> None:
+    """
+    Rebuild which OSM track ways each route runs along between stations, `data/tracks.csv`,
+    from the MTA's and OSM's data now, to review and commit.
+    """
+    echo(f"{tracks.write(gtfs.read_feed(sources.mta_feed()))} stretches")
 
 
 @app.command()

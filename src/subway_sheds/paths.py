@@ -34,6 +34,10 @@ GTFS = OUT / "gtfs"
 # with `stacked_platforms.csv` beside it.
 PLATFORMS = CACHE / "platforms" / "platforms.csv"
 
+# Each route's OSM track ways between each two stations it stops at in a row
+# (from Overpass, (c) OpenStreetMap contributors, ODbL), to tell which trains share a track.
+TRACKS = ROOT / "data" / "tracks.csv"
+
 TRAVEL_TIMES = OUT / "travel_times"
 
 # What the web page loads; `web/` serves `public/` as is.

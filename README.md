@@ -81,6 +81,11 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   which time changing trains within a complex as its `raptor`'s OSM transfers do:
   free on the same platform, up and over to another, a flight a level between stacked ones.
   QueensLink's new stations are taken to have one island platform each.
+- **Tracks**: the OSM track ways each route runs along between each two stations it stops at in a row,
+  in [`data/tracks.csv`](data/tracks.csv), from OSM's NYC Subway route relations
+  (© OpenStreetMap contributors, ODbL),
+  to tell which trains share a track, like the F and M on 6 Av's local, not the B and D's express.
+  `subway-sheds tracks` rebuilds it to review and commit.
 - **QueensLink's new track**: scheduled times between its new stations,
   in [`data/queenslink/run_times.csv`](data/queenslink/run_times.csv),
   simulated from the track's curves and how trains run, by `src/subway_sheds/run_times/`.
