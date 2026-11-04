@@ -284,13 +284,13 @@ class _Window:
             if call.stop[:-1] not in JUNCTIONS:
                 continue
             # It makes up time only where it has some to spare,
-            # on the stretch the wait moves, or in its dwell.
-            other = j + 1 if later else j - 1
+            # on the stretch into the junction, or in its dwell there, if it leaves it earlier.
             spare = 0
-            if 0 <= other < len(trip.calls):
-                a, b = (call, trip.calls[other]) if later else (trip.calls[other], call)
-                spare = b.arrival - a.departure - self.fastest.get((a.stop, b.stop), 10**9)
-            spare = max(spare, call.departure - call.arrival)
+            if j > 0:
+                a = trip.calls[j - 1]
+                spare = call.arrival - a.departure - self.fastest.get((a.stop, call.stop), 10**9)
+            if later:
+                spare = max(spare, 0) + call.departure - call.arrival
             wait = self.model.new_int(0, _u(MOST_HELD))
             catch_up = self.model.new_int(0, 1 if spare >= UNIT else 0)
             p.holds[j] = (wait, catch_up)
