@@ -82,3 +82,29 @@ def test_service_date_goes_by_trips(tmp_path: Path) -> None:
     _zip_feed(_feed_dir(tmp_path / "feed", FILES), feed)
     # 2025-11-05 has the most trips but is removed, so the next Wednesday.
     assert gtfs.service_date(feed, 2) == datetime.date(2025, 11, 12)
+
+
+def test_service_dates_go_by_calendar_and_exceptions() -> None:
+    feed = gtfs.Feed(
+        {},
+        {
+            "calendar.txt": [
+                {
+                    "service_id": "Sunday",
+                    **{day: "0" for day in gtfs._DAYS[:6]},
+                    "sunday": "1",
+                    "start_date": "20261101",
+                    "end_date": "20261115",
+                }
+            ],
+            "calendar_dates.txt": [
+                {"service_id": "Sunday", "date": "20261108", "exception_type": "2"},
+                {"service_id": "Sunday", "date": "20261126", "exception_type": "1"},
+            ],
+        },
+    )
+    assert gtfs.service_dates(feed, "Sunday") == {
+        datetime.date(2026, 11, 1),
+        datetime.date(2026, 11, 15),
+        datetime.date(2026, 11, 26),
+    }

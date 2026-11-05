@@ -106,6 +106,26 @@ def _date(value: str) -> datetime.date:
 _DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
+def service_dates(feed: Feed, service: str) -> set[datetime.date]:
+    """Every date `service` runs on in `feed`, by its calendar, less and plus its exceptions."""
+    dates: set[datetime.date] = set()
+    for row in feed.rows["calendar.txt"]:
+        if row["service_id"] != service:
+            continue
+        date = _date(row["start_date"])
+        while date <= _date(row["end_date"]):
+            if row[_DAYS[date.weekday()]] == "1":
+                dates.add(date)
+            date += datetime.timedelta(days=1)
+    for row in feed.rows.get("calendar_dates.txt", []):
+        if row["service_id"] == service:
+            if row["exception_type"] == "1":
+                dates.add(_date(row["date"]))
+            else:
+                dates.discard(_date(row["date"]))
+    return dates
+
+
 def service_date(feed_path: Path, weekday: int) -> datetime.date:
     """
     The date on `weekday` (0 for Monday) with the most trips scheduled in the feed.

@@ -744,22 +744,41 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     _drop_shuttle(timetable, m)
     held.update(fit.fit_m(timetable, m, cbtc, fastest))
     held.update(_g_to_forest_hills(timetable, cbtc))
-    _from_midnight(timetable)
+    _night_before(timetable)
     return held
 
 
-def _from_midnight(timetable: Timetable) -> None:
+# A day, in seconds, as GTFS times run on past 24:00 into the next.
+DAY = 24 * 3600
+
+
+def _night_before(timetable: Timetable) -> None:
     """
-    Start each trip run on to before midnight, as the Ms just after it from Rockaway are,
-    at its first stop after midnight instead, as GTFS has no times before its day's,
-    dropping those that then stop only once.
+    Run each trip run on to before midnight, as the Ms just after it from Rockaway are,
+    the night before instead, as GTFS has no times before its day's:
+    past 24:00, on a service of its own running each night before its own service runs,
+    holidays and all, as `night-before-` its own, in lowercase,
+    so that `ServiceDay.of` doesn't take it for its own.
     """
-    short = []
+    feed = timetable.feed
+    rows = {t["trip_id"]: t for t in feed.rows["trips.txt"]}
+    before: dict[str, str] = {}
     for trip in timetable.trips.values():
-        trip.calls = [c for c in trip.calls if c.arrival >= 0]
-        if len(trip.calls) < 2:
-            short.append(trip.id)
-    timetable.drop(short)
+        if trip.calls[0].arrival >= 0:
+            continue
+        service = before.setdefault(trip.service, f"night-before-{trip.service.lower()}")
+        shift(trip.calls, DAY)
+        trip.service = service
+        rows[trip.id]["service_id"] = service
+    for service, night_before in before.items():
+        for date in sorted(gtfs.service_dates(feed, service)):
+            feed.rows["calendar_dates.txt"].append(
+                {
+                    "service_id": night_before,
+                    "date": (date - datetime.timedelta(days=1)).strftime("%Y%m%d"),
+                    "exception_type": "1",
+                }
+            )
 
 
 NAMES = {
