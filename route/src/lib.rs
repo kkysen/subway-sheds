@@ -615,39 +615,76 @@ fn write_patterns(out: &Path, tt: &Timetable, walks: &Walks, stations: &[String]
 /// written to `out`, and whether a journey may pay again (see `change_trains`).
 type Run = (PathBuf, Date, String, u32, PathBuf, bool);
 
+/// Every walk routing and the page take on the streets in `osm`, an `.osm.pbf`,
+/// at `speed` millimeters a second, through `stations`' entrances (see `walks.rs`),
+/// read and walked once, so that routing and exporting needn't again:
+/// those from every station, walking at most `max_minutes`, and between stations,
+/// to `walks_out` (see `StreetWalks::write`),
+/// the walks out of every station to those of `points`, as `(latitude, longitude)`,
+/// that link to the streets within `meters`, for walking at any speed,
+/// up to `exits_limit` millimeters, to `exits_out` (see `walks::exits`),
+/// and the street walks between stations to draw to `paths_out` (see `walks::transfer_paths`).
+/// Whether each of `points` links to the streets, as routing links it.
+#[pyfunction(name = "walks")]
+#[allow(clippy::too_many_arguments)]
+fn py_walks(
+    py: Python<'_>,
+    osm: PathBuf,
+    stations: Vec<Station>,
+    points: Vec<(f64, f64)>,
+    meters: f64,
+    speed: Mm,
+    max_minutes: u32,
+    walks_out: PathBuf,
+    exits_out: PathBuf,
+    exits_limit: Mm,
+    paths_out: PathBuf,
+) -> Result<Vec<bool>> {
+    py.detach(|| {
+        let graph = Graph::build(&Osm::read(&osm)?);
+        let within = (meters * 1000.0) as Mm;
+        let near: Vec<bool> = points
+            .par_iter()
+            .map(|&(lat, lon)| graph.snap(lat, lon).is_some_and(|s| s.to_edge <= within))
+            .collect();
+        let destinations: Vec<(f64, f64)> = points
+            .iter()
+            .zip(&near)
+            .filter_map(|(&point, &near)| near.then_some(point))
+            .collect();
+        let origins: Vec<String> = stations.iter().map(|(id, ..)| id.clone()).collect();
+        let max_secs = max_minutes as Secs * 60;
+        let all = StreetWalks::compute(&graph, &stations, &origins, speed, max_secs);
+        all.write(&walks_out)?;
+        let exits = walks::exits(&graph, &stations, &destinations, speed, exits_limit);
+        write_exits(&exits_out, all.stations(), &exits)?;
+        drop(exits);
+        let paths = walks::transfer_paths(&graph, &stations, speed);
+        write_paths(&paths_out, all.stations(), &paths)?;
+        Ok(near)
+    })
+}
+
 /// Rides from each of `origins`, by station ID, to every station's platforms, in each of `runs`,
-/// walking on the streets in `osm`, an `.osm.pbf`, at `speed` millimeters a second,
-/// through `stations`' entrances (see `walks.rs`),
+/// walking as `walks` wrote to `walks_in`,
 /// changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
 /// with `islands`' stations' stops all on one island platform (see `use_platforms`),
 /// and changing free out of the system between the complexes of `free`'s pairs of stations.
 /// Each run writes its origins' arrivals at stations to `{out}-arrivals.parquet`,
 /// the journeys behind them to `{out}-routes.parquet`,
-/// and its patterns' stations to `{out}-patterns.parquet`,
-/// and the walks out of every station to `destinations`, as `(latitude, longitude)`,
-/// for walking at any speed,
-/// up to `exits_limit` millimeters, go to `exits_out` (see `walks::exits`),
-/// and the street walks between stations to draw go to `paths_out` (see `walks::transfer_paths`).
-///
-/// The streets are read and walked once, for every feed's stations (see `walks.rs`).
+/// and its patterns' stations to `{out}-patterns.parquet`.
 #[pyfunction(name = "travel_times")]
 #[allow(clippy::too_many_arguments)]
 fn py_travel_times(
     py: Python<'_>,
-    osm: PathBuf,
+    walks_in: PathBuf,
     max_rides: usize,
     max_minutes: u32,
-    stations: Vec<Station>,
     platforms: PathBuf,
     islands: Vec<String>,
     free: Vec<(String, String)>,
     origins: Vec<String>,
-    destinations: Vec<(f64, f64)>,
-    speed: Mm,
     runs: Vec<Run>,
-    exits_out: PathBuf,
-    exits_limit: Mm,
-    paths_out: PathBuf,
 ) -> Result<()> {
     let max_secs = max_minutes as Secs * 60;
     py.detach(|| {
@@ -664,15 +701,7 @@ fn py_travel_times(
             .map(|(f, date, ..)| Timetable::build(&opened[f], *date))
             .collect::<Result<Vec<_>>>()?;
         drop(opened);
-        let graph = Graph::build(&Osm::read(&osm)?);
-        let all = StreetWalks::compute(&graph, &stations, &origins, speed, max_secs);
-        let exits = walks::exits(&graph, &stations, &destinations, speed, exits_limit);
-        write_exits(&exits_out, all.stations(), &exits)?;
-        drop(exits);
-        let paths = walks::transfer_paths(&graph, &stations, speed);
-        write_paths(&paths_out, all.stations(), &paths)?;
-        drop(paths);
-        drop(graph);
+        let all = StreetWalks::read(&walks_in)?;
 
         let platforms = Platforms::load(&platforms)?;
         let islands: HashSet<String> = islands.into_iter().collect();
@@ -720,25 +749,6 @@ fn transfers(
     py.detach(|| {
         let graph = Graph::build(&Osm::read(&osm)?);
         Ok(StreetWalks::compute(&graph, &stations, &[], speed, 0).transfers())
-    })
-}
-
-/// Whether each of `points`, as `(latitude, longitude)`,
-/// links to the streets in `osm`, an `.osm.pbf`, within `meters`, as routing links it.
-#[pyfunction]
-fn near_streets(
-    py: Python<'_>,
-    osm: PathBuf,
-    points: Vec<(f64, f64)>,
-    meters: f64,
-) -> Result<Vec<bool>> {
-    py.detach(|| {
-        let graph = Graph::build(&Osm::read(&osm)?);
-        let within = (meters * 1000.0) as Mm;
-        Ok(points
-            .par_iter()
-            .map(|&(lat, lon)| graph.snap(lat, lon).is_some_and(|s| s.to_edge <= within))
-            .collect())
     })
 }
 
@@ -902,8 +912,8 @@ type ExitTreeBytes<'py> = (
 #[pymodule]
 #[pyo3(name = "_route")]
 fn route_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(py_walks, m)?)?;
     m.add_function(wrap_pyfunction!(py_travel_times, m)?)?;
-    m.add_function(wrap_pyfunction!(near_streets, m)?)?;
     m.add_function(wrap_pyfunction!(transfers, m)?)?;
     m.add_function(wrap_pyfunction!(stations, m)?)?;
     m.add_function(wrap_pyfunction!(station_pairs, m)?)?;

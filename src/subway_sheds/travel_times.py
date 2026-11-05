@@ -9,7 +9,6 @@ import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
-import geopandas as gpd
 import pandas as pd
 
 from subway_sheds import _route, access, gtfs, paths, scenarios
@@ -48,9 +47,9 @@ DEFAULT_EXIT_WALK_M = (
     int(SLIDER_DEFAULT_MPH * 1609.344 / 3600 * (EXIT_WALK.total_seconds() + 1)) + 1
 )
 # Every station's walks out to the cells, for walking at any of the slider's speeds.
-EXITS = paths.TRAVEL_TIMES / "exits.parquet"
+EXITS = paths.WALKS / "exits.parquet"
 # The street walks between stations that changing trains walks, to draw.
-WALK_PATHS = paths.TRAVEL_TIMES / "walk_paths.parquet"
+WALK_PATHS = paths.WALKS / "walk_paths.parquet"
 # A route's leg that walks between stations, rather than riding a pattern.
 WALK = 0xFFFFFFFF
 # A route's `leg` for a journey with no legs, walked from the origin, on a row of its own.
@@ -99,22 +98,21 @@ def _entrances(
 def from_stations(
     runs: list[tuple[Scenario, Day, Fare]],
     origins: list[gtfs.Station],
-    cells: gpd.GeoDataFrame,
     stations: list[gtfs.Station],
+    walks: Path,
 ) -> Iterator[tuple[Scenario, Day, Fare, pd.DataFrame, pd.DataFrame]]:
     """
     Each of `origins`' rides to each of `stations`' platforms each minute,
     in each scenario on each day with each fare of `runs`,
-    routed together so that the streets are walked once,
+    walking as `street_walks` walked them, in `walks`,
     only those within `MAX_TIME`, as `station`, `to_station`, `minute`, and `seconds`,
-    which the page adds walks out of stations to `cells` to
+    which the page adds walks out of stations to the cells to
     at whatever speed its reader walks, taking each cell's median over the minutes.
     And the journeys each takes to each station, each read back departing at `minute`
     and taken every minute before until the one before it,
     as `station`, `to_station`, `minute`, `leg` (`NO_LEGS` for none),
     `pattern` (`WALK` for a walk), `board`, `alight`, `from`, and `to`,
     with each run's patterns' stations going to `patterns_path`.
-    Every station's walks out to the cells, for that, go to `EXITS`.
     """
     paths.TRAVEL_TIMES.mkdir(parents=True, exist_ok=True)
     mta = _mta_stations()
@@ -125,16 +123,13 @@ def from_stations(
     with tempfile.TemporaryDirectory(dir=paths.OUT) as tmp:
         outs = [Path(tmp) / f"{scenario}-{day}-{fare}.parquet" for scenario, day, fare in runs]
         _route.travel_times(
-            paths.OSM_PBF,
+            walks,
             MAX_RIDES,
             MAX_TIME // datetime.timedelta(minutes=1),
-            _entrances(stations),
             paths.PLATFORMS,
             [s.id for s in stations if s.id not in mta],
             scenarios.FREE_TRANSFERS,
             [s.id for s in origins],
-            list(zip(cells.geometry.y, cells.geometry.x, strict=True)),
-            WALKING_SPEED_MM_PER_S,
             [
                 (
                     scenario.gtfs,
@@ -146,13 +141,7 @@ def from_stations(
                 )
                 for (scenario, day, fare), out in zip(runs, outs, strict=True)
             ],
-            Path(tmp) / "exits.parquet",
-            EXIT_WALK_MM,
-            WALK_PATHS,
         )
-        exits = pd.read_parquet(Path(tmp) / "exits.parquet").rename(columns={"destination": "cell"})
-        EXITS.parent.mkdir(parents=True, exist_ok=True)
-        exits.astype({"station": "category"}).to_parquet(EXITS, index=False)
         for (scenario, day, fare), out in zip(runs, outs, strict=True):
             arrivals = (
                 pd.read_parquet(out.with_name(f"{out.stem}-arrivals.parquet"))

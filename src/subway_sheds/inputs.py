@@ -57,10 +57,16 @@ def files(name: str, also: Iterable[Path] = ()) -> list[Path]:
     }
     out = set(sources) | {p for p in read | set(also) if p.is_file()}
     if "_route" in names:
-        out |= {ROUTE / "Cargo.toml", ROUTE / "Cargo.lock", ROUTE / "build.rs"}
-        out |= {p for p in (ROUTE / "src").rglob("*") if p.is_file()}
+        out |= set(route_files())
     out |= {paths.ROOT / "uv.lock", paths.ROOT / ".python-version"}
     return sorted(out)
+
+
+def route_files() -> list[Path]:
+    """The `route` crate's source, and what it's built with, which `_route` is built from."""
+    files = {ROUTE / "Cargo.toml", ROUTE / "Cargo.lock", ROUTE / "build.rs"}
+    files |= {p for p in (ROUTE / "src").rglob("*") if p.is_file()}
+    return sorted(files)
 
 
 def digest(name: str, also: Iterable[Path] = ()) -> str:

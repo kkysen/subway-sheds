@@ -5,21 +5,46 @@ from os import PathLike
 
 type StrPath = str | PathLike[str]
 
-def travel_times(
+def walks(
     osm: StrPath,
+    stations: list[tuple[str, str, list[tuple[float, float, int]]]],
+    points: list[tuple[float, float]],
+    meters: float,
+    speed: int,
+    max_minutes: int,
+    walks_out: StrPath,
+    exits_out: StrPath,
+    exits_limit: int,
+    paths_out: StrPath,
+) -> list[bool]:
+    """
+    Every walk routing and the page take on the streets in `osm`, an `.osm.pbf`,
+    read and walked once, so that routing and exporting needn't again,
+    at `speed` millimeters a second, through `stations`' entrances,
+    as `(id, complex, [(latitude, longitude, seconds to the platforms)])`
+    (see `route/src/walks.rs`):
+    from every station, starting on the street at its entrances, walking at most `max_minutes`,
+    and between stations' platforms, to `walks_out`, for `travel_times` to read,
+    every station's walks out to those of `points`, as `(latitude, longitude)`,
+    linking to the streets within `meters`, up to `exits_limit` millimeters,
+    to `exits_out`, as `station`, `destination` (by its index among those),
+    `exit_seconds`, and `meters`,
+    and the street walks between stations of different complexes that changing trains may walk,
+    to draw, to `paths_out`, as `from`, `to`, `latitude`, and `longitude`,
+    a row for each point, each walk's in order,
+    from the entrance walked out of to the one walked into.
+    Whether each of `points` links to the streets within `meters`, as routing links it.
+    """
+
+def travel_times(
+    walks_in: StrPath,
     max_rides: int,
     max_minutes: int,
-    stations: list[tuple[str, str, list[tuple[float, float, int]]]],
     platforms: StrPath,
     islands: list[str],
     free: list[tuple[str, str]],
     origins: list[str],
-    destinations: list[tuple[float, float]],
-    speed: int,
     runs: list[tuple[StrPath, date, str, int, StrPath, bool]],
-    exits_out: StrPath,
-    exits_limit: int,
-    paths_out: StrPath,
 ) -> None:
     """
     Rides from each of `origins`, by station ID, starting on the street at its entrances,
@@ -27,32 +52,14 @@ def travel_times(
     as `(feed, date, depart, minutes, out, pay_again)`:
     departing each minute of `minutes` from `depart`, written beside `out`,
     changing between complexes on the streets if `pay_again`,
-    walking on the streets in `osm`, an `.osm.pbf`,
-    at `speed` millimeters a second, through `stations`' entrances,
-    as `(id, complex, [(latitude, longitude, seconds to the platforms)])`
-    (see `route/src/walks.rs`),
+    walking as `walks` wrote to `walks_in`,
     changing trains within a complex by `platforms`, `mta-od-data`'s `platforms.csv`,
     with `islands`' stations' stops all on one island platform,
     and changing free out of the system between the complexes of `free`'s pairs of stations.
     Each run writes its origins' rides to stations' platforms
     each minute to `{out}-arrivals.parquet`, as `origin`, `station`, `minute`, and `seconds`,
     the journeys to them at the median minute to `{out}-routes.parquet`,
-    and its patterns' stations to `{out}-patterns.parquet`,
-    and every station's walks out to `destinations`, as `(latitude, longitude)`,
-    up to `exits_limit` millimeters,
-    go to `exits_out`, as `station`, `destination`, `exit_seconds`, and `meters`,
-    and the street walks between stations of different complexes that changing trains may walk,
-    to draw, go to `paths_out`, as `from`, `to`, `latitude`, and `longitude`,
-    a row for each point, each walk's in order,
-    from the entrance walked out of to the one walked into.
-
-    The streets are read and walked once, for every feed's stations.
-    """
-
-def near_streets(osm: StrPath, points: list[tuple[float, float]], meters: float) -> list[bool]:
-    """
-    Whether each of `points`, as `(latitude, longitude)`,
-    links to the streets in `osm`, an `.osm.pbf`, within `meters`, as routing links it.
+    and its patterns' stations to `{out}-patterns.parquet`.
     """
 
 def used_exits(

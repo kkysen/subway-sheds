@@ -42,5 +42,10 @@ TRACKS = ROOT / "data" / "tracks.csv"
 
 TRAVEL_TIMES = OUT / "travel_times"
 
+# Every walk on the streets that routing and the page take, walked once by `street_walks`,
+# and the grid of cells near the streets they walk out to.
+WALKS = OUT / "walks"
+GRID = WALKS / "grid.npz"
+
 # What the web page loads; `web/` serves `public/` as is.
 WEB_DATA = ROOT / "web" / "public" / "data"

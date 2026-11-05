@@ -133,6 +133,7 @@ streets = { path = "../mta-od-data/streets" }
 ```sh
 uv run subway-sheds fetch      # download the MTA feeds, land, streets, and platforms
 uv run subway-sheds scenarios  # make both scenarios' feeds
+uv run subway-sheds walks      # walk the streets every station's walks take, and find the grid
 uv run subway-sheds route      # route every station, in both scenarios
 uv run subway-sheds export     # for the web page, into `web/public/data/`
 npm --prefix web install
@@ -141,6 +142,8 @@ npm --prefix web run dev
 
 `scenarios` makes the feeds again only when the code or data they're made from changes,
 as hashed in `out/gtfs/inputs.sha256`, or with `--force`.
+`walks` likewise walks the streets again only when they, the stations, or the code walking them change,
+and `route` and `export` walk them first if they have to.
 
 `route` takes station IDs to route only those, e.g. `route H04 V02`,
 replacing only their times,

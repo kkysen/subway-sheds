@@ -14,7 +14,16 @@ from subway_sheds import paths, scenarios, sources
 from subway_sheds.scenarios import Day, Fare, Scenario
 
 # Lazily, as most commands use only some of them, and some take long to import.
-lazy from subway_sheds import access, export, gtfs, inputs, osm, tracks, travel_times
+lazy from subway_sheds import (
+    access,
+    export,
+    gtfs,
+    inputs,
+    osm,
+    street_walks,
+    tracks,
+    travel_times,
+)
 lazy from subway_sheds.grid import land_grid
 
 app = Typer(no_args_is_help=True)
@@ -258,6 +267,24 @@ def tracks_() -> None:
     echo(f"{tracks.write(gtfs.read_feed(sources.mta_feed()))} stretches")
 
 
+def _walks(force: bool = False) -> None:
+    if street_walks.write(force):
+        echo(f"walked the streets into {paths.WALKS.relative_to(paths.ROOT)}")
+
+
+@app.command(name="walks")
+def walks_(
+    force: Annotated[
+        bool, Option(help="Walk them again even if what they're walked on isn't new.")
+    ] = False,
+) -> None:
+    """
+    Walk the streets every station's walks take and find the grid of cells near them,
+    unless they were last walked from the same streets, stations, and code.
+    """
+    _walks(force)
+
+
 @app.command()
 def route(
     stop_ids: Annotated[
@@ -280,21 +307,15 @@ def route(
     ] = None,
 ) -> None:
     """Route from stations to the grid in each scenario, on each day, with each fare."""
-    destinations = land_grid().points()
-    echo(f"{len(destinations)} cells")
-    # Every scenario's stations, each routed in every scenario,
-    # so that from QueensLink's new ones, the baseline is walking from where they'd be,
-    # and there's saying how much they save.
-    every_station = {s.id: s for scenario in Scenario for s in gtfs.stations(scenario.gtfs)}
-    stations = list(every_station.values())
+    _walks()
+    every_station = street_walks.stations()
+    stations = every_station
     if stop_ids:
         stations = [s for s in stations if s.id in stop_ids]
     runs = list(
         itertools.product(scenario_ or list(Scenario), day_ or list(Day), fare_ or list(Fare))
     )
-    for run in travel_times.from_stations(
-        runs, stations, destinations, list(every_station.values())
-    ):
+    for run in travel_times.from_stations(runs, stations, every_station, street_walks.STREET_WALKS):
         scenario, day, fare, arrivals, routes = run
         routed = {s.id for s in stations} if stop_ids else None
         _save(arrivals, travel_times.arrivals_path(scenario, day, fare), routed)
@@ -306,5 +327,6 @@ def route(
 @app.command(name="export")
 def export_() -> None:
     """Write the routed travel times for the web page."""
+    _walks()
     export.write(land_grid())
     echo(f"wrote {paths.WEB_DATA.relative_to(paths.ROOT)}")
