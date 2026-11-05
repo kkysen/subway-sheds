@@ -15,7 +15,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from subway_sheds import _route, access, gtfs, lines, paths, travel_times
+from subway_sheds import _route, access, gtfs, lines, paths, street_walks, travel_times
 from subway_sheds.grid import SPACING, Grid
 from subway_sheds.scenarios import FREE_TRANSFERS, Day, Fare, Scenario
 
@@ -98,8 +98,7 @@ def _write_exit_walks(
     """
     cells = grid.points()
     far = exits["meters"].to_numpy() > travel_times.DEFAULT_EXIT_WALK_M
-    trees = _route.exit_trees(
-        paths.OSM_PBF,
+    trees = street_walks.exit_trees(
         travel_times._entrances(stations),
         list(zip(cells.geometry.y, cells.geometry.x, strict=True)),
         travel_times.WALKING_SPEED_MM_PER_S,

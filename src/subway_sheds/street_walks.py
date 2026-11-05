@@ -89,3 +89,32 @@ def write(force: bool = False) -> bool:
     grid.write(near_streets, paths.GRID)
     INPUTS.write_text(key)
     return True
+
+
+# `exit_trees`' last trees, and a hash of what they were walked from.
+EXIT_TREES = paths.WALKS / "exit_trees.pickle"
+EXIT_TREES_INPUTS = paths.WALKS / "exit_trees.sha256"
+
+
+def exit_trees(
+    entrances: list[tuple[str, str, list[tuple[float, float, int]]]],
+    destinations: list[tuple[float, float]],
+    speed: int,
+    limit: int,
+    wanted: list[tuple[int, int, bool]],
+) -> list[tuple[bytes, bytes, bytes, int, bytes, int]]:
+    """
+    `_route.exit_trees` on the streets,
+    or the trees it last gave if it was last given the same, on the same streets,
+    as which walks are `wanted` changes only when the routed times do.
+    """
+    key = digest(entrances, destinations, speed, limit, wanted)
+    if EXIT_TREES_INPUTS.exists() and EXIT_TREES_INPUTS.read_text() == key:
+        with EXIT_TREES.open("rb") as f:
+            return pickle.load(f)
+    EXIT_TREES_INPUTS.unlink(missing_ok=True)
+    trees = _route.exit_trees(paths.OSM_PBF, entrances, destinations, speed, limit, wanted)
+    with EXIT_TREES.open("wb") as f:
+        pickle.dump(trees, f)
+    EXIT_TREES_INPUTS.write_text(key)
+    return trees
