@@ -117,6 +117,7 @@ def from_stations(
     Every station's walks out to the cells, for that, go to `EXITS`.
     """
     paths.TRAVEL_TIMES.mkdir(parents=True, exist_ok=True)
+    mta = _mta_stations()
     with tempfile.TemporaryDirectory(dir=paths.OUT) as tmp:
         outs = [Path(tmp) / f"{scenario}-{day}-{fare}.parquet" for scenario, day, fare in runs]
         _route.travel_times(
@@ -125,7 +126,7 @@ def from_stations(
             MAX_TIME // datetime.timedelta(minutes=1),
             _entrances(stations),
             paths.PLATFORMS,
-            [s.id for s in stations if s.id not in _mta_stations()],
+            [s.id for s in stations if s.id not in mta],
             scenarios.FREE_TRANSFERS,
             [s.id for s in origins],
             list(zip(cells.geometry.y, cells.geometry.x, strict=True)),
