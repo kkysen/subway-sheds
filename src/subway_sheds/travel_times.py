@@ -118,6 +118,10 @@ def from_stations(
     """
     paths.TRAVEL_TIMES.mkdir(parents=True, exist_ok=True)
     mta = _mta_stations()
+    # Each feed's date for each day once, as runs with each fare share them.
+    dates = {
+        (scenario, day): gtfs.service_date(scenario.gtfs, day.weekday) for scenario, day, _ in runs
+    }
     with tempfile.TemporaryDirectory(dir=paths.OUT) as tmp:
         outs = [Path(tmp) / f"{scenario}-{day}-{fare}.parquet" for scenario, day, fare in runs]
         _route.travel_times(
@@ -134,7 +138,7 @@ def from_stations(
             [
                 (
                     scenario.gtfs,
-                    gtfs.service_date(scenario.gtfs, day.weekday),
+                    dates[scenario, day],
                     day.departure.isoformat(),
                     DEPARTURE_WINDOW // datetime.timedelta(minutes=1),
                     out,
