@@ -9,7 +9,18 @@ import httpx
 import pandas as pd
 from typer import Argument, Option, Typer, echo
 
-from subway_sheds import access, export, gtfs, osm, paths, scenarios, sources, tracks, travel_times
+from subway_sheds import (
+    access,
+    export,
+    gtfs,
+    inputs,
+    osm,
+    paths,
+    scenarios,
+    sources,
+    tracks,
+    travel_times,
+)
 from subway_sheds.grid import land_grid
 from subway_sheds.scenarios import Day, Fare, Scenario
 
@@ -153,11 +164,30 @@ def fetch(
             _download(f"{MTA_OD_DATA_RAW}/{rev[1]}/src/mta_od_data/ridership/{name}", dest)
 
 
+# A hash of what the scenarios' feeds were last made from, beside them, as `inputs` hashes it.
+SCENARIOS_INPUTS = paths.GTFS / "inputs.sha256"
+
+
 @app.command(name="scenarios")
-def scenarios_() -> None:
-    """Make both scenarios' feeds, from the MTA feeds `fetch` downloads."""
+def scenarios_(
+    force: Annotated[
+        bool, Option(help="Make them again even if what they're made from isn't new.")
+    ] = False,
+) -> None:
+    """
+    Make both scenarios' feeds, from the MTA feeds `fetch` downloads,
+    unless they were last made from the same code and data.
+    """
+    digest = inputs.digest("scenarios", [sources.mta_feed(), sources.MTA_2019.dest])
+    made = all(scenario.gtfs.exists() for scenario in Scenario) and SCENARIOS_INPUTS.exists()
+    if not force and made and SCENARIOS_INPUTS.read_text() == digest:
+        echo("the scenarios' feeds are already made from the same code and data")
+        return
+    # So that one failing midway isn't taken for made.
+    SCENARIOS_INPUTS.unlink(missing_ok=True)
     for line in scenarios.describe(scenarios.write()):
         echo(line)
+    SCENARIOS_INPUTS.write_text(digest)
 
 
 @app.command()

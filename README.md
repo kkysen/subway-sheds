@@ -139,6 +139,9 @@ npm --prefix web install
 npm --prefix web run dev
 ```
 
+`scenarios` makes the feeds again only when the code or data they're made from changes,
+as hashed in `out/gtfs/inputs.sha256`, or with `--force`.
+
 `route` takes station IDs to route only those, e.g. `route H04 V02`,
 replacing only their times,
 and `--scenario`, `--day`, and `--fare` to route only those, e.g. `route --scenario queenslink --day weekday`.
