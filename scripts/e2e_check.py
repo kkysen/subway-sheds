@@ -1,7 +1,7 @@
 """
 Checks what `scripts/e2e.sh` ran the pipeline into, in the current directory,
 having routed only the stations given:
-that the scenarios' feeds are valid GTFS, as routing reads them,
+that the scenarios' feeds are valid GTFS, as routing reads them, every trip's service running,
 that each station routed reaches stations in every run,
 that from QueensLink's Metropolitan Av-Parkside it's quicker to Times Sq with QueensLink,
 and that the page has each one's routes and built.
@@ -28,9 +28,17 @@ def seconds(times: pd.Series) -> pd.Series:
 
 
 def check_feed(path: Path) -> list[str]:
-    with zipfile.ZipFile(path) as feed, feed.open("stop_times.txt") as f:
-        stop_times = pd.read_csv(f, dtype=str)
+    with zipfile.ZipFile(path) as feed:
+        stop_times, trips, calendar, dates = (
+            pd.read_csv(feed.open(name), dtype=str)
+            for name in ["stop_times.txt", "trips.txt", "calendar.txt", "calendar_dates.txt"]
+        )
     errors = []
+    # A service on no date, by its calendar or its added dates, would never run its trips.
+    on = set(calendar["service_id"]) | set(dates.loc[dates["exception_type"] == "1", "service_id"])
+    never = set(trips["service_id"]) - on
+    if never:
+        errors.append(f"{path.name}: services running on no date: {sorted(never)}")
     for column in ["arrival_time", "departure_time"]:
         negative = stop_times[column].str.startswith("-")
         if negative.any():
