@@ -25,8 +25,11 @@ UNREACHED = 0xFFFF
 WALK_LEG = 0xFFFF
 
 
-# Near Brotli's best, a few percent bigger, but several times faster to compress and decompress.
-ZSTD_LEVEL = 19
+# Near Brotli's best, a few percent bigger, but several times faster to compress and decompress,
+# in CI, which publishes the page.
+# Elsewhere, where it's only looked at, much faster to compress, and a few times bigger.
+# Decompressing doesn't depend on the level.
+ZSTD_LEVEL = 19 if os.environ.get("CI") else 3
 
 
 class _ZstdFiles:
