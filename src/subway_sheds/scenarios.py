@@ -705,7 +705,22 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     _drop_shuttle(timetable, m)
     held.update(fit.fit_m(timetable, m, cbtc, fastest))
     held.update(_g_to_forest_hills(timetable, cbtc))
+    _from_midnight(timetable)
     return held
+
+
+def _from_midnight(timetable: Timetable) -> None:
+    """
+    Start each trip run on to before midnight, as the Ms just after it from Rockaway are,
+    at its first stop after midnight instead, as GTFS has no times before its day's,
+    dropping those that then stop only once.
+    """
+    short = []
+    for trip in timetable.trips.values():
+        trip.calls = [c for c in trip.calls if c.arrival >= 0]
+        if len(trip.calls) < 2:
+            short.append(trip.id)
+    timetable.drop(short)
 
 
 NAMES = {
