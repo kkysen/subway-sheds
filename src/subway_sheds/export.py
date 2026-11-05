@@ -487,7 +487,8 @@ def write(grid: Grid) -> None:
             & (journey_run[1:] == journey_run[:-1])
             & (journey_dest[1:] == journey_dest[:-1])
         )
-        kept = ~np.append(same_next, False)
+        kept = np.ones(len(walk_only), dtype=bool)
+        kept[:-1] = ~same_next
         journey_run = journey_run[kept]
         journey_dest = journey_dest[kept]
         journey_minute = journey_minute[kept]
