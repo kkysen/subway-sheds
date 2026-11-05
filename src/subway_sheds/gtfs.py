@@ -68,6 +68,7 @@ def seconds(time: str) -> int:
 
 
 def time(secs: int) -> str:
+    assert secs >= 0, f"GTFS has no times before its day's, as {secs} s is"
     return f"{secs // 3600:02d}:{secs // 60 % 60:02d}:{secs % 60:02d}"
 
 
