@@ -16,7 +16,7 @@ from pathlib import Path
 
 from shapely import LineString, STRtree
 
-from subway_sheds import fit, lines, paths
+from subway_sheds import fit, gtfs, lines, paths, sources
 from subway_sheds.timetable import (
     STEP,
     Call,
@@ -965,3 +965,25 @@ def describe(held: Counter[tuple[str, int | None]]) -> list[str]:
         )
         lines.append(f"{where}: " + ", ".join(f"{held[where, w]} {_wait(where, w)}" for w in waits))
     return lines
+
+
+def write() -> Counter[tuple[str, int | None]]:
+    """
+    Make both scenarios' feeds from MTA's latest and 2019's, as `fetch` downloads them,
+    the baseline with the 7 as 2019's ran it.
+    How far `queenslink` moved trips and how long they wait, as it says.
+    """
+    before = gtfs.read_feed(sources.MTA_2019.dest)
+    seven = {t["trip_id"] for t in before.rows["trips.txt"] if t["route_id"] in SEVEN}
+    before.rows["trips.txt"] = [t for t in before.rows["trips.txt"] if t["trip_id"] in seven]
+    before.rows["stop_times.txt"] = [
+        st for st in before.rows["stop_times.txt"] if st["trip_id"] in seven
+    ]
+    timetable = Timetable(gtfs.read_feed(sources.mta_feed()))
+    baseline(timetable, Timetable(before))
+    timetable.write()
+    gtfs.write_feed(timetable.feed, Scenario.BASELINE.gtfs)
+    held = queenslink(timetable)
+    timetable.write()
+    gtfs.write_feed(timetable.feed, Scenario.QUEENSLINK.gtfs)
+    return held

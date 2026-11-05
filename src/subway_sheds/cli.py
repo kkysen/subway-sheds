@@ -12,7 +12,6 @@ from typer import Argument, Option, Typer, echo
 from subway_sheds import access, export, gtfs, osm, paths, scenarios, sources, tracks, travel_times
 from subway_sheds.grid import land_grid
 from subway_sheds.scenarios import Day, Fare, Scenario
-from subway_sheds.timetable import Timetable
 
 app = Typer(no_args_is_help=True)
 
@@ -136,7 +135,7 @@ MTA_OD_DATA_RAW = "https://raw.githubusercontent.com/kkysen/mta-od-data"
 def fetch(
     force: Annotated[bool, Option(help="Download again even if already cached.")] = False,
 ) -> None:
-    """Download the MTA feeds, shoreline, streets, and platforms, and make both scenarios' feeds."""
+    """Download the MTA feeds, shoreline, streets, and platforms."""
     for url, dest in [
         (sources.mta_feed_url(), sources.mta_feed()),
         (sources.SHORELINE_URL, paths.SHORELINE),
@@ -152,20 +151,12 @@ def fetch(
         dest = paths.PLATFORMS.with_name(name)
         if force or not dest.exists():
             _download(f"{MTA_OD_DATA_RAW}/{rev[1]}/src/mta_od_data/ridership/{name}", dest)
-    before = gtfs.read_feed(sources.MTA_2019.dest)
-    seven = {t["trip_id"] for t in before.rows["trips.txt"] if t["route_id"] in scenarios.SEVEN}
-    before.rows["trips.txt"] = [t for t in before.rows["trips.txt"] if t["trip_id"] in seven]
-    before.rows["stop_times.txt"] = [
-        st for st in before.rows["stop_times.txt"] if st["trip_id"] in seven
-    ]
-    timetable = Timetable(gtfs.read_feed(sources.mta_feed()))
-    scenarios.baseline(timetable, Timetable(before))
-    timetable.write()
-    gtfs.write_feed(timetable.feed, Scenario.BASELINE.gtfs)
-    held = scenarios.queenslink(timetable)
-    timetable.write()
-    gtfs.write_feed(timetable.feed, Scenario.QUEENSLINK.gtfs)
-    for line in scenarios.describe(held):
+
+
+@app.command(name="scenarios")
+def scenarios_() -> None:
+    """Make both scenarios' feeds, from the MTA feeds `fetch` downloads."""
+    for line in scenarios.describe(scenarios.write()):
         echo(line)
 
 

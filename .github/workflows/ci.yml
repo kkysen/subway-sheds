@@ -113,7 +113,7 @@ jobs:
           # On the runner's own target, as it builds for WebAssembly, which can't run here.
           cargo test --target "$(rustc -vV | sed -n 's/host: //p')"
 
-  # The page's data: fetch what routing needs, then route and export,
+  # The page's data: fetch what routing needs, then make the scenarios' feeds, route, and export,
   # unless what goes into them is unchanged, and the data's cached.
   # In one job, as each job takes most of a minute to set up,
   # and only the data goes on to `pages`.
@@ -233,6 +233,10 @@ jobs:
         with:
           path: web/public/data
           key: ${{ steps.inputs.outputs.key }}
+
+      - name: scenarios
+        if: steps.data.outputs.cache-hit != 'true'
+        run: uv run subway-sheds scenarios
 
       - name: route
         if: steps.data.outputs.cache-hit != 'true'

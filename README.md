@@ -60,8 +60,8 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
   Where that isn't enough, the whole trip runs up to 5 minutes earlier or later instead,
   and if that's still not enough, the trains in its way run 30 s or 60 s earlier or later,
   if that keeps them clear of every other train;
-  the G runs on only if it fits, and `fetch` says how far they move and how long they wait.
-  The feeds are made by `fetch` and not committed.
+  the G runs on only if it fits, and `scenarios` says how far they move and how long they wait.
+  The feeds are made by `scenarios` and not committed.
 - **Streets**: what's walked on (streets, sidewalks, footpaths, steps, and platforms)
   within NYC and a 2 km margin,
   filtered from Geofabrik's daily New York State OpenStreetMap extract to about 20 MB.
@@ -131,9 +131,10 @@ streets = { path = "../mta-od-data/streets" }
 `uv` doesn't see changes there, so rebuild after them with `uv sync --reinstall-package subway-sheds`.
 
 ```sh
-uv run subway-sheds fetch    # download the MTA feeds, land, streets, and platforms, and make both feeds
-uv run subway-sheds route    # route every station, in both scenarios
-uv run subway-sheds export   # for the web page, into `web/public/data/`
+uv run subway-sheds fetch      # download the MTA feeds, land, streets, and platforms
+uv run subway-sheds scenarios  # make both scenarios' feeds
+uv run subway-sheds route      # route every station, in both scenarios
+uv run subway-sheds export     # for the web page, into `web/public/data/`
 npm --prefix web install
 npm --prefix web run dev
 ```
