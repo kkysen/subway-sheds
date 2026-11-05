@@ -1,3 +1,4 @@
+import datetime
 import gzip
 import hashlib
 import itertools
@@ -30,6 +31,8 @@ app = Typer(no_args_is_help=True)
 # and its `state.txt`, which names the OSM data's version (its replication sequence number).
 NEW_YORK_OSM_URL = "https://download.geofabrik.de/north-america/us/new-york-latest.osm.pbf"
 NEW_YORK_OSM_STATE_URL = "https://download.geofabrik.de/north-america/us/new-york-updates/state.txt"
+# How often Geofabrik is asked whether it has newer OSM data, at most.
+OSM_CHECK_EVERY = datetime.timedelta(days=1)
 
 
 def _download(url: str, dest: Path) -> None:
@@ -81,7 +84,11 @@ def _fetch_streets(force: bool) -> None:
     which is checked against its MD5 and deleted once filtered.
     If Geofabrik doesn't answer, streets already filtered are kept,
     since a day or so older streets route the same.
+    Geofabrik is asked at most every `OSM_CHECK_EVERY`, as it makes a new extract daily,
+    and its servers can take minutes to answer.
     """
+    if not force and paths.OSM_PBF.exists() and _checked_within(OSM_CHECK_EVERY):
+        return
     try:
         latest = _get_text(NEW_YORK_OSM_STATE_URL)
     except httpx.TimeoutException, httpx.ConnectError:
@@ -95,6 +102,7 @@ def _fetch_streets(force: bool) -> None:
         and paths.OSM_SOURCE_STATE.exists()
         and paths.OSM_SOURCE_STATE.read_text() == latest
     ):
+        _checked()
         return
     extract = paths.CACHE / "new-york-latest.osm.pbf"
     md5_url = f"{NEW_YORK_OSM_URL}.md5"
@@ -116,7 +124,20 @@ def _fetch_streets(force: bool) -> None:
     kept = osm.filter_streets(extract, paths.OSM_PBF)
     extract.unlink()
     paths.OSM_SOURCE_STATE.write_text(latest)
+    _checked()
     echo(f"kept {kept} ways")
+
+
+def _checked_within(every: datetime.timedelta) -> bool:
+    """Whether Geofabrik was last asked for its `state.txt` less than `every` ago."""
+    if not paths.OSM_CHECKED.exists():
+        return False
+    checked = datetime.datetime.fromisoformat(paths.OSM_CHECKED.read_text().strip())
+    return datetime.datetime.now(datetime.UTC) - checked < every
+
+
+def _checked() -> None:
+    paths.OSM_CHECKED.write_text(datetime.datetime.now(datetime.UTC).isoformat())
 
 
 def _fetch_archived(archived: sources.Archived, force: bool) -> None:

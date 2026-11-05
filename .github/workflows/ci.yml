@@ -186,9 +186,10 @@ jobs:
           restore-keys: downloads-
 
       # The streets filtered from Geofabrik's New York State extract, the newest cached,
-      # which `fetch` sees whether Geofabrik has newer OSM data than (daily at most),
+      # which `fetch` sees whether Geofabrik has newer OSM data than, daily at most,
       # and only then downloads the 500 MB extract to replace them.
-      # They're saved by the version they were filtered from, which only `fetch` asks Geofabrik:
+      # They're saved by the version they were filtered from, which only `fetch` asks Geofabrik,
+      # and when it last asked, so that later runs that day don't ask again:
       # its servers sometimes take minutes to answer even that, more from CI than elsewhere.
       - uses: actions/cache/restore@v6.1.0
         id: streets
@@ -196,6 +197,7 @@ jobs:
           path: |
             .cache/nyc-streets.osm.pbf
             .cache/nyc-streets.source-state.txt
+            .cache/nyc-streets.checked.txt
           # Never saved under, so that the newest of the `restore-keys` is restored.
           key: streets-newest
           restore-keys: streets-
@@ -206,12 +208,13 @@ jobs:
       - uses: actions/cache/save@v6.1.0
         if: >-
           steps.streets.outputs.cache-matched-key
-          != format('streets-{0}', hashFiles('.cache/nyc-streets.source-state.txt'))
+          != format('streets-{0}', hashFiles('.cache/nyc-streets.source-state.txt', '.cache/nyc-streets.checked.txt'))
         with:
           path: |
             .cache/nyc-streets.osm.pbf
             .cache/nyc-streets.source-state.txt
-          key: streets-${{ hashFiles('.cache/nyc-streets.source-state.txt') }}
+            .cache/nyc-streets.checked.txt
+          key: streets-${{ hashFiles('.cache/nyc-streets.source-state.txt', '.cache/nyc-streets.checked.txt') }}
 
       # Everything tracked that goes into routing: the QueensLink feed, stations' entrances, the code
       # (with `web/times/`, which export finds the walks out the page takes with), and the versions it runs on

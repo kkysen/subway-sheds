@@ -10,9 +10,11 @@ OUT = ROOT / "out"
 
 # The streets routing walks on, filtered from Geofabrik's New York State extract,
 # and the `state.txt` Geofabrik gave for the extract they were filtered from,
-# which names the OSM data's version.
+# which names the OSM data's version,
+# and when Geofabrik was last asked for its `state.txt`, as an ISO 8601 time.
 OSM_PBF = CACHE / "nyc-streets.osm.pbf"
 OSM_SOURCE_STATE = CACHE / "nyc-streets.source-state.txt"
+OSM_CHECKED = CACHE / "nyc-streets.checked.txt"
 
 # NYC's land, from `nyc-subway-isochrones`, to keep the grid out of the water.
 SHORELINE = CACHE / "nyc-shoreline.json"
