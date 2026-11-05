@@ -6,24 +6,16 @@ import re
 from pathlib import Path
 from typing import Annotated
 
-import httpx
-import pandas as pd
 from typer import Argument, Option, Typer, echo
+lazy import httpx
+lazy import pandas as pd
 
-from subway_sheds import (
-    access,
-    export,
-    gtfs,
-    inputs,
-    osm,
-    paths,
-    scenarios,
-    sources,
-    tracks,
-    travel_times,
-)
-from subway_sheds.grid import land_grid
+from subway_sheds import paths, scenarios, sources
 from subway_sheds.scenarios import Day, Fare, Scenario
+
+# Lazily, as most commands use only some of them, and some take long to import.
+lazy from subway_sheds import access, export, gtfs, inputs, osm, tracks, travel_times
+lazy from subway_sheds.grid import land_grid
 
 app = Typer(no_args_is_help=True)
 

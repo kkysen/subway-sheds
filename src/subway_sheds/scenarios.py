@@ -14,9 +14,9 @@ from enum import StrEnum
 from itertools import pairwise
 from pathlib import Path
 
-from shapely import LineString, STRtree
+lazy from shapely import LineString, STRtree
 
-from subway_sheds import fit, gtfs, lines, paths, sources
+from subway_sheds import paths, sources
 from subway_sheds.timetable import (
     STEP,
     Call,
@@ -29,6 +29,7 @@ from subway_sheds.timetable import (
     hold,
     shift,
 )
+lazy from subway_sheds import fit, gtfs, lines
 
 
 class Day(StrEnum):
