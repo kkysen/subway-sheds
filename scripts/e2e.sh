@@ -36,8 +36,10 @@ step() {
         'BEGIN { printf "%-10s %6.1fs\n", name, end - start }' >&2
 }
 
+# Whether the commit's CLI has the command `$1`, from its source,
+# as running it for `--help` takes Python's startup each time.
 has_command() {
-    mise exec -- uv run -q subway-sheds "$1" --help >/dev/null 2>&1
+    rg -q -e "def $1\(" -e "name=\"$1\"" src/subway_sheds/cli.py
 }
 
 # One commit, already checked out in the worktree, in a process of its own,
