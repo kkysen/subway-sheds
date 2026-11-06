@@ -274,8 +274,8 @@ def _walks(force: bool = False) -> None:
         echo(f"walked the streets into {paths.WALKS.relative_to(paths.ROOT)}")
 
 
-@app.command(name="walks")
-def walks_(
+@app.command()
+def walks(
     force: Annotated[
         bool, Option(help="Walk them again even if what they're walked on isn't new.")
     ] = False,
