@@ -10,7 +10,7 @@ from typer import Argument, Option, Typer, echo
 lazy import httpx
 lazy import pandas as pd
 
-from subway_sheds import paths, scenarios, sources
+from subway_sheds import paths, sources
 from subway_sheds.scenarios import Day, Fare, Scenario
 
 # Lazily, as most commands use only some of them, and some take long to import.
@@ -190,8 +190,8 @@ def fetch(
 SCENARIOS_INPUTS = paths.GTFS / "inputs.sha256"
 
 
-@app.command(name="scenarios")
-def scenarios_(
+@app.command()
+def scenarios(
     force: Annotated[
         bool, Option(help="Make them again even if what they're made from isn't new.")
     ] = False,
@@ -205,6 +205,8 @@ def scenarios_(
     if not force and made and SCENARIOS_INPUTS.read_text() == digest:
         echo("the scenarios' feeds are already made from the same code and data")
         return
+    from subway_sheds import scenarios
+
     # So that one failing midway isn't taken for made.
     SCENARIOS_INPUTS.unlink(missing_ok=True)
     for line in scenarios.describe(scenarios.write()):
