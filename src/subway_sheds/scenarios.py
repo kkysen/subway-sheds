@@ -966,6 +966,8 @@ def _count(
 
 
 def _wait(where: str, waited: int | None) -> str:
+    if where == fit.NOT_PROVEN:
+        return "windows"
     if waited is None:
         return "no fit"
     if where.endswith(("moved", "nudged")):

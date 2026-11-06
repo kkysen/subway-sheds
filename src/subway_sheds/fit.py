@@ -10,6 +10,7 @@ or else counts as a conflict, which costs far more than anything else.
 """
 
 import bisect
+import hashlib
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -33,6 +34,9 @@ MOST_NUDGED = 60
 # Each window's solve stops after this many seconds, with the best found.
 CAP = 30.0
 WORKERS = 8
+# What `held` counts the windows not solved to the best in `CAP`,
+# whose schedules may then differ from one solve to the next.
+NOT_PROVEN = "not proven best"
 
 # Costs, per `UNIT`: an M moved, held, or catching up, another train nudged,
 # a pair of trains on a shared track falling short of its even gap,
@@ -570,6 +574,24 @@ class _Window:
                         else:
                             self.at_least(ours, theirs, need, [~clash])
 
+    def ties(self) -> list[tuple[int, int]]:
+        """
+        A cost to break ties between schedules that cost the same otherwise,
+        each train's moves, nudges, and waits weighted by `_tie_weight`,
+        so that solving the window again picks the same one,
+        not whichever of them CP-SAT's workers find first.
+        """
+        terms = []
+        for p in self.plans.values():
+            if p.kind == "flex":
+                terms.append((p.moved, _tie_weight(p.trip.id, "moved")))
+                for j, (wait, catch_up) in p.holds.items():
+                    terms.append((wait, _tie_weight(p.trip.id, "wait", j)))
+                    terms.append((catch_up, _tie_weight(p.trip.id, "catch up", j)))
+            elif p.kind == "nudge":
+                terms.append((p.nudged, _tie_weight(p.trip.id, "nudged")))
+        return terms
+
     def solve(self, held: Counter[tuple[str, int | None]]) -> None:
         """Solve, and keep the trains first on a shared track in the window's first hour."""
         self.plan()
@@ -579,10 +601,18 @@ class _Window:
         self.headways()
         self.own_headways()
         self.clear()
-        self.model.minimize(self.cost)
+        # The tie-break, with every real cost scaled past the most it could add,
+        # so that it only ever chooses between schedules that cost the same.
+        ties = self.ties()
+        scale = 1 + sum(
+            abs(weight) * _u(max(MOST_MOVED, MOST_HELD, MOST_NUDGED)) for _, weight in ties
+        )
+        self.model.minimize([(v, weight * scale) for v, weight in self.cost] + ties)
         status, _, _, _, values = self.model.solve(CAP, 600, WORKERS)
         if status not in ("OPTIMAL", "FEASIBLE"):
             raise RuntimeError(f"no fit for the M on {self.day} from {self.start}: {status}")
+        if status != "OPTIMAL":
+            held[NOT_PROVEN, None] += 1
         # Kept are those first on a shared track in the window's first hour,
         # and the trains kept apart from the Ms kept, as the Ms count on where they are;
         # the rest are solved again, with the next hour in view.
@@ -613,6 +643,12 @@ class _Window:
         # Each conflict once, in the window that keeps one of its trains.
         if clashes := sum(values[c] for c, a, b in self.conflicts if a in kept or b in kept):
             held["M in conflict", None] += clashes
+
+
+def _tie_weight(*key: object) -> int:
+    """A weight for breaking ties, the same from one run to the next, unlike `hash`."""
+    digest = hashlib.blake2b(repr(key).encode(), digest_size=2).digest()
+    return int.from_bytes(digest) + 1
 
 
 class _Units(dict[str, list[int]]):
