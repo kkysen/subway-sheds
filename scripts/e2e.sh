@@ -16,6 +16,9 @@
 # It shares this checkout's downloads in `.cache/`, so it downloads nothing this checkout has,
 # and builds the `route` crate in the worktree, so apart from this checkout's own build.
 # The checks are this checkout's, not the commit's, so that older commits are checked the same.
+# A commit that passes is recorded in `.cache/e2e/passed/`, by its tree, the stations,
+# and this script and its checks, so the same tree isn't checked again, as when a push is retried
+# or commits are reordered; its page in the browser is recorded the same way.
 #
 # `$E2E_STATIONS` are the stations routed, space-separated:
 # by default Rockaway Park-Beach 116 St, QueensLink's Metropolitan Av-Parkside, and Times Sq.
@@ -27,6 +30,18 @@ scripts="$root/scripts"
 dir="$root/.cache/e2e"
 worktree="$dir/worktree"
 stations="${E2E_STATIONS:-H15 V01 127}"
+passed="$dir/passed"
+
+# What a pass of commit `$1` is recorded by, for `$2` (`pipeline` or `browser`):
+# its tree, the stations, and this checkout's script and checks, as they're what's run.
+pass_key() {
+    {
+        echo "$2"
+        git rev-parse "$1^{tree}"
+        echo "$stations"
+        cat "$scripts/e2e.sh" "$scripts/e2e_check.py" "$scripts/e2e_browser.py"
+    } | sha256sum | cut -d' ' -f1
+}
 
 # Each step, timed.
 step() {
@@ -107,13 +122,21 @@ link_downloads() {
     done
 }
 
+mkdir -p "$passed"
 failed=()
 for commit in "${commits[@]}"; do
     subject="$(git log -1 --format='%h %s' "$commit")"
+    key="$(pass_key "$commit" pipeline)"
+    if [[ -e "$passed/$key" ]]; then
+        echo "== $subject: passed before" >&2
+        continue
+    fi
     echo "== $subject" >&2
     git -C "$worktree" checkout -q --detach "$commit"
     link_downloads
-    if ! "$BASH" "${BASH_SOURCE[0]}" --checked-out; then
+    if "$BASH" "${BASH_SOURCE[0]}" --checked-out; then
+        touch "$passed/$key"
+    else
         failed+=("$subject")
     fi
 done
@@ -125,7 +148,20 @@ fi
 
 # The last commit's page, which the worktree still has built,
 # in this checkout's environment, as `check` runs.
+# A last commit that passed before isn't built, so it's built for the browser now.
 if "$browser"; then
+    last="${commits[-1]}"
+    key="$(pass_key "$last" browser)"
+    if [[ -e "$passed/$key" ]]; then
+        echo "browser: passed before" >&2
+        exit
+    fi
+    if [[ "$(git -C "$worktree" rev-parse HEAD)" != "$last" ]]; then
+        git -C "$worktree" checkout -q --detach "$last"
+        link_downloads
+        "$BASH" "${BASH_SOURCE[0]}" --checked-out
+    fi
     cd "$worktree"
     step "browser" mise -C "$root" exec -- env -C "$PWD" uv run -q --project "$root" python "$scripts/e2e_browser.py" "${stations##* }"
+    touch "$passed/$key"
 fi
