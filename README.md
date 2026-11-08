@@ -168,6 +168,7 @@ and the farther ones only once the slider's faster than 3 mph.
 
 ## Development
 
-`pre-commit install` runs the checks on commit, and CI runs them too:
+`pre-commit install` runs `scripts/e2e.sh` on push, on each commit pushed.
+`pre-commit install -t pre-commit` runs the checks on commit, and CI runs them too:
 `ruff`, `ty`, `pyrefly` (strict), and `pytest` for the pipeline,
 and `tsrs` (with every strictness option on) and `biome` for `web/`.
