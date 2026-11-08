@@ -19,6 +19,7 @@
 # A commit that passes is recorded in `.cache/e2e/passed/`, by its tree, the stations,
 # and this script and its checks, so the same tree isn't checked again, as when a push is retried
 # or commits are reordered; its page in the browser is recorded the same way.
+# What it says goes into `.cache/e2e/e2e.log` too, as it says it.
 #
 # `$E2E_STATIONS` are the stations routed, space-separated:
 # by default Rockaway Park-Beach 116 St, QueensLink's Metropolitan Av-Parkside, and Times Sq.
@@ -85,6 +86,11 @@ if [[ "${1-}" == --checked-out ]]; then
     step "check" mise -C "$root" exec -- env -C "$PWD" uv run -q --project "$root" python "$scripts/e2e_check.py" $stations
     exit
 fi
+
+# Everything said, also into `.cache/e2e/e2e.log`, anew each run,
+# to follow with `tail -f` while pre-commit holds a hook's output until it's done.
+mkdir -p "$dir"
+exec > >(tee "$dir/e2e.log") 2>&1
 
 browser=false
 if [[ "${1-}" == --browser ]]; then
