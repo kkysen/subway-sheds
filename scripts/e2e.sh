@@ -58,8 +58,6 @@ if [[ "${1-}" == --checked-out ]]; then
     if has_command walks; then
         step "walks" mise exec -- uv run -q subway-sheds walks
     fi
-    # Only the stations routed, so that none routed before by another commit are checked.
-    rm -rf out/travel_times
     # shellcheck disable=SC2086
     step "route" mise exec -- uv run -q subway-sheds route $stations >/dev/null
     step "export" mise exec -- uv run -q subway-sheds export >/dev/null

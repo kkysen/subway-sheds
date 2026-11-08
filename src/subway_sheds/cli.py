@@ -307,8 +307,14 @@ def route(
         list[Fare] | None,
         Option("--fare", help="A fare to route with, repeatable; every one if none."),
     ] = None,
+    force: Annotated[
+        bool, Option(help="Route again even if what it routes from isn't new.")
+    ] = False,
 ) -> None:
-    """Route from stations to the grid in each scenario, on each day, with each fare."""
+    """
+    Route from stations to the grid in each scenario, on each day, with each fare,
+    unless last routed the same from the same code and data.
+    """
     _walks()
     every_station = street_walks.stations()
     stations = every_station
@@ -317,6 +323,17 @@ def route(
     runs = list(
         itertools.product(scenario_ or list(Scenario), day_ or list(Day), fare_ or list(Fare))
     )
+    digest = _route_digest(stop_ids, runs)
+    made = ROUTE_INPUTS.exists() and all(
+        path(*run).exists()
+        for run in runs
+        for path in (travel_times.arrivals_path, travel_times.routes_path)
+    )
+    if not force and made and ROUTE_INPUTS.read_text() == digest:
+        echo("already routed the same from the same code and data")
+        return
+    # So that one failing midway isn't taken for routed.
+    ROUTE_INPUTS.unlink(missing_ok=True)
     for run in travel_times.from_stations(runs, stations, every_station, street_walks.STREET_WALKS):
         scenario, day, fare, arrivals, routes = run
         routed = {s.id for s in stations} if stop_ids else None
@@ -324,6 +341,26 @@ def route(
         _save(routes, travel_times.routes_path(scenario, day, fare), routed)
         pairs = len(arrivals[["station", "to_station"]].drop_duplicates())
         echo(f"{scenario} {day} {fare}: {len(stations)} stations, {pairs} station pairs reached")
+    ROUTE_INPUTS.write_text(digest)
+
+
+# A hash of what `route` last routed, and from what, as `_route_digest` hashes it.
+ROUTE_INPUTS = paths.TRAVEL_TIMES / "inputs.sha256"
+
+
+def _route_digest(stop_ids: list[str] | None, runs: list[tuple[Scenario, Day, Fare]]) -> str:
+    """
+    A hash of what `route` routes, the stations and runs, and what from:
+    its code and data, this module's, the scenarios' feeds,
+    and what the walks were walked from, whose hash stands for the walks.
+    """
+    made = [
+        Path(__file__),
+        *sorted(p for p in paths.GTFS.rglob("*") if p.is_file()),
+        street_walks.INPUTS,
+    ]
+    asked = repr((sorted(stop_ids) if stop_ids else None, [tuple(map(str, run)) for run in runs]))
+    return hashlib.sha256((asked + inputs.digest("travel_times", made)).encode()).hexdigest()
 
 
 # A hash of what the web page's data was last written from, as `_export_digest` hashes it.
