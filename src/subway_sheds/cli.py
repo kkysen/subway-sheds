@@ -326,9 +326,44 @@ def route(
         echo(f"{scenario} {day} {fare}: {len(stations)} stations, {pairs} station pairs reached")
 
 
+# A hash of what the web page's data was last written from, as `_export_digest` hashes it.
+EXPORT_INPUTS = paths.OUT / "export.sha256"
+
+
+def _export_digest() -> str:
+    """
+    A hash of what `export` writes from: its code and data, the scenarios' feeds,
+    the routed travel times, and what the walks were walked from,
+    whose hash stands for the walks, much bigger, made from them.
+    Not the exit trees' cache's, which `export` writes itself, from these.
+    """
+    made = [
+        *sorted(p for p in paths.GTFS.rglob("*") if p.is_file()),
+        *sorted(p for p in paths.TRAVEL_TIMES.rglob("*") if p.is_file()),
+        street_walks.INPUTS,
+        access.TABLE,
+    ]
+    return inputs.digest("export", made)
+
+
 @app.command(name="export")
-def export_() -> None:
-    """Write the routed travel times for the web page."""
+def export_(
+    force: Annotated[
+        bool, Option(help="Write it again even if what it's written from isn't new.")
+    ] = False,
+) -> None:
+    """
+    Write the routed travel times for the web page,
+    unless it was last written from the same code and data.
+    """
     _walks()
+    digest = _export_digest()
+    written = (paths.WEB_DATA / "stations.json").exists() and EXPORT_INPUTS.exists()
+    if not force and written and EXPORT_INPUTS.read_text() == digest:
+        echo("the web page's data is already written from the same code and data")
+        return
+    # So that one failing midway isn't taken for written.
+    EXPORT_INPUTS.unlink(missing_ok=True)
     export.write(land_grid())
+    EXPORT_INPUTS.write_text(digest)
     echo(f"wrote {paths.WEB_DATA.relative_to(paths.ROOT)}")
