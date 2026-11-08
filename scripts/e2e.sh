@@ -136,8 +136,10 @@ for commit in "${commits[@]}"; do
     link_downloads
     if "$BASH" "${BASH_SOURCE[0]}" --checked-out; then
         touch "$passed/$key"
+        echo "== $subject: passed" >&2
     else
         failed+=("$subject")
+        echo "== $subject: failed" >&2
     fi
 done
 
