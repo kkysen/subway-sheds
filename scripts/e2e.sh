@@ -66,8 +66,10 @@ if [[ "${1-}" == --checked-out ]]; then
     step "bun install" mise exec -- bun install --silent --frozen-lockfile --cwd web
     step "build" mise exec -- bun run --silent --cwd web build >/dev/null
     # shellcheck disable=SC2086
-    # In this checkout's environment, which has Playwright, as older commits' may not.
-    step "check" mise exec -- uv run -q --project "$root" python "$scripts/e2e_check.py" $stations
+    # In this checkout's environment, which has Playwright, as older commits' may not,
+    # with its `mise` variables, not the worktree's: `$ORTOOLS_PREFIX` is a path in each,
+    # which `uv` rebuilds the `route` crate whenever it differs, on and off.
+    step "check" mise -C "$root" exec -- env -C "$PWD" uv run -q --project "$root" python "$scripts/e2e_check.py" $stations
     exit
 fi
 
@@ -123,8 +125,9 @@ if ((${#failed[@]})); then
     exit 1
 fi
 
-# The last commit's page, which the worktree still has built.
+# The last commit's page, which the worktree still has built,
+# in this checkout's environment, as `check` runs.
 if "$browser"; then
     cd "$worktree"
-    step "browser" mise exec -- uv run -q --project "$root" python "$scripts/e2e_browser.py" "${stations##* }"
+    step "browser" mise -C "$root" exec -- env -C "$PWD" uv run -q --project "$root" python "$scripts/e2e_browser.py" "${stations##* }"
 fi
