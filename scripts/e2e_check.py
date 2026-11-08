@@ -7,6 +7,7 @@ that from QueensLink's Metropolitan Av-Parkside it's quicker to Times Sq with Qu
 and that the page has each one's routes and built.
 """
 
+import hashlib
 import json
 import sys
 import zipfile
@@ -15,6 +16,9 @@ from pathlib import Path
 import pandas as pd
 
 SCENARIOS = ["baseline", "queenslink"]
+# The feeds that passed, each by a hash of it and this checker,
+# as they change only when `scenarios` makes them again, and checking each takes about a second.
+PASSED = Path(__file__).resolve().parents[1] / ".cache" / "e2e" / "feeds-passed"
 DAYS = ["weekday", "saturday"]
 FARES = ["single", "unlimited"]
 # Most stations are within `MAX_TIME` of any, so reaching fewer means routing broke.
@@ -28,6 +32,17 @@ def seconds(times: pd.Series) -> pd.Series:
 
 
 def check_feed(path: Path) -> list[str]:
+    key = hashlib.sha256(path.read_bytes() + Path(__file__).read_bytes()).hexdigest()
+    if (PASSED / key).exists():
+        return []
+    errors = _check_feed(path)
+    if not errors:
+        PASSED.mkdir(parents=True, exist_ok=True)
+        (PASSED / key).touch()
+    return errors
+
+
+def _check_feed(path: Path) -> list[str]:
     with zipfile.ZipFile(path) as feed:
         stop_times, trips, calendar, dates = (
             pd.read_csv(feed.open(name), dtype=str)
