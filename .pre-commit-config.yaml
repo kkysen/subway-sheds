@@ -1,6 +1,6 @@
-# `pre-commit install` installs only the push hook, which runs `e2e`.
-# The checks below run on commit only with `pre-commit install -t pre-commit`.
-default_install_hook_types: [pre-push]
+# `pre-commit install` installs both hooks: the checks below run on commit,
+# and `e2e`, which takes longer, on push.
+default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]
 repos:
   - repo: local
