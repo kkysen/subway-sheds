@@ -314,6 +314,24 @@ jobs:
           npm ci
           npm run build -- --base=/${{ github.event.repository.name }}/
 
+      # Before publishing it, the page as built, in headless Chromium, with Times Sq selected
+      # (see `scripts/e2e_browser.py`),
+      # with Playwright as `uv.lock` pins it, without the project, which this job doesn't build.
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
+      - name: browser
+        run: |
+          playwright="uv run --no-project --with playwright==$(sed -n '/^name = "playwright"$/{n;s/^version = "\(.*\)"$/\1/p}' uv.lock)"
+          $playwright playwright install --with-deps chromium
+          $playwright python scripts/e2e_browser.py 127 /${{ github.event.repository.name }}/
+
       - uses: actions/configure-pages@v6.0.0
 
       - uses: actions/upload-pages-artifact@v5.0.0

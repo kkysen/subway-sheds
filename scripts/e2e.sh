@@ -2,11 +2,13 @@
 # Runs the whole pipeline end to end, on a few stations, for each commit given (`HEAD` if none),
 # as CI's `data` and `pages` jobs run it on every station,
 # then checks what comes out of it (see `scripts/e2e_check.py`),
-# and the page it builds in a browser (see `scripts/e2e_browser.py`), with the last station selected.
+# and, with `--browser`, the page the last commit builds in a browser (see `scripts/e2e_browser.py`),
+# with the last station selected, once, as it takes several seconds.
 #
-#     scripts/e2e.sh                  # `HEAD`
-#     scripts/e2e.sh main~3 main      # each of them
-#     scripts/e2e.sh main~3..main     # each commit after `main~3`, through `main`
+#     scripts/e2e.sh                          # `HEAD`
+#     scripts/e2e.sh main~3 main              # each of them
+#     scripts/e2e.sh main~3..main             # each commit after `main~3`, through `main`
+#     scripts/e2e.sh --browser main~3..main   # and the page `main` builds
 #
 # Each commit is checked out in one worktree kept in `.cache/e2e/worktree`,
 # so that each step's own cache (`scenarios`', `walks`', `.venv/`, `node_modules/`)
@@ -71,8 +73,13 @@ if [[ "${1-}" == --checked-out ]]; then
     # shellcheck disable=SC2086
     # In this checkout's environment, which has Playwright, as older commits' may not.
     step "check" mise exec -- uv run -q --project "$root" python "$scripts/e2e_check.py" $stations
-    step "browser" mise exec -- uv run -q --project "$root" python "$scripts/e2e_browser.py" "${stations##* }"
     exit
+fi
+
+browser=false
+if [[ "${1-}" == --browser ]]; then
+    browser=true
+    shift
 fi
 
 commits=()
@@ -119,4 +126,10 @@ done
 if ((${#failed[@]})); then
     printf 'failed: %s\n' "${failed[@]}" >&2
     exit 1
+fi
+
+# The last commit's page, which the worktree still has built.
+if "$browser"; then
+    cd "$worktree"
+    step "browser" mise exec -- uv run -q --project "$root" python "$scripts/e2e_browser.py" "${stations##* }"
 fi

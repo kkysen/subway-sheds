@@ -1,5 +1,6 @@
 """
-Opens the page `scripts/e2e.sh` built in `web/dist/`, served as `vite preview` serves it,
+Opens the page built in `web/dist/`, by `scripts/e2e.sh` or CI, served as `vite preview` serves it,
+under the base path given, if any, as CI builds it for GitHub Pages,
 in headless Chromium, with the station given selected,
 and checks that it loads that station's routes and logs no errors.
 Its Chromium is Playwright's, installed with `uv run playwright install chromium`.
@@ -29,19 +30,27 @@ def free_port() -> int:
 
 def main() -> None:
     station = sys.argv[1]
+    base = sys.argv[2] if len(sys.argv) > 2 else "/"
     port = free_port()
     # Vite itself, not through `npx`, which would leave it running when stopped,
     # in a process group of its own, to stop with whatever it starts,
     # and not writing where this does, which would keep `scripts/e2e.sh`'s output open.
     server = subprocess.Popen(
-        ["node_modules/.bin/vite", "preview", "--port", str(port), "--strictPort"],
+        [
+            "node_modules/.bin/vite",
+            "preview",
+            "--port",
+            str(port),
+            "--strictPort",
+            f"--base={base}",
+        ],
         cwd="web",
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
     try:
-        url = f"http://localhost:{port}/"
+        url = f"http://localhost:{port}{base}"
         for _ in range(100):
             try:
                 urllib.request.urlopen(url)
