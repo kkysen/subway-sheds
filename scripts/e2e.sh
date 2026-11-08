@@ -63,13 +63,8 @@ if [[ "${1-}" == --checked-out ]]; then
     # shellcheck disable=SC2086
     step "route" mise exec -- uv run -q subway-sheds route $stations >/dev/null
     step "export" mise exec -- uv run -q subway-sheds export >/dev/null
-    # Only if the lockfile changed since, as `npm ci` reinstalls every package each time.
-    installed=web/node_modules/.e2e-package-lock.json
-    if ! cmp -s web/package-lock.json "$installed"; then
-        step "npm ci" mise exec -- npm ci --silent --prefix web
-        cp web/package-lock.json "$installed"
-    fi
-    step "build" mise exec -- npm run build --silent --prefix web >/dev/null
+    step "bun install" mise exec -- bun install --silent --frozen-lockfile --cwd web
+    step "build" mise exec -- bun run --silent --cwd web build >/dev/null
     # shellcheck disable=SC2086
     # In this checkout's environment, which has Playwright, as older commits' may not.
     step "check" mise exec -- uv run -q --project "$root" python "$scripts/e2e_check.py" $stations

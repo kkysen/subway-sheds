@@ -37,7 +37,7 @@ repos:
         always_run: true
       - id: web
         name: web (tsrs, biome)
-        entry: npm --prefix web run check
+        entry: bun --cwd web run check
         language: system
         files: ^web/
         pass_filenames: false

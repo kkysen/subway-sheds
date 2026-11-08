@@ -1,7 +1,8 @@
-# `node` builds and checks `web/`.
+# `bun` installs `web/`'s packages and runs its scripts, and `node` runs the tools in them.
 # `uv` and `pre-commit` are here so that `mise install` is the whole of setup.
 # Python and the Python tools are not: `uv` manages those through `uv.lock`.
 [tools]
+bun = "1.4.4"
 node = "26.12.1"
 pre-commit = "4.7.0"
 uv = "0.13.5"
