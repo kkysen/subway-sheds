@@ -72,7 +72,7 @@ const shortDayNames: Record<Day, readonly string[]> = {
 
 // Each project's name, for its logo's alt text, and its logo, which says it in the summary.
 const projectNames: Record<Project, { readonly name: string; readonly logo: string }> = {
-  queenslink: { name: "QueensLink", logo: "/favicon-192.png" },
+  queenslink: { name: "QueensLink", logo: `${import.meta.env.BASE_URL}favicon-192.png` },
 };
 
 function projectLogo(project: Project): HTMLImageElement {
