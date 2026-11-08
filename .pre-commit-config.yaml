@@ -54,11 +54,12 @@ repos:
         language: system
         files: ^web/times/
         pass_filenames: false
-      # The commit pushed, end to end, with its page in a browser (see `scripts/e2e.sh`),
-      # on push only, and not each commit before it, as it takes too long for every commit yet.
+      # Each commit pushed, end to end, and the last's page in a browser (see `scripts/e2e.sh`),
+      # on push, not commit, so that committing doesn't wait for it.
+      # Without a remote commit to start from, as for a new branch's first push, just the one pushed.
       - id: e2e
         name: e2e
-        entry: bash -c 'scripts/e2e.sh --browser "${PRE_COMMIT_TO_REF:-HEAD}"'
+        entry: bash -c 'if [[ -n "${PRE_COMMIT_FROM_REF:-}" ]]; then scripts/e2e.sh --browser "$PRE_COMMIT_FROM_REF..$PRE_COMMIT_TO_REF"; else scripts/e2e.sh --browser "${PRE_COMMIT_TO_REF:-HEAD}"; fi'
         language: system
         pass_filenames: false
         always_run: true
