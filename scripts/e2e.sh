@@ -10,6 +10,9 @@
 #     scripts/e2e.sh main~3..main             # each commit after `main~3`, through `main`
 #     scripts/e2e.sh --browser main~3..main   # and the page `main` builds
 #
+# It stops at the first commit that fails, as the ones after it mostly fail with it,
+# unless `--keep-going`, which checks every commit anyway.
+#
 # Each commit is checked out in one worktree kept in `.cache/e2e/worktree`,
 # so that each step's own cache (`scenarios`', `walks`', `.venv/`, `node_modules/`)
 # carries over from one commit to the next, and only what a commit changes runs again.
@@ -125,10 +128,18 @@ mkdir -p "$dir"
 exec > >(tee "$dir/e2e.log") 2>&1
 
 browser=false
-if [[ "${1-}" == --browser ]]; then
-    browser=true
+keep_going=false
+while [[ "${1-}" == --* ]]; do
+    case "$1" in
+        --browser) browser=true ;;
+        --keep-going) keep_going=true ;;
+        *)
+            echo "unknown option: $1" >&2
+            exit 2
+            ;;
+    esac
     shift
-fi
+done
 
 commits=()
 for arg in "${@:-HEAD}"; do
@@ -162,7 +173,12 @@ link_downloads() {
 
 mkdir -p "$passed"
 failed=()
+unchecked=()
 for commit in "${commits[@]}"; do
+    if ((${#failed[@]})) && ! "$keep_going"; then
+        unchecked+=("$(git log -1 --format='%h %s' "$commit")")
+        continue
+    fi
     subject="$(git log -1 --format='%h %s' "$commit")"
     key="$(pass_key "$commit" pipeline)"
     if [[ -e "$passed/$key" ]]; then
@@ -183,6 +199,9 @@ done
 
 if ((${#failed[@]})); then
     printf 'failed: %s\n' "${failed[@]}" >&2
+    if ((${#unchecked[@]})); then
+        printf 'not checked: %s\n' "${unchecked[@]}" >&2
+    fi
     exit 1
 fi
 
