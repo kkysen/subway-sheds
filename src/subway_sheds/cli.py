@@ -190,6 +190,11 @@ def fetch(
 SCENARIOS_INPUTS = paths.GTFS / "inputs.sha256"
 
 
+def scenarios_digest() -> str:
+    """A hash of what the scenarios' feeds are made from, which `scripts/e2e.sh` keeps them by."""
+    return inputs.digest("scenarios", [sources.mta_feed(), sources.MTA_2019.dest])
+
+
 @app.command()
 def scenarios(
     force: Annotated[
@@ -200,7 +205,7 @@ def scenarios(
     Make both scenarios' feeds, from the MTA feeds `fetch` downloads,
     unless they were last made from the same code and data.
     """
-    digest = inputs.digest("scenarios", [sources.mta_feed(), sources.MTA_2019.dest])
+    digest = scenarios_digest()
     made = all(scenario.gtfs.exists() for scenario in Scenario) and SCENARIOS_INPUTS.exists()
     if not force and made and SCENARIOS_INPUTS.read_text() == digest:
         echo("the scenarios' feeds are already made from the same code and data")
