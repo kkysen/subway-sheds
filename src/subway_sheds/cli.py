@@ -206,8 +206,8 @@ def scenarios(
     unless they were last made from the same code and data.
     """
     digest = scenarios_digest()
-    made = all(scenario.gtfs.exists() for scenario in Scenario) and SCENARIOS_INPUTS.exists()
-    if not force and made and SCENARIOS_INPUTS.read_text() == digest:
+    feeds = [scenario.gtfs for scenario in Scenario]
+    if not force and inputs.made(SCENARIOS_INPUTS, digest, feeds):
         echo("the scenarios' feeds are already made from the same code and data")
         return
     from subway_sheds import scenarios
@@ -216,7 +216,7 @@ def scenarios(
     SCENARIOS_INPUTS.unlink(missing_ok=True)
     for line in scenarios.describe(scenarios.write()):
         echo(line)
-    SCENARIOS_INPUTS.write_text(digest)
+    inputs.mark(SCENARIOS_INPUTS, digest, feeds)
 
 
 @app.command()
@@ -329,12 +329,12 @@ def route(
         itertools.product(scenario_ or list(Scenario), day_ or list(Day), fare_ or list(Fare))
     )
     digest = _route_digest(stop_ids, runs)
-    made = ROUTE_INPUTS.exists() and all(
-        path(*run).exists()
+    outputs = [
+        path(*run)
         for run in runs
         for path in (travel_times.arrivals_path, travel_times.routes_path)
-    )
-    if not force and made and ROUTE_INPUTS.read_text() == digest:
+    ]
+    if not force and inputs.made(ROUTE_INPUTS, digest, outputs):
         echo("already routed the same from the same code and data")
         return
     # So that one failing midway isn't taken for routed.
@@ -346,7 +346,7 @@ def route(
         _save(routes, travel_times.routes_path(scenario, day, fare), routed)
         pairs = len(arrivals[["station", "to_station"]].drop_duplicates())
         echo(f"{scenario} {day} {fare}: {len(stations)} stations, {pairs} station pairs reached")
-    ROUTE_INPUTS.write_text(digest)
+    inputs.mark(ROUTE_INPUTS, digest, outputs)
 
 
 # A hash of what `route` last routed, and from what, as `_route_digest` hashes it.
@@ -388,6 +388,13 @@ def _export_digest() -> str:
     return inputs.digest("export", made)
 
 
+def _exported() -> list[Path]:
+    """What `export` writes: the web page's data, or nothing if it hasn't any yet."""
+    if not (paths.WEB_DATA / "stations.json").exists():
+        return [paths.WEB_DATA / "stations.json"]
+    return sorted(p for p in paths.WEB_DATA.rglob("*") if p.is_file())
+
+
 @app.command(name="export")
 def export_(
     force: Annotated[
@@ -400,12 +407,11 @@ def export_(
     """
     _walks()
     digest = _export_digest()
-    written = (paths.WEB_DATA / "stations.json").exists() and EXPORT_INPUTS.exists()
-    if not force and written and EXPORT_INPUTS.read_text() == digest:
+    if not force and inputs.made(EXPORT_INPUTS, digest, _exported()):
         echo("the web page's data is already written from the same code and data")
         return
     # So that one failing midway isn't taken for written.
     EXPORT_INPUTS.unlink(missing_ok=True)
     export.write(land_grid())
-    EXPORT_INPUTS.write_text(digest)
+    inputs.mark(EXPORT_INPUTS, digest, _exported())
     echo(f"wrote {paths.WEB_DATA.relative_to(paths.ROOT)}")

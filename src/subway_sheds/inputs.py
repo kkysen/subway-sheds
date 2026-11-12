@@ -76,3 +76,30 @@ def digest(name: str, also: Iterable[Path] = ()) -> str:
         out.update(str(path.relative_to(paths.ROOT)).encode() + b"\0")
         out.update(hashlib.sha256(path.read_bytes()).digest())
     return out.hexdigest()
+
+
+def stamp(digest: str, made: Iterable[Path]) -> str:
+    """
+    `digest`, of what a step's output `made` is made from,
+    with each of `made`'s name, size, and time last written,
+    so that a marker holding it no longer matches once anything else writes them,
+    like an older checkout of this code that doesn't know the marker, and leaves it be.
+    """
+    out = [digest]
+    for path in made:
+        stat = path.stat()
+        out.append(f"{path.relative_to(paths.ROOT)} {stat.st_size} {stat.st_mtime_ns}")
+    return "\n".join(out) + "\n"
+
+
+def made(marker: Path, digest: str, made: Iterable[Path]) -> bool:
+    """Whether `marker` says `made` was made from what `digest` hashes, and not written since."""
+    made = list(made)
+    if not marker.exists() or not all(path.exists() for path in made):
+        return False
+    return marker.read_text() == stamp(digest, made)
+
+
+def mark(marker: Path, digest: str, made: Iterable[Path]) -> None:
+    """Note in `marker` that `made` was made from what `digest` hashes, as `made` checks."""
+    marker.write_text(stamp(digest, made))

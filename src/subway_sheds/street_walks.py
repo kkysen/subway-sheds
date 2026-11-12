@@ -59,8 +59,7 @@ def write(force: bool = False) -> bool:
         travel_times.EXIT_WALK_MM,
     )
     key = digest(*args)
-    made = INPUTS.exists() and all(path.exists() for path in MADE)
-    if not force and made and INPUTS.read_text() == key:
+    if not force and inputs.made(INPUTS, key, MADE):
         return False
     paths.WALKS.mkdir(parents=True, exist_ok=True)
     # So that failing midway isn't taken for made.
@@ -87,7 +86,7 @@ def write(force: bool = False) -> bool:
     raw_exits.unlink()
     near_streets = grid.Grid(x0=land.x0, y0=land.y0, cols=land.cols[near], rows=land.rows[near])
     grid.write(near_streets, paths.GRID)
-    INPUTS.write_text(key)
+    inputs.mark(INPUTS, key, MADE)
     return True
 
 
@@ -109,12 +108,12 @@ def exit_trees(
     as which walks are `wanted` changes only when the routed times do.
     """
     key = digest(entrances, destinations, speed, limit, wanted)
-    if EXIT_TREES_INPUTS.exists() and EXIT_TREES_INPUTS.read_text() == key:
+    if inputs.made(EXIT_TREES_INPUTS, key, [EXIT_TREES]):
         with EXIT_TREES.open("rb") as f:
             return pickle.load(f)
     EXIT_TREES_INPUTS.unlink(missing_ok=True)
     trees = _route.exit_trees(paths.OSM_PBF, entrances, destinations, speed, limit, wanted)
     with EXIT_TREES.open("wb") as f:
         pickle.dump(trees, f)
-    EXIT_TREES_INPUTS.write_text(key)
+    inputs.mark(EXIT_TREES_INPUTS, key, [EXIT_TREES])
     return trees
