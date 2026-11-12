@@ -19,6 +19,8 @@
 # A commit that passes is recorded in `.cache/e2e/passed/`, by its tree, the stations,
 # and this script and its checks, so the same tree isn't checked again, as when a push is retried
 # or commits are reordered; its page in the browser is recorded the same way.
+# Its tree is only what some step reads, not docs or tests, so a commit changing only those
+# passes as soon as one before it with the rest the same did.
 # The scenarios' feeds each commit makes are kept in `.cache/e2e/scenarios/`
 # by what they're made from, for later commits made from the same.
 # What it says goes into `.cache/e2e/e2e.log` too, as it says it.
@@ -35,13 +37,17 @@ worktree="$dir/worktree"
 stations="${E2E_STATIONS:-H15 V01 127}"
 passed="$dir/passed"
 scenarios="$dir/scenarios"
+# What no step reads, so that a commit changing only these passes as the last one did:
+# docs, the tests, CI, and the checks, which are this checkout's anyway.
+unused=$'\t(README\\.md|LICENSE|tests/.*|\\.github/.*|\\.gitignore|\\.pre-commit-config\\.yaml|scripts/e2e.*)$'
 
 # What a pass of commit `$1` is recorded by, for `$2` (`pipeline` or `browser`):
-# its tree, the stations, and this checkout's script and checks, as they're what's run.
+# the files in its tree the pipeline and page are made from, the stations,
+# and this checkout's script and checks, as they're what's run.
 pass_key() {
     {
         echo "$2"
-        git rev-parse "$1^{tree}"
+        git ls-tree -r "$1" | rg -v "$unused"
         echo "$stations"
         cat "$scripts/e2e.sh" "$scripts/e2e_check.py" "$scripts/e2e_browser.py"
     } | sha256sum | cut -d' ' -f1
