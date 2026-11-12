@@ -19,6 +19,8 @@
 # A commit that passes is recorded in `.cache/e2e/passed/`, by its tree, the stations,
 # and this script and its checks, so the same tree isn't checked again, as when a push is retried
 # or commits are reordered; its page in the browser is recorded the same way.
+# The scenarios' feeds each commit makes are kept in `.cache/e2e/scenarios/`
+# by what they're made from, for later commits made from the same.
 # What it says goes into `.cache/e2e/e2e.log` too, as it says it.
 #
 # `$E2E_STATIONS` are the stations routed, space-separated:
@@ -32,6 +34,7 @@ dir="$root/.cache/e2e"
 worktree="$dir/worktree"
 stations="${E2E_STATIONS:-H15 V01 127}"
 passed="$dir/passed"
+scenarios="$dir/scenarios"
 
 # What a pass of commit `$1` is recorded by, for `$2` (`pipeline` or `browser`):
 # its tree, the stations, and this checkout's script and checks, as they're what's run.
@@ -60,6 +63,29 @@ has_command() {
     rg -q -e "def $1\(" -e "name=\"$1\"" src/subway_sheds/cli.py
 }
 
+# The scenarios' feeds, given back from `$scenarios` when an earlier commit made them
+# from the same code and data, as making them takes minutes,
+# and kept there when made anew, by the hash of what they're made from,
+# from commits that name it (`scenarios_digest` in `cli.py`).
+scenarios() {
+    local digest=""
+    if rg -q "def scenarios_digest\(" src/subway_sheds/cli.py; then
+        digest="$(mise exec -- uv run -q python -c \
+            'from subway_sheds.cli import scenarios_digest; print(scenarios_digest())')"
+    fi
+    if [[ -n "$digest" && -e "$scenarios/$digest/inputs.sha256" ]]; then
+        rm -rf out/gtfs
+        mkdir -p out
+        cp -r "$scenarios/$digest" out/gtfs
+    fi
+    step "scenarios" mise exec -- uv run -q subway-sheds scenarios >/dev/null
+    if [[ -n "$digest" && ! -e "$scenarios/$digest" ]]; then
+        mkdir -p "$scenarios"
+        cp -r out/gtfs "$scenarios/$digest.tmp"
+        mv "$scenarios/$digest.tmp" "$scenarios/$digest"
+    fi
+}
+
 # One commit, already checked out in the worktree, in a process of its own,
 # so that `set -e` stops it at the first step that fails,
 # which it doesn't within a condition, like the `if` that runs this.
@@ -69,7 +95,7 @@ if [[ "${1-}" == --checked-out ]]; then
     step "fetch" mise exec -- uv run -q subway-sheds fetch
     # Older commits made the scenarios' feeds in `fetch`, and walked the streets in `route`.
     if has_command scenarios; then
-        step "scenarios" mise exec -- uv run -q subway-sheds scenarios >/dev/null
+        scenarios
     fi
     if has_command walks; then
         step "walks" mise exec -- uv run -q subway-sheds walks
