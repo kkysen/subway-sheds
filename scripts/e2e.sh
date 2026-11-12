@@ -85,12 +85,12 @@ scenarios() {
     if [[ -n "$digest" && -e "$scenarios/$digest/inputs.sha256" ]]; then
         rm -rf out/gtfs
         mkdir -p out
-        cp -r "$scenarios/$digest" out/gtfs
+        cp -a "$scenarios/$digest" out/gtfs
     fi
     step "scenarios" mise exec -- uv run -q subway-sheds scenarios >/dev/null
     if [[ -n "$digest" && ! -e "$scenarios/$digest" ]]; then
         mkdir -p "$scenarios"
-        cp -r out/gtfs "$scenarios/$digest.tmp"
+        cp -a out/gtfs "$scenarios/$digest.tmp"
         mv "$scenarios/$digest.tmp" "$scenarios/$digest"
     fi
 }
