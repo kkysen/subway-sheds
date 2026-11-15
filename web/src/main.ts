@@ -670,7 +670,10 @@ explainer.addEventListener("click", (event) => {
     explainer.close();
   }
 });
-if (savedValue("explainer") !== "dismissed") {
+// Never shown on its own where the page is embedded with `?explainer=off`,
+// as by a site that explains the map itself, though the "?" still opens it.
+const explainerOff = new URLSearchParams(location.search).get("explainer") === "off";
+if (!explainerOff && savedValue("explainer") !== "dismissed") {
   explainer.showModal();
 }
 
