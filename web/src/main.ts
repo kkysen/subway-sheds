@@ -657,12 +657,22 @@ controls.classList.toggle("station-key-hidden", savedValue("station-key") === "h
 // until "Don't show this again", which is kept across reloads as the controls are.
 // Closed any other way, it's only closed for now.
 const explainer = element("#explainer", HTMLDialogElement);
+// Embedded, as on thequeenslink.org, where the browser can block or clear the page's own storage,
+// so it's also kept by the site embedding it, if that has `public/embed.js`, in that site's own storage.
+const embedder = window.parent === window ? undefined : window.parent;
+// What's said between the page and `embed.js`: asking whether the explainer was dismissed, and saying so.
+const ASK_EXPLAINER = "subway-sheds:explainer?";
+const SAY_EXPLAINER = "subway-sheds:explainer";
+// How long to wait for `embed.js` to say before showing the explainer anyway, as when there's none.
+const EMBEDDER_WAIT_MS = 500;
 element("#explainer-dismiss", HTMLButtonElement).addEventListener("click", () => {
   try {
     localStorage.setItem(storageKey("explainer"), "dismissed");
   } catch {
     // Not saved, as when storage is unavailable.
   }
+  // Any site can embed the page, and it's only told what it could see anyway.
+  embedder?.postMessage({ type: SAY_EXPLAINER, name: "explainer", dismissed: true }, "*");
 });
 // Its backdrop, the only part of it outside its frame.
 explainer.addEventListener("click", (event) => {
@@ -673,9 +683,56 @@ explainer.addEventListener("click", (event) => {
 // Never shown on its own where the page is embedded with `?explainer=off`,
 // as by a site that explains the map itself, though the "?" still opens it.
 const explainerOff = new URLSearchParams(location.search).get("explainer") === "off";
-if (!explainerOff && savedValue("explainer") !== "dismissed") {
+// Whether it was shown on its own, rather than from the "?", so that `embed.js` saying late can close it.
+let explainerShownOnItsOwn = false;
+function showExplainerOnItsOwn(): void {
+  // Already opened from the "?" while waiting for `embed.js`.
+  if (explainer.open) {
+    return;
+  }
+  explainerShownOnItsOwn = true;
   explainer.showModal();
 }
+if (!explainerOff && savedValue("explainer") !== "dismissed") {
+  if (embedder === undefined) {
+    showExplainerOnItsOwn();
+  } else {
+    let waiting: number | undefined = window.setTimeout(() => {
+      waiting = undefined;
+      showExplainerOnItsOwn();
+    }, EMBEDDER_WAIT_MS);
+    // Only from the site embedding the page, whichever it is, and only as `embed.js` says it.
+    window.addEventListener("message", (event) => {
+      const data: unknown = event.data;
+      if (
+        event.source !== embedder ||
+        typeof data !== "object" ||
+        data === null ||
+        !("type" in data) ||
+        data.type !== SAY_EXPLAINER ||
+        !("name" in data) ||
+        data.name !== "explainer" ||
+        !("dismissed" in data)
+      ) {
+        return;
+      }
+      if (waiting !== undefined) {
+        clearTimeout(waiting);
+        waiting = undefined;
+        if (data.dismissed !== true) {
+          showExplainerOnItsOwn();
+        }
+      } else if (data.dismissed === true && explainerShownOnItsOwn) {
+        explainer.close();
+      }
+    });
+    embedder.postMessage({ type: ASK_EXPLAINER, name: "explainer" }, "*");
+  }
+}
+// Shown from the "?", it isn't closed by `embed.js` saying late.
+explainer.addEventListener("close", () => {
+  explainerShownOnItsOwn = false;
+});
 
 // Collapsed to start with on small screens, unless the link says or they were left open.
 details.open = linkedOpen("legend", !small);
@@ -829,7 +886,10 @@ explainerButton.className = "explainer-open";
 explainerButton.textContent = "?";
 explainerButton.title = "About this map";
 explainerButton.setAttribute("aria-label", "About this map");
-explainerButton.addEventListener("click", () => explainer.showModal());
+explainerButton.addEventListener("click", () => {
+  explainerShownOnItsOwn = false;
+  explainer.showModal();
+});
 explainerOpen.append(explainerButton);
 function placeExplainerOpen(): void {
   if (smallScreen.matches) {

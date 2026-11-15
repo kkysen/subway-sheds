@@ -166,6 +166,25 @@ Pointing at a place draws the walk there along the streets, out of the entrance 
 loading each station's walks out, simplified to within a meter, when a place's walk is from it,
 and the farther ones only once the slider's faster than 3 mph.
 
+### Embedding
+
+The page can be embedded in an `<iframe>`, as on thequeenslink.org.
+It explains itself when it's first opened, until "Don't show this again",
+which it keeps in its own storage,
+but in an `<iframe>` the browser can block or clear that, as Safari does.
+So a site embedding it should load `embed.js` beside it,
+which keeps that in the site's own storage instead, and tells the page:
+
+```html
+<iframe src="https://kkysen.github.io/subway-sheds/"></iframe>
+<script src="https://kkysen.github.io/subway-sheds/embed.js" defer></script>
+```
+
+Without it, the page waits half a second for it before explaining itself.
+A site that explains the map itself can embed it with `?explainer=off` instead,
+as in `https://kkysen.github.io/subway-sheds/?explainer=off`,
+which never shows the explainer unless its "?" is clicked.
+
 ## Development
 
 `pre-commit install` runs `scripts/e2e.sh --browser` on push, on each commit pushed,
