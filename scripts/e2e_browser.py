@@ -1,6 +1,7 @@
 """
 Opens the page built in `web/dist/`, by `scripts/e2e.sh` or CI, served as `vite preview` serves it,
 under the base path given, if any, as CI builds it for GitHub Pages,
+and QueensLink's page, at `queenslink/`,
 in headless Chromium, with the station given selected,
 and checks that it loads that station's routes and logs no errors.
 Its Chromium is Playwright's, installed with `uv run playwright install chromium`.
@@ -20,6 +21,10 @@ from playwright.sync_api import sync_playwright
 TIMEOUT_MS = 60_000
 # And how long nothing else is loaded or logged for, after, for it to be done.
 QUIET_MS = 2_000
+
+
+# The main page, and QueensLink's, the same as it for now (see `web/vite.config.ts`).
+PAGES = ["", "queenslink/"]
 
 
 def free_port() -> int:
@@ -57,10 +62,16 @@ def main() -> None:
                 break
             except OSError:
                 time.sleep(0.1)
-        errors = check(f"{url}#{station}", station)
+        errors = [e for page in PAGES for e in check(f"{url}{page}#{station}", station)]
     finally:
         os.killpg(server.pid, signal.SIGTERM)
         server.wait()
+    # A file of its own, as GitHub Pages serves, which `vite preview` would serve `index.html` for.
+    errors += [
+        f"built no web/dist/{page}index.html"
+        for page in PAGES
+        if not os.path.exists(f"web/dist/{page}index.html")
+    ]
     for error in errors:
         print(error, file=sys.stderr)
     sys.exit(1 if errors else 0)

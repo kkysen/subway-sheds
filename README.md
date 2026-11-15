@@ -168,7 +168,9 @@ and the farther ones only once the slider's faster than 3 mph.
 
 ### Embedding
 
-The page can be embedded in an `<iframe>`, as on thequeenslink.org.
+The page can be embedded in an `<iframe>`, as on thequeenslink.org,
+which embeds QueensLink's page, at `queenslink/`,
+the same as the main page for now (see `web/vite.config.ts`).
 It explains itself when it's first opened, until "Don't show this again",
 which it keeps in its own storage,
 but in an `<iframe>` the browser can block or clear that, as Safari does.
@@ -176,13 +178,13 @@ So a site embedding it should load `embed.js` beside it,
 which keeps that in the site's own storage instead, and tells the page:
 
 ```html
-<iframe src="https://kkysen.github.io/subway-sheds/"></iframe>
+<iframe src="https://kkysen.github.io/subway-sheds/queenslink/"></iframe>
 <script src="https://kkysen.github.io/subway-sheds/embed.js" defer></script>
 ```
 
 Without it, the page waits half a second for it before explaining itself.
 A site that explains the map itself can embed it with `?explainer=off` instead,
-as in `https://kkysen.github.io/subway-sheds/?explainer=off`,
+as in `https://kkysen.github.io/subway-sheds/queenslink/?explainer=off`,
 which never shows the explainer unless its "?" is clicked.
 
 ## Development
