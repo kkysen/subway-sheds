@@ -672,3 +672,145 @@ body,
   opacity: 0.75;
   white-space: nowrap;
 }
+
+/* The explainer, nearly as big as the page on phones, and on larger screens as wide as reads well,
+   only as tall as its words, scrolling between its heading and its buttons where they're more. */
+#explainer {
+  box-sizing: border-box;
+  width: min(720px, calc(100% - 32px));
+  max-width: none;
+  max-height: calc(100% - 32px);
+  border: none;
+  border-radius: 8px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  box-shadow: 0 4px 24px rgb(0 0 0 / 30%);
+}
+
+#explainer::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+#explainer[open] {
+  display: flex;
+}
+
+/* The whole dialog but its backdrop, so that a click on the backdrop is the only one on the dialog itself. */
+#explainer .explainer-frame {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+
+#explainer .explainer-frame header,
+#explainer .explainer-frame footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #e6e7e8;
+}
+
+#explainer .explainer-frame h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 18px;
+}
+
+#explainer .explainer-x {
+  border: none;
+  padding: 0 4px;
+  background: none;
+  color: #555555;
+  font: inherit;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#explainer .explainer-body {
+  overflow-y: auto;
+  padding: 4px 16px 12px;
+}
+
+#explainer .explainer-body h3 {
+  margin: 14px 0 4px;
+  font-size: 16px;
+}
+
+#explainer .explainer-body p,
+#explainer .explainer-body ul {
+  margin: 6px 0;
+}
+
+#explainer .explainer-body ul {
+  padding-left: 20px;
+}
+
+#explainer .explainer-lead {
+  font-size: 16px;
+}
+
+#explainer .explainer-body .logo {
+  height: 1.2em;
+  vertical-align: -0.25em;
+}
+
+#explainer .explainer-frame footer {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+#explainer .explainer-frame footer button {
+  border: 1px solid #999999;
+  border-radius: 4px;
+  padding: 6px 12px;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+#explainer .explainer-frame footer .explainer-primary {
+  border-color: #000000;
+  background: #000000;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+@media (hover: hover) {
+  #explainer .explainer-frame footer button:hover {
+    background: #eeeeee;
+  }
+
+  #explainer .explainer-frame footer .explainer-primary:hover {
+    background: #333333;
+  }
+}
+
+@media (max-width: 600px), (max-height: 500px) {
+  #explainer {
+    width: calc(100% - 16px);
+    max-height: calc(100% - 16px);
+    font-size: 14px;
+  }
+
+  #explainer .explainer-frame header,
+  #explainer .explainer-frame footer {
+    padding: 8px 12px;
+  }
+
+  #explainer .explainer-body {
+    padding: 2px 12px 8px;
+  }
+}
+
+/* The "?" that opens the explainer again, as big as MapLibre's own buttons' icons. */
+.explainer-open {
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}

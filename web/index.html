@@ -72,6 +72,56 @@
         <a id="full-map" href="./" target="_blank" hidden>Open in a new tab ↗</a>
       </details>
     </form>
+    <!-- Shown when the page is first opened, until "Don't show this again", and from the "?" on the map.
+         What's about the map is shared; what's about the projects is in its own section, for each page's own. -->
+    <dialog id="explainer" aria-labelledby="explainer-title">
+      <form method="dialog" class="explainer-frame">
+        <header>
+          <h2 id="explainer-title">NYC Travel Time Map</h2>
+          <button type="submit" value="close" class="explainer-x" aria-label="Close">×</button>
+        </header>
+        <div class="explainer-body">
+          <p class="explainer-lead">How long it takes to get anywhere in New York City by subway, from any station,
+            and how much sooner <a href="https://thequeenslink.org" target="_blank" rel="noopener">QueensLink</a> would get you there.</p>
+          <section>
+            <h3>What it shows</h3>
+            <p>Pick a station, and the map colors the city by how many minutes it takes to get everywhere from there:
+              riding trains, changing between them, and walking the streets the rest of the way.</p>
+            <p>Waiting for trains counts too.
+              Each time is the median trip leaving every minute of an hour,
+              7:30 to 8:30 am on a weekday or 11:30 am to 12:30 pm on a Saturday, on the subway's own schedules,
+              as for someone who doesn't time when they leave.</p>
+          </section>
+          <section>
+            <h3>How to use it</h3>
+            <ul>
+              <li><strong>Click or tap a station</strong> to see travel times from it.</li>
+              <li><strong>Point at a place</strong>, or tap it on a phone, to see the quickest trip there.
+                Point at a station, or hold it on a phone, to see the trip to it.</li>
+              <li><strong>When</strong> picks a weekday morning or a Saturday midday.</li>
+              <li><strong>Time Saved</strong> shows how many minutes QueensLink saves, rather than how many it takes.</li>
+              <li><strong>Walking</strong> sets how fast you walk.
+                <strong>$3</strong> is one fare; <strong>$∞</strong> also changes trains outside the system, paying again.</li>
+            </ul>
+          </section>
+          <section class="explainer-project">
+            <h3>QueensLink <img class="logo" src="/favicon-192.png" alt="" /></h3>
+            <p><a href="https://thequeenslink.org" target="_blank" rel="noopener">QueensLink</a> would run the M over the unused Rockaway Beach Branch:
+              off the Queens Blvd line at 63 Dr-Rego Park,
+              through new stations at Metropolitan Av-Parkside, Jamaica Av, Atlantic Av-Woodhaven, and Liberty Av,
+              then along the A to Broad Channel and Rockaway Park.
+              On weekdays, the G would run on to Forest Hills in its place.</p>
+            <p>Its new stations are drawn as M bullets.
+              Turn it on or off with its logo by <strong>Time</strong>, or pick <strong>Time Saved</strong> to see what it changes.
+              How it's scheduled is in the <a href="https://github.com/kkysen/subway-sheds#data" target="_blank" rel="noopener">code's README</a>.</p>
+          </section>
+        </div>
+        <footer>
+          <button type="submit" value="dismiss" id="explainer-dismiss">Don't show this again</button>
+          <button type="submit" value="close" class="explainer-primary" autofocus>Show me the map</button>
+        </footer>
+      </form>
+    </dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

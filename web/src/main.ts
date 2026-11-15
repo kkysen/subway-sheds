@@ -653,6 +653,27 @@ element("#station-key-hide", HTMLButtonElement).addEventListener("click", () =>
 stationKeyShow.addEventListener("click", () => showStationKey(true));
 controls.classList.toggle("station-key-hidden", savedValue("station-key") === "hidden");
 
+// What the page is and how it works, shown when it's first opened, and on each load after
+// until "Don't show this again", which is kept across reloads as the controls are.
+// Closed any other way, it's only closed for now.
+const explainer = element("#explainer", HTMLDialogElement);
+element("#explainer-dismiss", HTMLButtonElement).addEventListener("click", () => {
+  try {
+    localStorage.setItem(storageKey("explainer"), "dismissed");
+  } catch {
+    // Not saved, as when storage is unavailable.
+  }
+});
+// Its backdrop, the only part of it outside its frame.
+explainer.addEventListener("click", (event) => {
+  if (event.target === explainer) {
+    explainer.close();
+  }
+});
+if (savedValue("explainer") !== "dismissed") {
+  explainer.showModal();
+}
+
 // Collapsed to start with on small screens, unless the link says or they were left open.
 details.open = linkedOpen("legend", !small);
 restoreControls();
@@ -794,6 +815,29 @@ if (fullscreenGroup !== null && fullscreenCorner !== null && fullscreenCorner !=
   placeFullscreen();
   smallScreen.addEventListener("change", placeFullscreen);
 }
+
+// The explainer's "?", under the fullscreen button on larger screens,
+// and over the credits on small ones, where the heading bar has no room left for it.
+const explainerOpen = document.createElement("div");
+explainerOpen.className = "maplibregl-ctrl maplibregl-ctrl-group";
+const explainerButton = document.createElement("button");
+explainerButton.type = "button";
+explainerButton.className = "explainer-open";
+explainerButton.textContent = "?";
+explainerButton.title = "About this map";
+explainerButton.setAttribute("aria-label", "About this map");
+explainerButton.addEventListener("click", () => explainer.showModal());
+explainerOpen.append(explainerButton);
+function placeExplainerOpen(): void {
+  if (smallScreen.matches) {
+    element(".maplibregl-ctrl-bottom-right", HTMLElement).prepend(explainerOpen);
+  } else {
+    element(".maplibregl-ctrl-top-right", HTMLElement).append(explainerOpen);
+  }
+}
+placeExplainerOpen();
+// After the fullscreen button's, so that it's under it once that's back in the corner.
+smallScreen.addEventListener("change", placeExplainerOpen);
 
 // Listened for before awaiting the data, which the map can finish loading before.
 const loaded = new Promise((resolve) => map.once("load", resolve));

@@ -86,6 +86,9 @@ def check(url: str, station: str) -> list[str]:
         )
         page.goto(url, wait_until="networkidle", timeout=TIMEOUT_MS)
         page.wait_for_timeout(QUIET_MS)
+        # Opened for the first time, as in a new profile, so the explainer's shown.
+        if not page.evaluate("document.querySelector('#explainer').open"):
+            errors.append("didn't show the explainer on first opening the page")
         browser.close()
     if routes != [200]:
         errors.append(f"loaded {station}'s routes with {routes or 'no'} responses, not one 200")
