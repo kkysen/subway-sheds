@@ -933,8 +933,8 @@ grid.cols.forEach((col, i) => {
 });
 const stationsById = new Map(stations.map((station) => [station.id, station]));
 
-// Broad Channel, whose trip to most of the city QueensLink shortens.
-const DEFAULT_STATION = "H04";
+// Howard Beach-JFK Airport, on QueensLink's M.
+const DEFAULT_STATION = "H03";
 
 // When trains from the station shown reach every station.
 let selectedArrivals: Arrivals | undefined;
