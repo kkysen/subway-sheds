@@ -22,7 +22,10 @@ VIEWS = {
     "queenslink": "queenslink",
     "saved": "saved",
 }
-PAGES = {"main": "", "queenslink": "queenslink/"}
+PAGES = {
+    "main": ("", Path("screenshots")),
+    "queenslink": ("queenslink/", Path("queenslink/screenshots")),
+}
 
 
 def screenshot_url(page_url: str, view: str) -> str:
@@ -104,9 +107,9 @@ def main() -> None:
                     reduced_motion="reduce",
                 )
                 page = context.new_page()
-                for page_name, suffix in PAGES.items():
+                for suffix, output_path in PAGES.values():
                     page_url = f"{site_url}{suffix}"
-                    output = output_root / page_name / "screenshots"
+                    output = output_root / output_path
                     output.mkdir(parents=True, exist_ok=True)
                     for filename, view in VIEWS.items():
                         page.goto(

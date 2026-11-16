@@ -17,7 +17,7 @@ out/
 node_modules/
 web/dist/
 web/public/data/
-web/public/*/screenshots/
+web/public/**/screenshots/
 
 # Rust
 route/target/

@@ -89,7 +89,7 @@ dragged with `jquery.event.move`, in a `slick` carousel of two such sliders.
 
 - `scripts/screenshots.py` generates the three Steinway St views for every map page as hi-DPI PNGs
   of the real page with Playwright after each CI build.
-  The matching screenshots are served under `/main/screenshots/` and `/queenslink/screenshots/`;
+  The matching screenshots are served under `/screenshots/` and `/queenslink/screenshots/`;
   each view is generated at 1×, 2×, and 3× pixel density with matching dimensions for the slider.
 - WordPress keeps doing the slider with its plugin; we only serve the images.
 
