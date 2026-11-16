@@ -333,38 +333,14 @@ and the farther ones only once the slider's faster than 3 mph.
 
 ### Embedding
 
-The page can be embedded in an `<iframe>`,
-as [queenslink.org](https://queenslink.org/map/) does.
-Embed QueensLink's page, at `queenslink/`,
-the same as the main page for now (see `web/vite.config.ts`).
-It explains itself when it's first opened, until "Don't show this again",
-which it keeps in its own storage,
-but in an `<iframe>` the browser can block or clear that, as Safari does.
-So a site embedding it should load `embed.js` beside it,
-which keeps that in the site's own storage instead, and tells the page.
-Without it, the page waits half a second for it before explaining itself.
-A site that explains the map itself can embed it with `?explainer=off` instead,
-as in `https://kkysen.github.io/subway-sheds/queenslink/?explainer=off`,
-which never shows the explainer unless its "?" is clicked.
+To embed the map on another site, paste the whole of one of the embeds of QueensLink's page,
+in [`embed/queenslink/`](embed/queenslink/):
 
-`embed/queenslink/` has the embeds of QueensLink's page to paste, each a fragment of HTML, not a whole page:
+- [`generic.partial.html`](embed/queenslink/generic.partial.html), for any site.
+- [`wordpress.partial.html`](embed/queenslink/wordpress.partial.html),
+  always pasted from here into [queenslink.org/map](https://queenslink.org/map/).
 
-- [`embed/queenslink/generic.partial.html`](embed/queenslink/generic.partial.html), for any site:
-  paste it where the map should go, as it is.
-  It's the `<iframe>`, 80% of the window's height and as wide as where it's pasted, and `embed.js`:
-
-  ```html
-  <iframe src="https://kkysen.github.io/subway-sheds/queenslink/" title="Travel Times with QueensLink"
-    style="display: block; width: 100%; height: 80vh; border: 0;" loading="lazy" allowfullscreen></iframe>
-  <script src="https://kkysen.github.io/subway-sheds/embed.js" defer></script>
-  ```
-
-- [`embed/queenslink/wordpress.partial.html`](embed/queenslink/wordpress.partial.html), queenslink.org's own,
-  for its WordPress theme:
-  the map the window's full width, from below the theme's fixed header to the window's bottom.
-  To change it, edit it here, then paste it over the WPBakery "Raw HTML" block on WordPress page 3504
-  (queenslink.org/map/), and update the page.
-  Paste it only once what it embeds is published, as the page goes live as soon as it's updated.
+Their comments say what they do and how to change them.
 
 ## Development
 
