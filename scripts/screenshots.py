@@ -1,4 +1,4 @@
-"""Generate Steinway St screenshots for every map page in the built site."""
+"""Generate the stations' screenshots for every map page in the built site."""
 
 import os
 import signal
@@ -7,12 +7,12 @@ import subprocess
 import sys
 import time
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from playwright.sync_api import ViewportSize, sync_playwright
 
-STATION = "G19"  # Steinway St
 VIEWPORT: ViewportSize = {"width": 1024, "height": 813}
 PIXEL_RATIOS = (1, 2, 3)
 TIMEOUT_MS = 60_000
@@ -22,17 +22,37 @@ VIEWS = {
     "queenslink": "queenslink",
     "saved": "saved",
 }
+
+
+@dataclass(frozen=True)
+class Shot:
+    # The station's stop ID and name, as the page's summary says it.
+    station: str
+    name: str
+    # The start of each screenshot's file name.
+    slug: str
+    day: str
+    views: tuple[str, ...] = tuple(VIEWS)
+
+
+SHOTS = [
+    Shot("G19", "Steinway St", "steinway-st", "weekday"),
+    Shot("H15", "Rockaway Park-Beach 116 St", "rockaway-park", "weekday"),
+    Shot("G14", "Jackson Hts-Roosevelt Av", "jackson-hts", "weekday"),
+    # Saturdays' too, when only QueensLink runs the M along the Queens Blvd local.
+    Shot("G14", "Jackson Hts-Roosevelt Av", "jackson-hts-saturday", "saturday", ("saved",)),
+]
 PAGES = {
     "main": ("", Path("screenshots")),
     "queenslink": ("queenslink/", Path("queenslink/screenshots")),
 }
 
 
-def screenshot_url(page_url: str, view: str) -> str:
+def screenshot_url(page_url: str, shot: Shot, view: str) -> str:
     # The page reads station and controls from its URL fragment, independent of saved browser state.
     params = urlencode(
         [
-            ("day", "weekday"),
+            ("day", shot.day),
             ("measure", "saved" if view == "saved" else "time"),
             ("with", "" if view == "baseline" else "queenslink"),
             ("walking_speed_mph", "3"),
@@ -40,7 +60,7 @@ def screenshot_url(page_url: str, view: str) -> str:
             ("legend", "open"),
         ]
     )
-    return f"{page_url}?explainer=off#{STATION}&{params}"
+    return f"{page_url}?explainer=off#{shot.station}&{params}"
 
 
 def root_url(url: str) -> str:
@@ -111,24 +131,26 @@ def main() -> None:
                     page_url = f"{site_url}{suffix}"
                     output = output_root / output_path
                     output.mkdir(parents=True, exist_ok=True)
-                    for filename, view in VIEWS.items():
-                        page.goto(
-                            screenshot_url(page_url, view),
-                            wait_until="networkidle",
-                            timeout=TIMEOUT_MS,
-                        )
-                        page.get_by_text("Steinway St", exact=True).first.wait_for(
-                            timeout=TIMEOUT_MS
-                        )
-                        page.wait_for_function(
-                            "document.querySelector('#summary-status').textContent.includes("
-                            "'Steinway St')",
-                            timeout=TIMEOUT_MS,
-                        )
-                        page.wait_for_timeout(QUIET_MS)
-                        path = output / f"steinway-st-{filename}-{pixel_ratio}x.png"
-                        page.screenshot(path=str(path))
-                        print(path)
+                    for shot in SHOTS:
+                        for filename in shot.views:
+                            page.goto(
+                                screenshot_url(page_url, shot, VIEWS[filename]),
+                                wait_until="networkidle",
+                                timeout=TIMEOUT_MS,
+                            )
+                            page.get_by_text(shot.name, exact=True).first.wait_for(
+                                timeout=TIMEOUT_MS
+                            )
+                            page.wait_for_function(
+                                "name => document.querySelector('#summary-status')"
+                                ".textContent.includes(name)",
+                                arg=shot.name,
+                                timeout=TIMEOUT_MS,
+                            )
+                            page.wait_for_timeout(QUIET_MS)
+                            path = output / f"{shot.slug}-{filename}-{pixel_ratio}x.png"
+                            page.screenshot(path=str(path))
+                            print(path)
                 context.close()
             browser.close()
     finally:
