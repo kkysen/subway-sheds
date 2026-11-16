@@ -654,6 +654,29 @@ def _add_night_before(
             track.add_calls(service, late, f"{trip.id} the night before")
 
 
+class Unspaced(Exception):
+    """
+    Some trains `queenslink` runs aren't kept apart from others by the minimum headway,
+    as the explainer says every train is:
+    an F via 53 St that doesn't fit, which runs anyway,
+    an M in conflict, or a train run the night before too near that night's trains.
+    A G that doesn't fit keeps its current run, ending at Court Sq, so it's still kept apart.
+    """
+
+    def __init__(self, held: Counter[tuple[str, int | None]], unspaced: list[str]) -> None:
+        super().__init__(
+            "trains not kept apart: " + ", ".join(unspaced) + "\n" + "\n".join(describe(held))
+        )
+
+
+def _unspaced(where: str, waited: int | None) -> bool:
+    return (
+        (where == f"{F} moved" and waited is None)
+        or where == "M in conflict"
+        or where.endswith(TOO_NEAR)
+    )
+
+
 def queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     """
     The baseline with QueensLink, as `_queenslink_m`, `_far_rockaway_a`, `_f_via_53_st`,
@@ -662,10 +685,13 @@ def queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     each trip run to another end given the headsign of the trips ending there,
     and each run elsewhere its own shape.
     How far trips are moved and how long they wait, or how many don't fit, to report.
+    Raises `Unspaced` if any train it runs isn't kept apart from others, as `Unspaced` says.
     """
     ends = {trip.id: trip.calls[-1].stop for trip in timetable.trips.values()}
     stations = {trip.id: trip.stations() for trip in timetable.trips.values()}
     held = _queenslink(timetable)
+    if unspaced := [where for where, waited in held if _unspaced(where, waited)]:
+        raise Unspaced(held, sorted(set(unspaced)))
     _headsigns(timetable, ends)
     _shapes(timetable, stations)
     return held
