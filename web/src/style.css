@@ -794,6 +794,11 @@ body,
   background: var(--bullet-color, #808183);
 }
 
+/* But an express variant's still only its diamond, as everywhere else. */
+#explainer .route-bullet-express {
+  background: none;
+}
+
 #explainer .explainer-frame footer {
   flex-wrap: wrap;
   justify-content: flex-end;
