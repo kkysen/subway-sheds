@@ -14,6 +14,7 @@ from playwright.sync_api import ViewportSize, sync_playwright
 
 STATION = "G19"  # Steinway St
 VIEWPORT: ViewportSize = {"width": 1024, "height": 813}
+PIXEL_RATIO = 3
 TIMEOUT_MS = 60_000
 QUIET_MS = 2_000
 VIEWS = {
@@ -87,7 +88,7 @@ def main() -> None:
             )
             page = browser.new_page(
                 viewport=VIEWPORT,
-                device_scale_factor=2,
+                device_scale_factor=PIXEL_RATIO,
                 reduced_motion="reduce",
             )
             for filename, view in VIEWS.items():

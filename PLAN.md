@@ -1,5 +1,9 @@
 # Plan
 
+## Binary images
+
+Never commit binary images without explicit approval.
+
 ## Explainer pop-up
 
 Done in `d658474`, `c3b94d7`, and `0e4bfa3`, but for checking it in real Safari,
@@ -68,6 +72,11 @@ so the embed can move there before the main page changes.
 Khyber pastes it into WordPress once `/queenslink` and `embed.js` are published,
 so the old URL needs no redirect.
 
+## Generate the QueensLink icons
+
+The QueensLink favicon and Apple touch icon PNGs in `web/public/` were copied from queenslink.org.
+Generate these files during the build instead of committing the PNGs.
+
 ## Generated screenshots and a before/after slider for queenslink.org
 
 queenslink.org/the-plan shows three hand-made screenshots of the map
@@ -80,7 +89,7 @@ dragged with `jquery.event.move`, in a `slick` carousel of two such sliders.
 
 - `scripts/screenshots.py` generates these as hi-DPI PNG screenshots of the real page with Playwright
   after each CI build, and serves them at stable URLs under `/queenslink/screenshots/`.
-  The 2× screenshots share the same viewport dimensions, for the before/after slider.
+  The 3× screenshots share the same viewport dimensions, for the before/after slider.
 - WordPress keeps doing the slider with its plugin; we only serve the images.
 
 ## A before/after slider on our own map (not decided)
