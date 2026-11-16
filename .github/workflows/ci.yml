@@ -332,6 +332,12 @@ jobs:
           $playwright playwright install --with-deps chromium
           $playwright python scripts/e2e_browser.py 127 /${{ github.event.repository.name }}/
 
+      # The Steinway St views queenslink.org links to, at twice the page's pixel density.
+      - name: screenshots
+        run: |
+          playwright="uv run --no-project --with playwright==$(sed -n '/^name = "playwright"$/{n;s/^version = "\(.*\)"$/\1/p}' uv.lock)"
+          $playwright python scripts/screenshots.py /${{ github.event.repository.name }}/
+
       - uses: actions/configure-pages@v6.0.0
 
       - uses: actions/upload-pages-artifact@v5.0.0
