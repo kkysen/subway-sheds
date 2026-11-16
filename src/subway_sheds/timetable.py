@@ -202,9 +202,16 @@ class Track:
 
     def add(self, trip: Trip) -> None:
         self.trips.add(trip.id)
-        for call in trip.calls:
+        self.add_calls(trip.service, trip.calls, trip.id)
+
+    def add_calls(self, service: str, calls_: Iterable[Call], trip: str) -> None:
+        """
+        Add `calls_` to `service`'s, as `trip`,
+        even if they're another service's, as the trains running the night before it.
+        """
+        for call in calls_:
             if call.stop in self.stops:
-                bisect.insort(self.times[trip.service, call.stop], (call.departure, trip.id))
+                bisect.insort(self.times[service, call.stop], (call.departure, trip))
 
     def remove(self, trip: Trip) -> None:
         self.trips.discard(trip.id)

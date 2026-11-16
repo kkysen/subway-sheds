@@ -597,6 +597,10 @@ def _g_to_forest_hills(timetable: Timetable, cbtc: set[str]) -> Counter[tuple[st
     moving = {t.id for t in trips}
     own = _own(timetable, G, moving, cbtc)
     nudger = _Nudger(timetable, moving, cbtc, [local, own])
+    # Those leaving Forest Hills before midnight run the night before, by `_night_before`,
+    # so they're kept clear of the trains running then too.
+    _add_night_before(timetable, {t.service for t in trips}, local, _local("G20", "G13"))
+    _add_night_before(timetable, {t.service for t in trips}, own, lambda t: t.route == G)
     for trip in sorted(trips, key=lambda t: t.calls[t.index(COURT_SQ)].departure):
         old = copy.deepcopy(trip.calls)
         at = trip.index(COURT_SQ)
@@ -619,6 +623,35 @@ def _g_to_forest_hills(timetable: Timetable, cbtc: set[str]) -> Counter[tuple[st
         _count(held, G, stages, fitted)
     held.update(nudger.nudged)
     return held
+
+
+# How long before midnight the trains running the night before are kept clear of.
+NIGHT_BEFORE = 3 * 3600
+
+
+def _add_night_before(
+    timetable: Timetable, services: set[str], track: Track, on: Callable[[Trip], bool]
+) -> None:
+    """
+    Add to `track`, for each of `services`, the trains `on` it
+    of the services running the night before any day it runs,
+    from `NIGHT_BEFORE` before midnight, as at times before its own day's start,
+    as `{trip} the night before`, which `_Nudger` doesn't nudge.
+    """
+    every = {t.service for t in timetable.trips.values()}
+    dates = {s: gtfs.service_dates(timetable.feed, s) for s in every}
+    for service in sorted(services):
+        nights = {date - datetime.timedelta(days=1) for date in dates[service]}
+        before = {s for s, on_dates in dates.items() if not nights.isdisjoint(on_dates)}
+        for trip in timetable.trips.values():
+            if trip.service not in before or not on(trip):
+                continue
+            late = [
+                Call(c.stop, c.arrival - DAY, c.departure - DAY)
+                for c in trip.calls
+                if c.departure >= DAY - NIGHT_BEFORE
+            ]
+            track.add_calls(service, late, f"{trip.id} the night before")
 
 
 def queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
@@ -994,6 +1027,9 @@ class _Nudger:
 
     def nudge(self, trip_id: str) -> bool:
         """Nudge `trip_id`'s trip the least that keeps it clear, if any does."""
+        if trip_id not in self.timetable.trips:
+            # A train running the night before, as `_add_night_before` adds it.
+            return False
         trip = self.timetable.trips[trip_id]
         if trip.id not in self.least:
             self.least[trip.id] = {
