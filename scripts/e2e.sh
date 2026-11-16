@@ -41,8 +41,9 @@ stations="${E2E_STATIONS:-H15 V01 127}"
 passed="$dir/passed"
 scenarios="$dir/scenarios"
 # What no step reads, so that a commit changing only these passes as the last one did:
-# docs, the tests, CI, and the checks, which are this checkout's anyway.
-unused=$'\t(README\\.md|LICENSE|tests/.*|\\.github/.*|\\.gitignore|\\.pre-commit-config\\.yaml|scripts/e2e.*)$'
+# docs, the embeds pasted on other sites, the tests, CI,
+# and the checks, which are this checkout's anyway.
+unused=$'\t(README\\.md|LICENSE|embed/.*|tests/.*|\\.github/.*|\\.gitignore|\\.pre-commit-config\\.yaml|scripts/e2e.*)$'
 
 # What a pass of commit `$1` is recorded by, for `$2` (`pipeline` or `browser`):
 # the files in its tree the pipeline and page are made from, the stations,
