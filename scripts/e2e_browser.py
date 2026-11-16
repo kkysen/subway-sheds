@@ -23,8 +23,10 @@ TIMEOUT_MS = 60_000
 QUIET_MS = 2_000
 
 
-# The main page, and QueensLink's, the same as it for now (see `web/vite.config.ts`).
-PAGES = ["", "queenslink/"]
+# The main page, and QueensLink's (see `web/vite.config.ts`),
+# each by the name of the inputs for what the map shows, which only it has:
+# the measure and projects on the main page, and one choice of view on QueensLink's.
+PAGES = {"": "measure", "queenslink/": "view"}
 
 
 def free_port() -> int:
@@ -62,7 +64,11 @@ def main() -> None:
                 break
             except OSError:
                 time.sleep(0.1)
-        errors = [e for page in PAGES for e in check(f"{url}{page}#{station}", station)]
+        errors = [
+            e
+            for page, control in PAGES.items()
+            for e in check(f"{url}{page}#{station}", station, control)
+        ]
     finally:
         os.killpg(server.pid, signal.SIGTERM)
         server.wait()
@@ -77,7 +83,7 @@ def main() -> None:
     sys.exit(1 if errors else 0)
 
 
-def check(url: str, station: str) -> list[str]:
+def check(url: str, station: str, control: str) -> list[str]:
     errors: list[str] = []
     routes: list[int] = []
     with sync_playwright() as p:
@@ -100,6 +106,10 @@ def check(url: str, station: str) -> list[str]:
         # Opened for the first time, as in a new profile, so the explainer's shown.
         if not page.evaluate("document.querySelector('#explainer').open"):
             errors.append("didn't show the explainer on first opening the page")
+        for name in set(PAGES.values()):
+            has = page.locator(f"input[name={name}]").count() > 0
+            if has != (name == control):
+                errors.append(f"{'has' if has else 'has no'} {name} inputs on {url}")
         browser.close()
     if routes != [200]:
         errors.append(f"loaded {station}'s routes with {routes or 'no'} responses, not one 200")

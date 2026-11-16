@@ -28,6 +28,7 @@
           <p id="time-info" class="info">Each is the median trip, leaving every minute of the hour around it:
             7:30 to 8:30 am, or 11:30 am to 12:30 pm, so that waiting for trains counts as it does for someone who doesn't time it.</p>
         </fieldset>
+        <!-- page: main -->
         <fieldset class="section">
           <legend>Minutes</legend>
           <div class="segmented measure">
@@ -40,6 +41,18 @@
             <label title="QueensLink"><input type="checkbox" name="with" value="queenslink" checked aria-label="QueensLink" /><img class="logo" src="/queenslink-favicon-192.png" alt="" /></label>
           </div>
         </fieldset>
+        <!-- /page -->
+        <!-- page: queenslink -->
+        <!-- One choice of the only views there are here, for the time with QueensLink and without it, and what it saves. -->
+        <fieldset class="section">
+          <legend>Time</legend>
+          <div class="segmented view">
+            <label><input type="radio" name="view" value="baseline" /> Now</label>
+            <label title="With QueensLink"><input type="radio" name="view" value="queenslink" checked aria-label="With QueensLink" /> With <img class="logo" src="/queenslink-favicon-192.png" alt="" /></label>
+            <label><input type="radio" name="view" value="saved" /> Saved</label>
+          </div>
+        </fieldset>
+        <!-- /page -->
         <fieldset class="section speed">
           <legend>Walking</legend>
           <input type="range" name="walking_speed_mph" min="1" max="5" step="0.25" value="3" aria-label="Walking speed out of stations, in miles an hour" />
@@ -96,9 +109,16 @@
               <li><strong>When</strong> lets you choose between <span class="button">Weekday @ 8 am</span>
                 or <span class="button">Saturday @ 12 pm</span> (assuming no weekend closures).
                 It uses the median of travel times for all departures in the 30 minutes before and after the selected time.</li>
+              <!-- page: main -->
               <li><strong>Minutes</strong> lets you switch between showing the time with or without QueensLink
                 (toggle the <span class="button"><img class="logo" src="/queenslink-favicon-192.png" alt="QueensLink" /></span>)
                 or show the time saved with QueensLink, as well as the route with and route without QueensLink.</li>
+              <!-- /page -->
+              <!-- page: queenslink -->
+              <li><strong>Time</strong> lets you switch between showing the time <span class="button">Now</span>,
+                the time <span class="button">With <img class="logo" src="/queenslink-favicon-192.png" alt="QueensLink" /></span> QueensLink,
+                or the time <span class="button">Saved</span> with QueensLink, as well as the route with and route without QueensLink.</li>
+              <!-- /page -->
               <li><strong>Walking</strong> lets you set the walking speed from the final station to the destination.</li>
               <li><span class="button">$3</span> and <span class="button">$∞</span> let you choose between a single- and a multi-fare ride,
                 assuming you've hit your fare cap.</li>

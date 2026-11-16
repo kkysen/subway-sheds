@@ -42,6 +42,10 @@ setWorkerUrl(workerUrl);
 type Scenario = "baseline" | "queenslink";
 type View = Scenario | "saved";
 
+function isView(value: unknown): value is View {
+  return value === "baseline" || value === "queenslink" || value === "saved";
+}
+
 // What the minutes are: the time from the station, or the time saved by the projects added.
 const measures = ["time", "saved"] as const;
 type Measure = (typeof measures)[number];
@@ -491,9 +495,12 @@ function element<T extends Element>(selector: string, type: new () => T): T {
 }
 
 const controls = element("#controls", HTMLFormElement);
+// On the main page, the measure and a checkbox for each project that can be added,
+// by its name, as `projects` lists them.
 const measureInputs = controls.elements.namedItem("measure");
-// A checkbox for each project that can be added, by its name, as `projects` lists them.
 const projectInputs = [...controls.querySelectorAll<HTMLInputElement>("input[name=with]")];
+// On QueensLink's page, one choice of the views in their place, the only three that mean anything there.
+const viewInputs = controls.elements.namedItem("view");
 const stationName = element("#station-name", HTMLElement);
 const dayName = element("#day-name", HTMLElement);
 const speedValue = element("#speed-value", HTMLOutputElement);
@@ -537,6 +544,8 @@ fullMap.hidden = window.top === window.self;
 
 // The controls kept across reloads and in links, by their inputs' name.
 // `with` lists the projects added, by name, joined by commas, empty for none.
+// On QueensLink's page, its view is kept as the measure and projects it is,
+// so that links and what's kept work the same on either page.
 const savedControls = ["day", "measure", "with", "walking_speed_mph", "fare"] as const;
 
 // Prefixed, since every page on kkysen.github.io shares the same storage.
@@ -561,17 +570,19 @@ function savedValue(name: string): string | null {
 // From the link if it says, else as they were last left, else as they start.
 function restoreControls(): void {
   const { params } = parseHash();
+  const linked = (name: string): string | null => params.get(name) ?? savedValue(name);
+  // Together, as either can mean the other's no longer possible.
+  const measure = measures.find((measure) => measure === linked("measure"));
+  const added = linked("with")?.split(",");
+  setControls(
+    measure ?? currentMeasure(),
+    added === undefined ? currentProjects() : projects.filter((project) => added.includes(project)),
+  );
   for (const name of savedControls) {
-    const value = params.get(name) ?? savedValue(name);
+    const value = linked(name);
     const inputs = controls.elements.namedItem(name);
-    if (name === "with") {
-      if (value !== null) {
-        const added = value.split(",");
-        setControls(
-          currentMeasure(),
-          projects.filter((project) => added.includes(project)),
-        );
-      }
+    if (name === "measure" || name === "with") {
+      // Restored above.
     } else if (value !== null && inputs instanceof RadioNodeList) {
       // Checks the radio with that value, if there still is one.
       inputs.value = value;
@@ -582,7 +593,10 @@ function restoreControls(): void {
 }
 
 function controlValue(data: FormData, name: (typeof savedControls)[number]): string {
-  return name === "with" ? data.getAll(name).join(",") : String(data.get(name));
+  if (name === "measure") {
+    return currentMeasure();
+  }
+  return name === "with" ? currentProjects().join(",") : String(data.get(name));
 }
 
 function saveControls(): void {
@@ -785,7 +799,23 @@ function currentFare(): Fare {
   return fare;
 }
 
+// The view chosen on QueensLink's page, or `undefined` on the main page, which has none to choose.
+function chosenView(): View | undefined {
+  if (!(viewInputs instanceof RadioNodeList)) {
+    return undefined;
+  }
+  const view = viewInputs.value;
+  if (!isView(view)) {
+    throw new Error(`unknown view ${view}`);
+  }
+  return view;
+}
+
 function currentMeasure(): Measure {
+  const view = chosenView();
+  if (view !== undefined) {
+    return view === "saved" ? "saved" : "time";
+  }
   const value = measureInputs instanceof RadioNodeList ? measureInputs.value : undefined;
   const measure = measures.find((measure) => measure === value);
   if (measure === undefined) {
@@ -795,6 +825,10 @@ function currentMeasure(): Measure {
 }
 
 function currentProjects(): Project[] {
+  const view = chosenView();
+  if (view !== undefined) {
+    return view === "baseline" ? [] : ["queenslink"];
+  }
   return projects.filter((project) =>
     projectInputs.some((input) => input.value === project && input.checked),
   );
@@ -808,6 +842,9 @@ function setControls(measure: Measure, added: readonly Project[]): void {
   }
   for (const input of projectInputs) {
     input.checked = added.some((project) => project === input.value);
+  }
+  if (viewInputs instanceof RadioNodeList) {
+    viewInputs.value = !added.includes("queenslink") ? "baseline" : saved ? "saved" : "queenslink";
   }
 }
 

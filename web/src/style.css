@@ -256,8 +256,14 @@ body,
   white-space: nowrap;
 }
 
-#controls .projects .logo {
+#controls .projects .logo,
+#controls .view .logo {
   height: 1.2em;
+}
+
+/* QueensLink's page's "With" and logo apart, as a flex label drops the space between them. */
+#controls .segmented.view label {
+  column-gap: 0.3em;
 }
 
 /* The walking speed's slider as wide as browsers draw it, but narrower where the row's short of room,
