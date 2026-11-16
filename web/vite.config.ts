@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { defineConfig } from "vite";
 
 // The pages beside the main page, each its own copy of it, as GitHub Pages serves only files.
-// QueensLink's, the same as the main page for now, for thequeenslink.org to embed.
+// QueensLink's, the same as the main page for now, for queenslink.org to embed.
 // Its scripts, styles, and data are all under the base path, so the same page works from there.
 const pages = ["queenslink"];
 

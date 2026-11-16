@@ -532,7 +532,7 @@ for (const button of controls.querySelectorAll<HTMLButtonElement>(".info-button"
   });
 }
 
-// Only when embedded, as on thequeenslink.org, since it's already the full map otherwise.
+// Only when embedded, as on queenslink.org, since it's already the full map otherwise.
 fullMap.hidden = window.top === window.self;
 
 // The controls kept across reloads and in links, by their inputs' name.
@@ -657,7 +657,7 @@ controls.classList.toggle("station-key-hidden", savedValue("station-key") === "h
 // until "Don't show this again", which is kept across reloads as the controls are.
 // Closed any other way, it's only closed for now.
 const explainer = element("#explainer", HTMLDialogElement);
-// Embedded, as on thequeenslink.org, where the browser can block or clear the page's own storage,
+// Embedded, as on queenslink.org, where the browser can block or clear the page's own storage,
 // so it's also kept by the site embedding it, if that has `public/embed.js`, in that site's own storage.
 const embedder = window.parent === window ? undefined : window.parent;
 // What's said between the page and `embed.js`: asking whether the explainer was dismissed, and saying so.

@@ -1,6 +1,6 @@
 # subway-sheds
 
-How far you can get on the NYC subway in a given time, with and without [QueensLink](https://thequeenslink.org).
+How far you can get on the NYC subway in a given time, with and without [QueensLink](https://queenslink.org).
 
 Inspired by Chris Whong's [`nyc-subway-isochrones`](https://github.com/chriswhong/nyc-subway-isochrones),
 but routed over the real street network instead of buffering stations by leftover walking time,
@@ -333,7 +333,7 @@ and the farther ones only once the slider's faster than 3 mph.
 
 ### Embedding
 
-The page can be embedded in an `<iframe>`, as on thequeenslink.org,
+The page can be embedded in an `<iframe>`, as on queenslink.org,
 which embeds QueensLink's page, at `queenslink/`,
 the same as the main page for now (see `web/vite.config.ts`).
 It explains itself when it's first opened, until "Don't show this again",
