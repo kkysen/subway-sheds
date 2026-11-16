@@ -145,3 +145,18 @@ for a weekday, a Saturday, a Sunday, and a year of them:
   with the source and year given beside it.
 
 Show them on the page or in the explainer per scenario, beside the time saved.
+
+## Riders who save or lose time, from the OD data
+
+Weight each scenario's station-to-station times by MTA's subway origin-destination ridership estimates,
+as `mta-od-data` reads them, by complex, day, and hour, to compute:
+
+- How many riders save time, and how many lose time, each beyond some threshold, e.g. 1 min.
+- The rider-minutes saved per ride, over all rides, and over only those that change.
+- The same by origin and destination, to show where the gains and losses are.
+
+Use the OD hours the routing windows cover, 8 am on weekdays and 12 pm on Saturdays,
+or route more hours to cover the whole day.
+Rides only start and end at existing stations in the OD data,
+so riders new to QueensLink's stations aren't counted;
+say so beside the numbers rather than estimate them.
