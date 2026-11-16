@@ -72,7 +72,7 @@ const shortDayNames: Record<Day, readonly string[]> = {
 
 // Each project's name, for its logo's alt text, and its logo, which says it in the summary.
 const projectNames: Record<Project, { readonly name: string; readonly logo: string }> = {
-  queenslink: { name: "QueensLink", logo: `${import.meta.env.BASE_URL}favicon-192.png` },
+  queenslink: { name: "QueensLink", logo: `${import.meta.env.BASE_URL}queenslink-favicon-192.png` },
 };
 
 function projectLogo(project: Project): HTMLImageElement {
@@ -1796,7 +1796,7 @@ function journeyLine(
     } else {
       const logo = document.createElement("img");
       logo.className = "journey-logo";
-      logo.src = `${import.meta.env.BASE_URL}favicon-192.png`;
+      logo.src = `${import.meta.env.BASE_URL}queenslink-favicon-192.png`;
       logo.alt = "with QueensLink";
       scenario.append(logo);
     }
