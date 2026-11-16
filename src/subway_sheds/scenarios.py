@@ -4,6 +4,7 @@ the baseline, with the 7 as it'll run once the Flushing Line's work is done,
 and QueensLink, adding the QueensLink M and running the G on to Forest Hills.
 """
 
+import bisect
 import copy
 import csv
 import datetime
@@ -18,6 +19,8 @@ lazy from shapely import LineString, STRtree
 
 from subway_sheds import paths, sources
 from subway_sheds.timetable import (
+    CBTC_MIN_HEADWAY,
+    MIN_HEADWAY,
     STEP,
     Call,
     ServiceDay,
@@ -745,7 +748,7 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
     _drop_shuttle(timetable, m)
     held.update(fit.fit_m(timetable, m, cbtc, fastest))
     held.update(_g_to_forest_hills(timetable, cbtc))
-    _night_before(timetable)
+    held.update(_night_conflicts(timetable, _night_before(timetable), cbtc))
     return held
 
 
@@ -753,17 +756,19 @@ def _queenslink(timetable: Timetable) -> Counter[tuple[str, int | None]]:
 DAY = 24 * 3600
 
 
-def _night_before(timetable: Timetable) -> None:
+def _night_before(timetable: Timetable) -> list[Trip]:
     """
     Run each trip run on to before midnight, as the Ms just after it from Rockaway are,
     the night before instead, as GTFS has no times before its day's:
     past 24:00, on a service of its own running each night before its own service runs,
     holidays and all, as `night-before-` its own, in lowercase,
     so that `ServiceDay.of` doesn't take it for its own.
+    Those trips.
     """
     feed = timetable.feed
     rows = {t["trip_id"]: t for t in feed.rows["trips.txt"]}
     before: dict[str, str] = {}
+    out = []
     for trip in timetable.trips.values():
         if trip.calls[0].arrival >= 0:
             continue
@@ -771,6 +776,7 @@ def _night_before(timetable: Timetable) -> None:
         shift(trip.calls, DAY)
         trip.service = service
         rows[trip.id]["service_id"] = service
+        out.append(trip)
     for service, night_before in before.items():
         for date in sorted(gtfs.service_dates(feed, service)):
             feed.rows["calendar_dates.txt"].append(
@@ -780,6 +786,72 @@ def _night_before(timetable: Timetable) -> None:
                     "exception_type": "1",
                 }
             )
+    return out
+
+
+# What `_night_conflicts` counts, after the route.
+TOO_NEAR = "too near the night before's trains"
+
+
+def _night_conflicts(
+    timetable: Timetable, night: list[Trip], cbtc: set[str]
+) -> Counter[tuple[str, int | None]]:
+    """
+    How many of the trains really running around `night`'s trips, those run the night before,
+    each of them leaves a platform less than the minimum headway from, by route,
+    as fitting them counted only the trains of their own service, not that night's:
+    those of the services running that night,
+    and the day before's past 24:00 and the day after's before it,
+    on the same track, as passing the same station before or after it there,
+    and at the platform the J's letters along Broadway name, as `fit` has them.
+    """
+    if not night:
+        return Counter()
+    feed = timetable.feed
+    dates = {s: gtfs.service_dates(feed, s) for s in {t.service for t in timetable.trips.values()}}
+    running: defaultdict[datetime.date, set[str]] = defaultdict(set)
+    for service, on in dates.items():
+        for date in on:
+            running[date].add(service)
+    # Every train at each platform, by service, as its departure, trip, and stations either side.
+    every: defaultdict[tuple[str, str], list[tuple[int, str, set[str]]]] = defaultdict(list)
+    for trip in timetable.trips.values():
+        stations = trip.stations()
+        for i, call in enumerate(trip.calls):
+            either = set(stations[max(i - 1, 0) : i]) | set(stations[i + 1 : i + 2])
+            every[trip.service, fit._phys(trip, call.stop)].append(
+                (call.departure, trip.id, either)
+            )
+    for trains in every.values():
+        trains.sort(key=lambda t: t[0])
+    out: Counter[tuple[str, int | None]] = Counter()
+    for trip in night:
+        # Each night it runs that differs by what else runs then, once.
+        nights = {
+            tuple(
+                frozenset(running[date + datetime.timedelta(days=d)] - {trip.service})
+                for d in (-1, 0, 1)
+            )
+            for date in dates[trip.service]
+        }
+        stations = trip.stations()
+        near: set[str] = set()
+        for around in nights:
+            for i, call in enumerate(trip.calls):
+                need = CBTC_MIN_HEADWAY if call.stop[:-1] in cbtc else MIN_HEADWAY
+                either = set(stations[max(i - 1, 0) : i]) | set(stations[i + 1 : i + 2])
+                stop = fit._phys(trip, call.stop)
+                # The day before's, and the day after's, as their times run on from this day's.
+                for services, offset in zip(around, (DAY, 0, -DAY), strict=True):
+                    for service in services:
+                        trains = every.get((service, stop), [])
+                        at = call.departure + offset
+                        lo = bisect.bisect_right(trains, at - need, key=lambda t: t[0])
+                        hi = bisect.bisect_left(trains, at + need, key=lambda t: t[0])
+                        near.update(other for _, other, theirs in trains[lo:hi] if either & theirs)
+        if near:
+            out[f"{trip.route} {TOO_NEAR}", None] += len(near)
+    return out
 
 
 NAMES = {
@@ -972,6 +1044,8 @@ def _count(
 def _wait(where: str, waited: int | None) -> str:
     if where == fit.NOT_PROVEN:
         return "windows"
+    if where.endswith(TOO_NEAR):
+        return "trains"
     if waited is None:
         return "no fit"
     if where.endswith(("moved", "nudged")):
