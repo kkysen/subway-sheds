@@ -28,39 +28,12 @@ in the `route` crate here (`route/`), built into the `subway_sheds._route` exten
     then along the A to Broad Channel and on to Rockaway Park,
     instead of on to Forest Hills.
     It runs its whole route at all hours, with no shuttle between Middle Village and Myrtle Av.
-    On weekends, it runs its weekday route, rather than only between Middle Village and Essex St,
-    timed as the weekday M at midday, and as often as the F,
-    leaving 23 St halfway between two Fs, so it alternates with the F and R.
-    On weekdays, MTA's own Ms run as they do, and before and after them,
-    late at night and early in the morning, Ms run halfway between two Fs too.
-    The new track's times are simulated (see below), and the A's and the Rockaway Park shuttle's are MTA's,
-    the A's as it runs in the same hour, as MTA allows it up to 4 minutes more some hours.
   - With the M running on weekends, the F runs via 53 St every day, as on weekdays, rather than via 63 St.
   - The G runs on past Court Sq on weekdays along the Queens Blvd local to Forest Hills, timed as the R.
   - The A's few rush hour trips to Rockaway Park run to Far Rockaway,
     and the Rockaway Park shuttle doesn't run, as the M always does.
 
-  Every train added or moved runs at least 90 s from others on the same track, as MTA's own trains do,
-  or 60 s under CBTC, as if MTA's current projects are done:
-  the whole G, the E but the Archer Av branch, the F but W 8 St to Coney Island,
-  the A from 59 St south, the M from Essex St on to Queens, and QueensLink's new track,
-  or else counts as a conflict.
-  The M is fitted with CP-SAT, by `src/subway_sheds/fit.py`, two hours at a time:
-  each M runs up to 3 minutes earlier or later as a whole,
-  and waits up to a minute, or makes up 30 s where it has time to spare,
-  at Myrtle Av, Essex St, 21 St-Queensbridge, and Liberty Av,
-  and the J, Z, F, R, A and E trains it shares track with run up to 60 s earlier or later,
-  for the least cost, with a wait costing most,
-  and gaps shorter than even costing too:
-  between trains on each shared track, between each M and the M before it,
-  where it also keeps at least 80% of its scheduled gap,
-  and between each train nudged and its own route's trains before and after it.
-  The F and G wait for a gap if they have to, for at most a minute,
-  the F at Jackson Hts and 47-50 Sts, and the G at Court Sq.
-  Where that isn't enough, the whole trip runs up to 5 minutes earlier or later instead,
-  and if that's still not enough, the trains in its way run 30 s or 60 s earlier or later,
-  if that keeps them clear of every other train;
-  the G runs on only if it fits, and `scenarios` says how far they move and how long they wait.
+  How it's scheduled is in [QueensLink schedule](#queenslink-schedule) below.
   The feeds are made by `scenarios` and not committed.
 - **Streets**: what's walked on (streets, sidewalks, footpaths, steps, and platforms)
   within NYC and a 2 km margin,
@@ -111,6 +84,198 @@ about 190 m across, on the Wednesday and the Saturday with the most trips schedu
 Cells more than 250 m from anything to walk on, like marsh islands in Jamaica Bay, are left out.
 Every station is routed to as well, to say how far it is itself,
 rather than its cell's time, which counts walking to the cell's middle.
+
+### QueensLink schedule
+
+The QueensLink feed is the baseline with QueensLink's changes added:
+MTA's current schedule, but for the full 7X being restored.
+`_queenslink` in `src/subway_sheds/scenarios.py` makes it, in this order:
+
+1. The A's rush hour trips to Rockaway Park are run to Far Rockaway instead.
+2. The F's weekend trips are run via 53 St, and fitted (see [the F and G](#the-f-and-g)).
+3. The M is rerouted and added to, as below.
+4. The Rockaway Park shuttle's trips are dropped while the M runs there.
+5. The M is fitted with CP-SAT (see [fitting the M](#fitting-the-m)).
+6. The G's weekday trips are extended to Forest Hills, and fitted.
+7. Trips now leaving before midnight are run the night before (see [past midnight](#past-midnight)).
+
+`scenarios` prints how far trips of each route were moved, how long they wait,
+and how many didn't fit or are in conflict.
+
+#### The M
+
+- **Weekdays during the day**, MTA's own M trips keep their times
+  (but for how the fit moves them, at most a minute in the current feed),
+  running from 63 Dr-Rego Park over the new track and along the A to Rockaway Park.
+- **At other times**, the M runs its full route as frequent as the F:
+  each new M leaves 23 St (6 Av) halfway between two Fs, so it alternates with the F and R.
+  On weekdays, those fill in around MTA's own Ms,
+  from midnight to about 6 am and from about 9 pm on.
+  On weekends, they run the weekday route, rather than only between Middle Village and Essex St,
+  timed as the weekday M at midday.
+- **Along the A**, from Liberty Av to Broad Channel, it's timed as the A in the same hour,
+  as MTA allows the A up to 4 minutes more some hours.
+
+Downtown trains per hour at 23 St (6 Av), the F / today's M / QueensLink's M:
+
+| Hour | Weekday | Saturday |
+|---|---|---|
+| Midnight to 5 am | 3–4 / 0 / 2–3 | 3–4 / 0 / 3 |
+| 5 am | 4 / 2 / 5 | 4 / 0 / 3 |
+| 6 am to 8 pm | 8–15 / 5–9 / the same as today | 4–5 / 0 / 4–5 |
+| 9 pm | 7 / 2 / 7 | 5 / 0 / 5 |
+| 10 to 11 pm | 6 / 0 / 5–6 | 5 / 0 / 4–5 |
+
+Where the new Ms run, they match the F within one an hour;
+an hour has one fewer only for which side of the hour a train falls on.
+
+Franklin Tang's earlier QueensLink feed, routed here before `ec1eeca`,
+ran the M at flat frequencies instead.
+Trains per hour at Metropolitan Av-Parkside on weekdays, both directions:
+
+| Hours | Franklin's | Ours (MTA's own Ms) |
+|---|---|---|
+| 5 to 6:30 am | 5 (every 12 min) | 3–5 / 5–6 |
+| 6:30 to 9:30 am | 9 (every 6:40) | 6–9 / 7–10 |
+| 9:30 am to 3:30 pm | 6 (every 10 min) | 7–8 |
+| 3:30 to 8:30 pm | 9 (every 6:40) | 7–9 / 6–8 |
+| 8:30 pm to midnight | 6 (every 10 min) | 6–8 / 5–6 |
+| Midnight to 5 am | 3 (every 20 min) | one between each two Fs |
+
+So ours runs a little less often at rush hours, as MTA's peak M runs every 7 to 8 minutes,
+and more often at midday.
+His weekend M ran every 12 minutes at the morning and evening peaks and every 15 otherwise;
+ours runs as frequent as the F.
+We keep MTA's own trips because they're what the M actually runs today,
+and the fit then only has to fit them, not invent new ones.
+
+#### Run times on the new track
+
+The new track's times are simulated from its curves,
+in [`data/queenslink/run_times.csv`](data/queenslink/run_times.csv), as under **QueensLink's new track** above:
+trains accelerate and brake as R188s were recorded doing under CBTC on the elevated 7,
+and each run is padded as MTA pads the Queens Blvd local's, which also runs under CBTC.
+The M runs R160s, not R188s,
+and a fit to an R160's recorded acceleration and braking was tried, from a ride on the M,
+but these stay R188 curves until there's a recording of an F on lower Culver, now under CBTC,
+as the M would run under CBTC on the new track.
+
+#### Keeping trains apart
+
+Every train added or moved runs at least 90 s from others on the same track, as MTA's own trains do,
+or 60 s under CBTC, as if MTA's current projects are done:
+the whole G, the E but the Archer Av branch, the F but W 8 St to Coney Island,
+the A from 59 St south, the M from Essex St on to Queens, and QueensLink's new track,
+or else counts as a conflict.
+Two of MTA's own trains can stay as near as MTA's schedule already runs them, where that's nearer.
+
+`scenarios` fails, writing no QueensLink feed, if any train isn't kept apart from others:
+an F via 53 St that doesn't fit, an M in conflict,
+or a train run the night before too near that night's trains.
+A G that doesn't fit only counts, as it keeps its current run.
+
+#### Fitting the M
+
+The M is fitted by a constraint satisfiability (CP-SAT) solver,
+OR-Tools' CP-SAT through `route/src/sat.rs`, from `src/subway_sheds/fit.py`.
+
+The tracks the M shares are:
+the Broadway local from Myrtle Av to Marcy Av, the Williamsburg Bridge, the 6 Av local, 63 St,
+the Queens Blvd local, and the Rockaway Beach Branch north and south of the new track.
+
+What it may change, in steps of 30 s:
+
+- Each M runs up to 3 minutes earlier or later as a whole,
+  and at each of its junctions, Myrtle Av, Essex St, 21 St-Queensbridge, and Liberty Av,
+  waits up to a minute, or makes up 30 s,
+  only where it runs slower than any train runs that stretch, or dwells there.
+  A wait moves the rest of the trip after it toward Rockaway Park,
+  and the part before it toward Middle Village.
+- Each J, Z, F, R, A, and E train on a track the M shares
+  is nudged up to 60 s earlier or later as a whole.
+- Every other train stays as it is.
+
+What must hold, or else counts as a conflict, costing far more than anything else:
+
+- Each pair of trains on a shared track that could come near each other
+  runs in one order, not overtaking between the platforms they share,
+  and stays the minimum headway apart at each of them.
+  Two of MTA's own trains are kept no nearer than MTA has them, where that's under the minimum,
+  and where MTA's schedule has one pass the other, as the F passes the R around Jackson Hts late on weekends,
+  they keep MTA's order at each platform.
+- An M toward Middle Village crosses the Manhattan-bound J and Z tracks at grade past Myrtle Av,
+  so it stays 90 s from each J and Z there.
+- Each train nudged stays clear of every other train at every platform it stops at,
+  those coming from the same station before it or going on to the same one after,
+  in the same order, by the minimum headway, or by as much as MTA's own schedule does where that's less.
+
+What must always hold:
+
+- On the 6 Av and Queens Blvd locals, at most 4 trains leave each platform in any 8 minutes,
+  or as many as MTA's own schedule already does, where that's more.
+- The Ms in each direction keep their order,
+  and at each platform at least the minimum headway and 80% of their scheduled gap to the M before.
+
+What it costs, for each 30 s:
+
+| What | Cost |
+|---|---|
+| An M moved as a whole | 1 |
+| An M waiting at a junction | 4 |
+| An M making up time at a junction | 3 |
+| Another train nudged | 4 |
+| Two trains on a shared track short of an even gap | 2 |
+| An M short of its scheduled gap to the M before, at a junction or the platform before it | 3 |
+| A train nudged short of MTA's gap to its own route's trains before and after it | 2 |
+| A conflict | 1000, once |
+
+A pair's even gap is an hour over how many trains leave the first platform they share that hour,
+at most 10 minutes, and at most three minimum headways but on the 6 Av and Queens Blvd locals;
+two of MTA's own trains only count for being nearer than MTA has them.
+Among schedules costing the same, it picks by a weight hashed from each trip's ID,
+so that solving again picks the same one.
+
+It's solved two hours at a time, an hour apart, for at most 30 s each on 8 workers,
+keeping each window's trains first on a shared track in its first hour,
+and the trains kept apart from those Ms,
+and solving the rest again with the next hour in view.
+`scenarios` counts the windows not proven best in the time,
+whose schedules may differ from one solve to the next.
+
+#### The F and G
+
+The F's weekend trips via 53 St and the G's extended trips are fitted one at a time, in order,
+each among the trains already there, by `_fit` in `src/subway_sheds/scenarios.py`:
+
+1. It waits for a gap where it joins other trains, for at most a minute:
+   the F at Jackson Hts and 47-50 Sts, and the G at Court Sq.
+2. Where that isn't enough, the whole trip runs up to 5 minutes earlier or later, the least it can.
+3. For the G, where that's still not enough,
+   the trains in its way run 30 s or 60 s earlier or later,
+   if that keeps them clear of every other train.
+
+The F is timed as the E through 53 St, and must fit (see [keeping trains apart](#keeping-trains-apart)).
+The G is timed as the R along the Queens Blvd local, and runs on only where it fits;
+where it doesn't, it keeps its current run, ending at Court Sq.
+In the current feed, that's 2 of the 298 weekday Gs,
+those leaving Court Sq toward Brooklyn at 7:44 and 8:21 am,
+as the Rs, Ms, and other Gs toward Manhattan on the Queens Blvd local then leave them no gap.
+
+#### Past midnight
+
+GTFS has no times before a service day's start,
+so a trip now leaving before midnight,
+as the 3 Ms leaving Rockaway Park just before midnight,
+and the G from Forest Hills that reaches Court Sq at 12:14 am on weekdays,
+is run the night before instead:
+past 24:00, on a service of its own, `night-before-` its own,
+running each night before its own service runs.
+The Ms are fitted only among their own service's trains,
+and the G also among the trains of every service running the night before any day it runs, from 9 pm,
+as on holidays a Saturday schedule runs some nights before a weekday's.
+So `_night_conflicts` then counts the trains running that night each comes nearer than the minimum headway to,
+on the same track:
+the services running that night, and the next morning's trains before 24:00.
 
 ## Usage
 
