@@ -347,9 +347,9 @@ A site that explains the map itself can embed it with `?explainer=off` instead,
 as in `https://kkysen.github.io/subway-sheds/queenslink/?explainer=off`,
 which never shows the explainer unless its "?" is clicked.
 
-`embed/` has the embeds to paste, each a fragment of HTML, not a whole page:
+`embed/queenslink/` has the embeds of QueensLink's page to paste, each a fragment of HTML, not a whole page:
 
-- [`embed/generic.partial.html`](embed/generic.partial.html), for any site:
+- [`embed/queenslink/generic.partial.html`](embed/queenslink/generic.partial.html), for any site:
   paste it where the map should go, as it is.
   It's the `<iframe>`, 80% of the window's height and as wide as where it's pasted, and `embed.js`:
 
@@ -359,7 +359,7 @@ which never shows the explainer unless its "?" is clicked.
   <script src="https://kkysen.github.io/subway-sheds/embed.js" defer></script>
   ```
 
-- [`embed/wordpress.partial.html`](embed/wordpress.partial.html), queenslink.org's own,
+- [`embed/queenslink/wordpress.partial.html`](embed/queenslink/wordpress.partial.html), queenslink.org's own,
   for its WordPress theme:
   the map the window's full width, from below the theme's fixed header to the window's bottom.
   To change it, edit it here, then paste it over the WPBakery "Raw HTML" block on WordPress page 3504
