@@ -132,7 +132,7 @@ so the explainer's "The (G) is extended to Forest Hills on weekdays" holds for a
 ## Additional operating costs per scenario
 
 For each scenario, compute what it costs to run beyond the baseline, from its feed,
-for a weekday, a Saturday, a Sunday, and a year of them:
+over the whole of a weekday, a Saturday, and a Sunday, a week of them, and a year:
 
 - Train-hours and car-hours in service, from each trip's first departure to its last arrival,
   with each route's cars per train.
@@ -168,8 +168,9 @@ as `mta-od-data` reads them, by complex, day, and hour, to compute:
 - The rider-minutes saved per ride, over all rides, and over only those that change.
 - The same by origin and destination, to show where the gains and losses are.
 
-Use the OD hours the routing windows cover, 8 am on weekdays and 12 pm on Saturdays,
-or route more hours to cover the whole day.
+Total them over the whole day and the whole week, not just the map's hours:
+route every hour of a weekday, a Saturday, and a Sunday, as the OD data has them,
+rather than only the map's 8 am on weekdays and 12 pm on Saturdays.
 Rides only start and end at existing stations in the OD data,
 so riders new to QueensLink's stations aren't counted;
 say so beside the numbers rather than estimate them.
