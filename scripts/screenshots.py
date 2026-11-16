@@ -1,4 +1,4 @@
-"""Generate QueensLink's three Steinway St screenshots into the built site."""
+"""Generate Steinway St screenshots for every map page in the built site."""
 
 import os
 import signal
@@ -14,7 +14,7 @@ from playwright.sync_api import ViewportSize, sync_playwright
 
 STATION = "G19"  # Steinway St
 VIEWPORT: ViewportSize = {"width": 1024, "height": 813}
-PIXEL_RATIO = 3
+PIXEL_RATIOS = (1, 2, 3)
 TIMEOUT_MS = 60_000
 QUIET_MS = 2_000
 VIEWS = {
@@ -97,31 +97,36 @@ def main() -> None:
             browser = playwright.chromium.launch(
                 args=["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
             )
-            page = browser.new_page(
-                viewport=VIEWPORT,
-                device_scale_factor=PIXEL_RATIO,
-                reduced_motion="reduce",
-            )
-            for page_name, suffix in PAGES.items():
-                page_url = f"{site_url}{suffix}"
-                output = output_root / page_name / "screenshots"
-                output.mkdir(parents=True, exist_ok=True)
-                for filename, view in VIEWS.items():
-                    page.goto(
-                        screenshot_url(page_url, view),
-                        wait_until="networkidle",
-                        timeout=TIMEOUT_MS,
-                    )
-                    page.get_by_text("Steinway St", exact=True).first.wait_for(timeout=TIMEOUT_MS)
-                    page.wait_for_function(
-                        "document.querySelector('#summary-status').textContent.includes("
-                        "'Steinway St')",
-                        timeout=TIMEOUT_MS,
-                    )
-                    page.wait_for_timeout(QUIET_MS)
-                    path = output / f"steinway-st-{filename}.png"
-                    page.screenshot(path=str(path))
-                    print(path)
+            for pixel_ratio in PIXEL_RATIOS:
+                context = browser.new_context(
+                    viewport=VIEWPORT,
+                    device_scale_factor=pixel_ratio,
+                    reduced_motion="reduce",
+                )
+                page = context.new_page()
+                for page_name, suffix in PAGES.items():
+                    page_url = f"{site_url}{suffix}"
+                    output = output_root / page_name / "screenshots"
+                    output.mkdir(parents=True, exist_ok=True)
+                    for filename, view in VIEWS.items():
+                        page.goto(
+                            screenshot_url(page_url, view),
+                            wait_until="networkidle",
+                            timeout=TIMEOUT_MS,
+                        )
+                        page.get_by_text("Steinway St", exact=True).first.wait_for(
+                            timeout=TIMEOUT_MS
+                        )
+                        page.wait_for_function(
+                            "document.querySelector('#summary-status').textContent.includes("
+                            "'Steinway St')",
+                            timeout=TIMEOUT_MS,
+                        )
+                        page.wait_for_timeout(QUIET_MS)
+                        path = output / f"steinway-st-{filename}-{pixel_ratio}x.png"
+                        page.screenshot(path=str(path))
+                        print(path)
+                context.close()
             browser.close()
     finally:
         if server is not None:
