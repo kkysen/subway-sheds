@@ -136,8 +136,8 @@ uv run subway-sheds scenarios  # make both scenarios' feeds
 uv run subway-sheds walks      # walk the streets every station's walks take, and find the grid
 uv run subway-sheds route      # route every station, in both scenarios
 uv run subway-sheds export     # for the web page, into `web/public/data/`
-bun --cwd web install
-bun --cwd web run dev
+bun install --cwd web
+bun run --cwd web dev
 ```
 
 `scenarios` makes the feeds again only when the code or data they're made from changes,
