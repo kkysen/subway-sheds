@@ -137,14 +137,27 @@ for a weekday, a Saturday, a Sunday, and a year of them:
 - Train-hours and car-hours in service, from each trip's first departure to its last arrival,
   with each route's cars per train.
 - Train-miles and car-miles, along each trip's shape.
-- Peak trains in service at once, the fleet each scenario needs,
-  against the spare cars and yard space in MTA's Rail Fleet Asset Management Plan.
 - Crew hours, a train operator and a conductor per train-hour,
   but one-person operation where MTA runs it.
 - Dollars, from MTA's own cost per car-mile or per revenue-hour,
   with the source and year given beside it.
 
 Show them on the page or in the explainer per scenario, beside the time saved.
+
+## Additional fleet capital cost per scenario
+
+Separately from operating costs, compute the capital cost of the cars each scenario needs:
+
+- Peak trains in service at once per route, and so cars, with each route's cars per train,
+  plus MTA's spare ratio, against today's fleet by car class
+  in MTA's Rail Fleet Asset Management Plan (Tables 12 and 15),
+  for how many new cars are needed, if any.
+- Where those trains are stored overnight: which yard or lay-up area serves each route,
+  against each one's capacity (Tables 35 and 36),
+  for where there's room for the extra trains and where there isn't.
+- Dollars, from the unit price of MTA's latest car order,
+  with the source and year given beside it,
+  and yard expansion where there isn't room, if a cost for that can be found.
 
 ## Riders who save or lose time, from the OD data
 
