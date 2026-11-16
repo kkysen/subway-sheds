@@ -104,6 +104,11 @@ e.g. two synced MapLibre maps, one clipped to the handle, as `maplibre-gl-compar
 
 QueensLink's M runs to Rockaway Park and the A to Far Rockaway.
 Model swapping them: the M to Far Rockaway and the A to Rockaway Park.
+Paused for now.
+
+- A full swap, at all hours: every A to the Rockaways runs to Rockaway Park, none to Far Rockaway.
+- The M to Far Rockaway is straightforward, as QueensLink's M runs at least as often as the A to Far Rockaway
+  in every part of the day, weekdays and Saturdays, e.g. 7.8 vs 6.0 tph 6-10 am on weekdays.
 
 ## Diverging `/queenslink` from the main page
 
