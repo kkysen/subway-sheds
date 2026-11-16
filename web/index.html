@@ -77,43 +77,43 @@
     <dialog id="explainer" aria-labelledby="explainer-title">
       <form method="dialog" class="explainer-frame">
         <header>
-          <h2 id="explainer-title">NYC Travel Times</h2>
+          <h2 id="explainer-title">NYC Travel Time Map with <a href="https://thequeenslink.org" target="_blank" rel="noopener">QueensLink</a> <img class="logo" src="/queenslink-favicon-192.png" alt="" /></h2>
           <button type="submit" value="close" class="explainer-x" aria-label="Close">×</button>
         </header>
         <div class="explainer-body">
-          <p>How long it takes to get anywhere in New York City by subway, from any station,
-            and how much sooner <a href="https://thequeenslink.org" target="_blank" rel="noopener">QueensLink</a> would get you there.</p>
-          <section>
-            <h3>What it shows</h3>
-            <p>Pick a station, and the map colors the city by how many minutes it takes to get everywhere from there:
-              riding trains, changing between them, and walking the streets the rest of the way.</p>
-            <p>Waiting for trains counts too.
-              Each time is the median trip leaving every minute of an hour,
-              7:30 to 8:30 am on a weekday or 11:30 am to 12:30 pm on a Saturday, on the subway's own schedules,
-              as for someone who doesn't time when they leave.</p>
-          </section>
+          <p>Explore how long it takes to get anywhere in NYC by subway and walking, starting from any station,
+            and how much sooner QueensLink would get you there.
+            New QueensLink stations are shown with <span class="legend-station legend-station-new"></span>.
+            The travel time includes entering the starting station, waiting for trains, transferring,
+            exiting the final station, and walking to the destination.</p>
           <section>
             <h3>How to use it</h3>
+            <p>Click a station to start.
+              The map then colors the city in isochrones, showing how many minutes it takes to get everywhere from there.
+              If you <span class="hover">hover</span><span class="no-hover">long press</span> anywhere,
+              it will show you the route there, how long it takes, and how long each step of the journey takes.</p>
             <ul>
-              <li><strong>Click or tap a station</strong> to see travel times from it.</li>
-              <li><strong>Point at a place</strong>, or tap it on a phone, to see the quickest trip there.
-                Point at a station, or hold it on a phone, to see the trip to it.</li>
-              <li><strong>When</strong> picks a weekday morning or a Saturday midday.</li>
-              <li><strong>Time Saved</strong> shows how many minutes QueensLink saves, rather than how many it takes.</li>
-              <li><strong>Walking</strong> sets how fast you walk.
-                <strong>$3</strong> is one fare; <strong>$∞</strong> also changes trains outside the system, paying again.</li>
+              <li><strong>When</strong> lets you choose between weekdays at 8 am or Saturday at 12 pm (assuming no weekend closures).
+                It uses the median of travel times for all departures in the 30 minutes before and after the selected time.</li>
+              <li><strong>Minutes</strong> lets you switch between showing the time with or without QueensLink
+                (toggle the <img class="logo" src="/queenslink-favicon-192.png" alt="QueensLink" />)
+                or show the time saved with QueensLink, as well as the route with and route without QueensLink.</li>
+              <li><strong>Walking</strong> lets you set the walking speed from the final station to the destination.</li>
+              <li><strong>$3</strong> and <strong>$∞</strong> let you choose between a single- and a multi-fare ride,
+                assuming you've hit your fare cap.</li>
+              <li><strong>Minutes from Station</strong> shows the isochrone legend.
+                <span class="hover">Hovering over</span><span class="no-hover">Long pressing</span> an isochrone in the legend
+                highlights it in the map, and vice versa.</li>
             </ul>
           </section>
           <section class="explainer-project">
-            <h3>QueensLink <img class="logo" src="/queenslink-favicon-192.png" alt="" /></h3>
-            <p><a href="https://thequeenslink.org" target="_blank" rel="noopener">QueensLink</a> would run the M over the unused Rockaway Beach Branch:
-              off the Queens Blvd line at 63 Dr-Rego Park,
-              through new stations at Metropolitan Av-Parkside, Jamaica Av, Atlantic Av-Woodhaven, and Liberty Av,
-              then along the A to Broad Channel and Rockaway Park.
-              On weekdays, the G would run on to Forest Hills in its place.</p>
-            <p>Its new stations are drawn as M bullets.
-              Turn it on or off with its logo by <strong>Time</strong>, or pick <strong>Time Saved</strong> to see what it changes.
-              How it's scheduled is in the <a href="https://github.com/kkysen/subway-sheds#data" target="_blank" rel="noopener">code's README</a>.</p>
+            <h3><a href="https://thequeenslink.org" target="_blank" rel="noopener">QueensLink</a> <img class="logo" src="/queenslink-favicon-192.png" alt="" /></h3>
+            <p>QueensLink extends the <span class="route-bullet">M</span> from 63 Dr-Rego Park,
+              down the abandoned Rockaway Beach Branch,
+              and along the <span class="route-bullet">A</span> to the Rockaways, in this map, to Rockaway Park,
+              replacing the <span class="route-bullet">H</span>.
+              The <span class="route-bullet">M</span> stops serving Forest Hills,
+              but on weekdays the <span class="route-bullet">G</span> is extended from Court Sq to Forest Hills.</p>
           </section>
         </div>
         <footer>
