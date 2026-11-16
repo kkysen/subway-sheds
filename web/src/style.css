@@ -740,6 +740,12 @@ body,
   font-size: 16px;
 }
 
+/* A project's parts, as QueensLink's route and schedule, under its name. */
+#explainer .explainer-body h4 {
+  margin: 10px 0 2px;
+  font-size: 1em;
+}
+
 #explainer .explainer-body p,
 #explainer .explainer-body ul {
   margin: 6px 0;
