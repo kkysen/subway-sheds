@@ -87,9 +87,10 @@ The slider is the WordPress plugin `noo-before-after`:
 the "before" image laid over the "after" one, CSS-`clip`ped to the handle's position,
 dragged with `jquery.event.move`, in a `slick` carousel of two such sliders.
 
-- `scripts/screenshots.py` generates these as hi-DPI PNG screenshots of the real page with Playwright
-  after each CI build, and serves them at stable URLs under `/queenslink/screenshots/`.
-  The 3× screenshots share the same viewport dimensions, for the before/after slider.
+- `scripts/screenshots.py` generates the three Steinway St views for every map page as hi-DPI PNGs
+  of the real page with Playwright after each CI build.
+  The matching screenshots are served under `/main/screenshots/` and `/queenslink/screenshots/`;
+  both sets share the same 3× viewport dimensions for the before/after slider.
 - WordPress keeps doing the slider with its plugin; we only serve the images.
 
 ## A before/after slider on our own map (not decided)

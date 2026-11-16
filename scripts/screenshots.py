@@ -8,7 +8,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from playwright.sync_api import ViewportSize, sync_playwright
 
@@ -22,6 +22,7 @@ VIEWS = {
     "queenslink": "queenslink",
     "saved": "saved",
 }
+PAGES = {"main": "", "queenslink": "queenslink/"}
 
 
 def screenshot_url(page_url: str, view: str) -> str:
@@ -39,6 +40,16 @@ def screenshot_url(page_url: str, view: str) -> str:
     return f"{page_url}?explainer=off#{STATION}&{params}"
 
 
+def root_url(url: str) -> str:
+    parsed = urlsplit(url)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/queenslink"):
+        path = path[: -len("queenslink")]
+    else:
+        path = f"{path}/" if path else "/"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
 def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -46,7 +57,7 @@ def free_port() -> int:
 
 
 def main() -> None:
-    # Given a URL, use an existing dev server; otherwise preview the built site as CI does.
+    # Given a page URL, use its existing dev server; otherwise preview the built site as CI does.
     argument = sys.argv[1] if len(sys.argv) > 1 else "/"
     existing_url = argument if argument.startswith(("http://", "https://")) else None
     base = argument if existing_url is None else "/"
@@ -68,20 +79,20 @@ def main() -> None:
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
-            page_url = f"http://localhost:{port}{base}queenslink/"
-            output = Path("web/dist/queenslink/screenshots")
+            base = f"{base.rstrip('/')}/"
+            site_url = f"http://localhost:{port}{base}"
+            output_root = Path("web/dist")
         else:
-            page_url = existing_url.rstrip("/") + "/"
-            output = Path("web/public/queenslink/screenshots")
+            site_url = root_url(existing_url)
+            output_root = Path("web/public")
         for attempt in range(100):
             try:
-                with urllib.request.urlopen(page_url):
+                with urllib.request.urlopen(site_url):
                     break
             except OSError:
                 if server is None or attempt == 99:
                     raise
                 time.sleep(0.1)
-        output.mkdir(parents=True, exist_ok=True)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
                 args=["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
@@ -91,19 +102,26 @@ def main() -> None:
                 device_scale_factor=PIXEL_RATIO,
                 reduced_motion="reduce",
             )
-            for filename, view in VIEWS.items():
-                page.goto(
-                    screenshot_url(page_url, view), wait_until="networkidle", timeout=TIMEOUT_MS
-                )
-                page.get_by_text("Steinway St", exact=True).first.wait_for(timeout=TIMEOUT_MS)
-                page.wait_for_function(
-                    "document.querySelector('#summary-status').textContent.includes('Steinway St')",
-                    timeout=TIMEOUT_MS,
-                )
-                page.wait_for_timeout(QUIET_MS)
-                path = output / f"steinway-st-{filename}.png"
-                page.screenshot(path=str(path))
-                print(path)
+            for page_name, suffix in PAGES.items():
+                page_url = f"{site_url}{suffix}"
+                output = output_root / page_name / "screenshots"
+                output.mkdir(parents=True, exist_ok=True)
+                for filename, view in VIEWS.items():
+                    page.goto(
+                        screenshot_url(page_url, view),
+                        wait_until="networkidle",
+                        timeout=TIMEOUT_MS,
+                    )
+                    page.get_by_text("Steinway St", exact=True).first.wait_for(timeout=TIMEOUT_MS)
+                    page.wait_for_function(
+                        "document.querySelector('#summary-status').textContent.includes("
+                        "'Steinway St')",
+                        timeout=TIMEOUT_MS,
+                    )
+                    page.wait_for_timeout(QUIET_MS)
+                    path = output / f"steinway-st-{filename}.png"
+                    page.screenshot(path=str(path))
+                    print(path)
             browser.close()
     finally:
         if server is not None:
