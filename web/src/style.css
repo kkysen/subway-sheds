@@ -753,9 +753,39 @@ body,
   font-size: 16px;
 }
 
-#explainer .explainer-body .logo {
+#explainer .explainer-body .logo,
+#explainer .explainer-frame header .logo {
   height: 1.2em;
   vertical-align: -0.25em;
+}
+
+/* The explainer's words for pointing, in `.hover`, where there's pointing,
+   and for tapping, in `.no-hover`, where there's only tapping, as on phones. */
+@media (hover: hover) {
+  #explainer .no-hover {
+    display: none;
+  }
+}
+
+@media not (hover: hover) {
+  #explainer .hover {
+    display: none;
+  }
+}
+
+/* A new station's M bullet and the trains' bullets, as small as the text. */
+#explainer .legend-station-new {
+  width: 1.2em;
+  height: 1.2em;
+  margin: 0;
+  border-width: 1px;
+  vertical-align: -0.25em;
+}
+
+#explainer .route-bullet {
+  margin-right: 0.15em;
+  color: #ffffff;
+  background: var(--bullet-color, #808183);
 }
 
 #explainer .explainer-frame footer {

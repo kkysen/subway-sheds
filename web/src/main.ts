@@ -1666,7 +1666,11 @@ function patternsOf(run: number): readonly Pattern[] | undefined {
 }
 
 function trainOf(leg: RouteLeg, run = currentRun()): Train {
-  const route = patternsOf(run)?.[leg.pattern]?.route ?? "";
+  return trainNamed(patternsOf(run)?.[leg.pattern]?.route ?? "");
+}
+
+// The train `route` is, as `routes.json` names it.
+function trainNamed(route: string): Train {
   const info = routeInfo[route] ?? { name: route, color: "#808183", text: "#ffffff" };
   const express = /^.X$/.test(info.name);
   return {
@@ -1691,6 +1695,11 @@ function bullet(train: Train): HTMLElement {
   b.style.setProperty("--bullet-color", train.color);
   b.style.color = train.text;
   return b;
+}
+
+// The trains the explainer names, each a `data-route` of `routes.json`, as their bullets.
+for (const name of document.querySelectorAll<HTMLElement>("#explainer [data-route]")) {
+  name.replaceWith(bullet(trainNamed(name.dataset["route"] ?? "")));
 }
 
 // An express train's diamond on the map, white, for MapLibre to color as a signed distance field.
