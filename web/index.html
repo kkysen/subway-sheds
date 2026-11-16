@@ -115,6 +115,20 @@
               replacing the <span class="route-bullet">H</span>.
               The <span class="route-bullet">M</span> stops serving Forest Hills,
               but on weekdays the <span class="route-bullet">G</span> is extended from Court Sq to Forest Hills.</p>
+            <p>The QueensLink GTFS schedule was built by adding the QueensLink changes to the current MTA schedule
+              (current except for the full <span class="route-bullet">7X</span> being restored).
+              On weekdays during the day, the current <span class="route-bullet">M</span>s keep their times.
+              At other times, the <span class="route-bullet">M</span> is extended to its full route,
+              as frequent as the <span class="route-bullet">F</span>.
+              Run times on the new track are simulated from its curves,
+              with trains accelerating and braking as R188s do under CBTC on the <span class="route-bullet">7</span>,
+              and padded like the Queens Blvd local, which also runs under CBTC.
+              Then the schedule is adjusted slightly so every train stays safely spaced:
+              the <span class="route-bullet">M</span>s and the trains they share track with run a little earlier or later,
+              and hold a little longer or shorter at a few stations,
+              as optimized by a constraint satisfiability (CP-SAT) solver.
+              The <span class="route-bullet">G</span> is extended to Forest Hills on weekdays.
+              More details are in the <a href="https://github.com/kkysen/subway-sheds#data" target="_blank" rel="noopener">README</a>.</p>
           </section>
         </div>
         <footer>
