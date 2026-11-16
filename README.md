@@ -333,7 +333,7 @@ and the farther ones only once the slider's faster than 3 mph.
 
 ### Embedding
 
-The page can be embedded in an `<iframe>`, as on queenslink.org,
+The page can be embedded in an `<iframe>`, as on [queenslink.org](https://queenslink.org/map/),
 which embeds QueensLink's page, at `queenslink/`,
 the same as the main page for now (see `web/vite.config.ts`).
 It explains itself when it's first opened, until "Don't show this again",
