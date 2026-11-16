@@ -1697,9 +1697,9 @@ function bullet(train: Train): HTMLElement {
   return b;
 }
 
-// The trains the explainer names, each a `data-route` of `routes.json`, as their bullets.
-for (const name of document.querySelectorAll<HTMLElement>("#explainer [data-route]")) {
-  name.replaceWith(bullet(trainNamed(name.dataset["route"] ?? "")));
+// The trains the explainer names, each a `.route-bullet` with its route as `routes.json` names it, as their bullets.
+for (const name of document.querySelectorAll<HTMLElement>("#explainer .route-bullet")) {
+  name.replaceWith(bullet(trainNamed(name.textContent)));
 }
 
 // An express train's diamond on the map, white, for MapLibre to color as a signed distance field.
