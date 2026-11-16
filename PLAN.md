@@ -128,3 +128,20 @@ those leaving it toward Brooklyn at 7:44 and 8:21 am,
 as the greedy fit finds no gap among the Rs, Ms, and other Gs on the Queens Blvd local.
 Fit the extended Gs in the M's CP-SAT solve instead, requiring every one to extend,
 so the explainer's "The (G) is extended to Forest Hills on weekdays" holds for all of them.
+
+## Additional operating costs per scenario
+
+For each scenario, compute what it costs to run beyond the baseline, from its feed,
+for a weekday, a Saturday, a Sunday, and a year of them:
+
+- Train-hours and car-hours in service, from each trip's first departure to its last arrival,
+  with each route's cars per train.
+- Train-miles and car-miles, along each trip's shape.
+- Peak trains in service at once, the fleet each scenario needs,
+  against the spare cars and yard space in MTA's Rail Fleet Asset Management Plan.
+- Crew hours, a train operator and a conductor per train-hour,
+  but one-person operation where MTA runs it.
+- Dollars, from MTA's own cost per car-mile or per revenue-hour,
+  with the source and year given beside it.
+
+Show them on the page or in the explainer per scenario, beside the time saved.
