@@ -32,7 +32,6 @@ class Shot:
     # The start of each screenshot's file name.
     slug: str
     day: str
-    views: tuple[str, ...] = tuple(VIEWS)
 
 
 SHOTS = [
@@ -40,7 +39,7 @@ SHOTS = [
     Shot("H15", "Rockaway Park-Beach 116 St", "rockaway-park", "weekday"),
     Shot("G14", "Jackson Hts-Roosevelt Av", "jackson-hts", "weekday"),
     # Saturdays' too, when only QueensLink runs the M along the Queens Blvd local.
-    Shot("G14", "Jackson Hts-Roosevelt Av", "jackson-hts-saturday", "saturday", ("saved",)),
+    Shot("G14", "Jackson Hts-Roosevelt Av", "jackson-hts-saturday", "saturday"),
 ]
 PAGES = {
     "main": ("", Path("screenshots")),
@@ -132,9 +131,9 @@ def main() -> None:
                     output = output_root / output_path
                     output.mkdir(parents=True, exist_ok=True)
                     for shot in SHOTS:
-                        for filename in shot.views:
+                        for filename, view in VIEWS.items():
                             page.goto(
-                                screenshot_url(page_url, shot, VIEWS[filename]),
+                                screenshot_url(page_url, shot, view),
                                 wait_until="networkidle",
                                 timeout=TIMEOUT_MS,
                             )

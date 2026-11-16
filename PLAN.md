@@ -90,7 +90,7 @@ dragged with `jquery.event.move`, in a `slick` carousel of two such sliders.
 - `scripts/screenshots.py` generates the three Steinway St views for every map page as hi-DPI PNGs
   of the real page with Playwright after each CI build.
   It also generates the same three views from Rockaway Park-Beach 116 St and Jackson Hts-Roosevelt Av,
-  and the time saved from Jackson Hts-Roosevelt Av at noon on a Saturday.
+  and from Jackson Hts-Roosevelt Av at noon on a Saturday.
   The matching screenshots are served under `/screenshots/` and `/queenslink/screenshots/`;
   each view is generated at 1×, 2×, and 3× pixel density with matching dimensions for the slider.
 - WordPress keeps doing the slider with its plugin; we only serve the images.
