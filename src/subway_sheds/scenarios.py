@@ -607,7 +607,8 @@ def _g_to_forest_hills(timetable: Timetable, cbtc: set[str]) -> Counter[tuple[st
             at = len(stops) - 1
             later = False
         stages = [(COURT_SQ, [local])]
-        fitted = _fit(trip, stages, later, [own], nudger)
+        # Those leaving Forest Hills before midnight run the night before, by `_night_before`.
+        fitted = _fit(trip, stages, later, [own], nudger, before_midnight=True)
         if fitted is None:
             trip.calls = old
             own.add(trip)
@@ -811,6 +812,7 @@ def _fit(
     also: list[Track],
     nudger: _Nudger | None,
     runs_anyway: bool = False,
+    before_midnight: bool = False,
 ) -> Fitted:
     """
     Fit `trip`, moved as a whole the least, up to `MOST_MOVED`,
@@ -827,6 +829,8 @@ def _fit(
     and it doesn't wait.
     Otherwise `None`, leaving it as it was,
     and adding it to the tracks anyway if it `runs_anyway`.
+    It leaves before its service day starts only if it may run from `before_midnight`,
+    as `_night_before` then runs it the night before.
     """
     tracks = [track for _, at in stages for track in at] + also
     least = {
@@ -837,8 +841,8 @@ def _fit(
     for moved in sorted(range(-MOST_MOVED, MOST_MOVED + 1, STEP), key=abs):
         trip.calls = copy.deepcopy(old)
         shift(trip.calls, moved)
-        # Not leaving before the service day starts.
-        if trip.calls[0].departure < 0:
+        # Not leaving before the service day starts, unless it may.
+        if trip.calls[0].departure < 0 and not before_midnight:
             continue
         waits = []
         for station, at in stages:
@@ -854,7 +858,7 @@ def _fit(
         for moved in sorted(range(-MOST_MOVED, MOST_MOVED + 1, STEP), key=abs):
             trip.calls = copy.deepcopy(old)
             shift(trip.calls, moved)
-            if trip.calls[0].departure < 0:
+            if trip.calls[0].departure < 0 and not before_midnight:
                 continue
             blocking = set().union(
                 *(t.blocking(trip.service, trip.calls, least.get(id(t))) for t in tracks)
