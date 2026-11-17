@@ -445,6 +445,12 @@ body,
   vertical-align: -6px;
 }
 
+/* A bullet with no line's letter or color, for a new station of any project, not only QueensLink's M,
+   in black, as no line's bullet is. */
+.legend-station-blank {
+  background: #000000;
+}
+
 /* The M bullet after a station's name where it's pointed at, as small as the text. */
 .band-popup .legend-station-new {
   position: static;
