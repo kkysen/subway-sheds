@@ -4,7 +4,7 @@ import {
   type CircleLayerSpecification,
   type ExpressionSpecification,
   FullscreenControl,
-  type LngLat,
+  LngLat,
   Map as MapLibreMap,
   type MapMouseEvent,
   type MapTouchEvent,
@@ -1315,6 +1315,125 @@ function cellAt(lngLat: LngLat): number {
     ? -1
     : (cellOfPixel[Math.round(at.row) * width + Math.round(at.col)] ?? -1);
 }
+
+// The station quickest to walk out of to `cell` at the walking speed chosen, through its entrance,
+// of those in the view shown, as the walks out loaded so far have them, or `undefined` if none walks there.
+// QueensLink's new stations only where the time with it is shown alone, as they're not there today.
+function nearestStation(cell: number): Station | undefined {
+  const mph = currentSpeed();
+  const withNew = currentView() === "queenslink";
+  let nearest: Station | undefined;
+  let nearestSeconds = Infinity;
+  stations.forEach((station, s) => {
+    if (!withNew && !station.scenarios.includes("baseline")) {
+      return;
+    }
+    const seconds = walkOutSeconds(exits, s, cell, mph, false);
+    if (seconds !== undefined && seconds < nearestSeconds) {
+      nearest = station;
+      nearestSeconds = seconds;
+    }
+  });
+  return nearest;
+}
+
+// The button to start from where you are, under the "?" on larger screens, and over it on small ones.
+// Your location is only used here to find your cell: it's never sent anywhere or saved,
+// only the station picked from it is, as when it's clicked.
+const locateGroup = document.createElement("div");
+locateGroup.className = "maplibregl-ctrl maplibregl-ctrl-group locate";
+const locateButton = document.createElement("button");
+locateButton.type = "button";
+locateButton.className = "maplibregl-ctrl-geolocate";
+locateButton.title = "Start from the station nearest you";
+locateButton.setAttribute("aria-label", "Start from the station nearest you");
+const locateIcon = document.createElement("span");
+locateIcon.className = "maplibregl-ctrl-icon";
+locateIcon.setAttribute("aria-hidden", "true");
+locateButton.append(locateIcon);
+// Why it couldn't, beside it, until a little later or the next try.
+const locateNote = document.createElement("p");
+locateNote.className = "locate-note";
+locateNote.setAttribute("role", "status");
+locateNote.hidden = true;
+locateGroup.append(locateButton, locateNote);
+function placeLocate(): void {
+  if (smallScreen.matches) {
+    element(".maplibregl-ctrl-bottom-right", HTMLElement).prepend(locateGroup);
+  } else {
+    element(".maplibregl-ctrl-top-right", HTMLElement).append(locateGroup);
+  }
+}
+placeLocate();
+smallScreen.addEventListener("change", placeLocate);
+
+const LOCATE_NOTE_MS = 5000;
+let locateNoteTimeout: number | undefined;
+function sayLocate(note: string | undefined): void {
+  clearTimeout(locateNoteTimeout);
+  locateButton.classList.toggle("maplibregl-ctrl-geolocate-active-error", note !== undefined);
+  locateNote.hidden = note === undefined;
+  locateNote.textContent = note ?? "";
+  if (note !== undefined) {
+    locateNoteTimeout = window.setTimeout(() => sayLocate(undefined), LOCATE_NOTE_MS);
+  }
+}
+
+// Where you are, or why it isn't known.
+function currentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) {
+      reject(new Error("no geolocation"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 20_000,
+      maximumAge: 60_000,
+    });
+  });
+}
+
+let locating = false;
+locateButton.addEventListener("click", async () => {
+  if (locating) {
+    return;
+  }
+  locating = true;
+  sayLocate(undefined);
+  locateButton.classList.add("maplibregl-ctrl-geolocate-waiting");
+  let position: GeolocationPosition | undefined;
+  let failure: string | undefined;
+  try {
+    position = await currentPosition();
+  } catch (error) {
+    failure =
+      error instanceof GeolocationPositionError && error.code === error.PERMISSION_DENIED
+        ? "Location permission denied"
+        : "Couldn’t find your location";
+  }
+  // The stations aren't on the map to pick until it's loaded.
+  await loaded;
+  locateButton.classList.remove("maplibregl-ctrl-geolocate-waiting");
+  locating = false;
+  if (position === undefined) {
+    sayLocate(failure);
+    return;
+  }
+  const here = new LngLat(position.coords.longitude, position.coords.latitude);
+  const cell = cellAt(here);
+  const station = cell < 0 ? undefined : nearestStation(cell);
+  if (station === undefined) {
+    sayLocate(cell < 0 ? "You’re outside the map" : "No station within an hour’s walk");
+    return;
+  }
+  // Brought into view if it's not, as a station clicked always is.
+  const at = new LngLat(station.lon, station.lat);
+  if (!map.getBounds().contains(at)) {
+    map.easeTo({ center: at });
+  }
+  void selectStation(station.id);
+});
 
 // The station walked out of to `cell`, in the run shown or `run`, or `NO_STATION`.
 function exitFromOf(cell: number, run = currentRun()): number {

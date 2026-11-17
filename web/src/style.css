@@ -400,6 +400,26 @@ body,
   display: none;
 }
 
+/* Why the station nearest you couldn't be picked, to the left of its button, as the popups look. */
+.maplibregl-ctrl-group.locate {
+  position: relative;
+}
+
+.locate-note {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 6px);
+  transform: translateY(-50%);
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .legend-labels {
   position: relative;
   height: 1.4em;

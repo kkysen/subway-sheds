@@ -82,21 +82,6 @@ Rides only start and end at existing stations in the OD data,
 so riders new to QueensLink's stations aren't counted;
 say so beside the numbers rather than estimate them.
 
-## Starting from your current location
-
-A button to start from where you are,
-from the browser's Geolocation API,
-picking the station closest to you by walking, not as the crow flies.
-Find the cell you're in and the station whose walk out to it, plus its exit time, is quickest,
-as the walks out already give them,
-and select that station as the origin, as if it had been clicked.
-Later, maybe start the map from your exact location,
-walking to each nearby station rather than only the closest one.
-
-Your location stays in the browser: it's never sent anywhere or put in the URL,
-only the station picked is.
-If permission is denied, or you're outside the map's cells, say so and leave the origin as it is.
-
 ## Keeping From and To across views
 
 Changing the view, e.g. from time with QueensLink to time saved,
