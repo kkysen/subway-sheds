@@ -178,7 +178,13 @@
           </section>
         </div>
         <footer>
-          <button type="submit" value="dismiss" id="explainer-dismiss">Don't show this again</button>
+          <!-- Kept dismissed by its `data-name`, for each page apart, so that dismissing one still shows the other. -->
+          <!-- page: main -->
+          <button type="submit" value="dismiss" id="explainer-dismiss" data-name="explainer-main">Don't show this again</button>
+          <!-- /page -->
+          <!-- page: queenslink -->
+          <button type="submit" value="dismiss" id="explainer-dismiss" data-name="explainer-queenslink">Don't show this again</button>
+          <!-- /page -->
           <button type="submit" value="close" class="explainer-primary" autofocus>Show me the map</button>
         </footer>
       </form>

@@ -5,6 +5,7 @@
 // Keeps whether its explainer was dismissed in the embedding site's own storage,
 // as the browser can block or clear the map's own in an `<iframe>`, as Safari does,
 // and tells the map when it asks, which it asks it to do as it loads.
+// Each of the map's pages names its own, so that dismissing one still shows the others.
 (() => {
   // Where the map is, as this is loaded from beside it.
   const script = document.currentScript;

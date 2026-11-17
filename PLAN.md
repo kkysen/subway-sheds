@@ -13,19 +13,6 @@ but doesn't apply Safari's own rules for storage in an iframe on another site.
 Safari clears what a site's scripts store after about 7 days without the visitor interacting with it,
 so someone back after a while may see it again; that's fine.
 
-## A general main page and a QueensLink page
-
-Restructure the site so the main page isn't only about QueensLink
-and can show other changes too, like the IBX.
-What's geared just toward QueensLink stays on its own `/queenslink` page,
-which queenslink.org's embed already points to.
-Gear each page's explainer to it:
-the parts about the map and how to use it shared,
-and the parts about what's proposed written for each page.
-Remember "Don't show this again" per page,
-so someone who closed the main page's still sees `/queenslink`'s;
-today both keep it as `subway-sheds:explainer`.
-
 ## A before/after slider on our own map (not decided)
 
 A swipe between the map without QueensLink and with it, on the live map,

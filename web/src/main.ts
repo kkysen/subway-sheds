@@ -671,6 +671,13 @@ controls.classList.toggle("station-key-hidden", savedValue("station-key") === "h
 // until "Don't show this again", which is kept across reloads as the controls are.
 // Closed any other way, it's only closed for now.
 const explainer = element("#explainer", HTMLDialogElement);
+const explainerDismiss = element("#explainer-dismiss", HTMLButtonElement);
+// What it's kept dismissed as, and what `embed.js` is asked about, for each page apart,
+// so that someone who dismissed the main page's still sees `/queenslink`'s.
+const explainerName = explainerDismiss.dataset["name"];
+if (explainerName === undefined) {
+  throw new Error("#explainer-dismiss has no data-name");
+}
 // Embedded, as on queenslink.org, where the browser can block or clear the page's own storage,
 // so it's also kept by the site embedding it, if that has `public/embed.js`, in that site's own storage.
 const embedder = window.parent === window ? undefined : window.parent;
@@ -680,14 +687,14 @@ const ASK_EXPLAINER = "subway-sheds:explainer?";
 const SAY_EXPLAINER = "subway-sheds:explainer";
 // How long to wait for `embed.js` to say before showing the explainer anyway, as when there's none.
 const EMBEDDER_WAIT_MS = 500;
-element("#explainer-dismiss", HTMLButtonElement).addEventListener("click", () => {
+explainerDismiss.addEventListener("click", () => {
   try {
-    localStorage.setItem(storageKey("explainer"), "dismissed");
+    localStorage.setItem(storageKey(explainerName), "dismissed");
   } catch {
     // Not saved, as when storage is unavailable.
   }
   // Any site can embed the page, and it's only told what it could see anyway.
-  embedder?.postMessage({ type: SAY_EXPLAINER, name: "explainer", dismissed: true }, "*");
+  embedder?.postMessage({ type: SAY_EXPLAINER, name: explainerName, dismissed: true }, "*");
 });
 // Its backdrop, the only part of it outside its frame.
 explainer.addEventListener("click", (event) => {
@@ -708,7 +715,7 @@ function showExplainerOnItsOwn(): void {
   explainerShownOnItsOwn = true;
   explainer.showModal();
 }
-if (!explainerOff && savedValue("explainer") !== "dismissed") {
+if (!explainerOff && savedValue(explainerName) !== "dismissed") {
   if (embedder === undefined) {
     showExplainerOnItsOwn();
   } else {
@@ -716,7 +723,7 @@ if (!explainerOff && savedValue("explainer") !== "dismissed") {
       waiting = undefined;
       showExplainerOnItsOwn();
     }, EMBEDDER_WAIT_MS);
-    const ask = (): void => embedder.postMessage({ type: ASK_EXPLAINER, name: "explainer" }, "*");
+    const ask = (): void => embedder.postMessage({ type: ASK_EXPLAINER, name: explainerName }, "*");
     // Only from the site embedding the page, whichever it is, and only as `embed.js` says it.
     window.addEventListener("message", (event) => {
       const data: unknown = event.data;
@@ -735,7 +742,7 @@ if (!explainerOff && savedValue("explainer") !== "dismissed") {
       if (
         data.type !== SAY_EXPLAINER ||
         !("name" in data) ||
-        data.name !== "explainer" ||
+        data.name !== explainerName ||
         !("dismissed" in data)
       ) {
         return;
