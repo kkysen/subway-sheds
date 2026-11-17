@@ -1,9 +1,5 @@
 # Plan
 
-## Binary images
-
-Never commit binary images without explicit approval.
-
 ## Explainer pop-up
 
 Done, and live on queenslink.org's embed with `embed.js`,
