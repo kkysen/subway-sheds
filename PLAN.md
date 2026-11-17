@@ -82,18 +82,6 @@ Rides only start and end at existing stations in the OD data,
 so riders new to QueensLink's stations aren't counted;
 say so beside the numbers rather than estimate them.
 
-## Keeping From and To across views
-
-Changing the view, e.g. from time with QueensLink to time saved,
-should keep both From and To (see below),
-with To's trip and band shown again in the new view.
-Today `drawCells` in `web/src/main.ts` calls `clearBand` whenever the view changes,
-dropping the pin.
-Instead, keep the pinned point and pick its band again with `bandAt`,
-as a band's number means something different in each view,
-and only drop the pin if nothing is there in the new view.
-The same goes for changing the day, fare, or projects shown.
-
 ## Picking From and To
 
 Click or tap a station to pick it as From, the origin, as today.

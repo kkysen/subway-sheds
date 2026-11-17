@@ -1173,12 +1173,18 @@ function clearTimes(): void {
   clearBand();
 }
 
+// The view last drawn, for whether a band pinned from the legend still means the same.
+let drawnView: View | undefined;
+
+// Drawn once the times for the controls as they are have loaded,
+// so that the band pinned is picked again against them, not stale or missing ones.
 function drawCells(): void {
   if (selectedTimes !== undefined && selectedSaved !== undefined) {
     const view = currentView();
     selectedClasses = cellClasses(grid, selectedTimes, selectedSaved, currentDay(), view);
     bandsLayer.setClasses(selectedClasses, classColors(view));
-    clearBand();
+    repinBand(view !== drawnView);
+    drawnView = view;
   }
 }
 
@@ -1681,12 +1687,29 @@ pinLegendBand = (band: number): void => {
   restorePinnedBand();
 };
 
-// Pins the band at a point, or unpins it if it's the one pinned or there's none there,
+// The band at a point, pinned there, or `undefined` if there's none there,
 // nor, for minutes saved, journeys there saving none.
-function pinBand(lngLat: LngLat): void {
+function pinAt(lngLat: LngLat): { readonly band: number; readonly lngLat: LngLat } | undefined {
   const band = bandAt(lngLat);
-  const none = band === NOTHING && !journeysTo(cellAt(lngLat));
-  pinned = none || (band !== NOTHING && band === pinned?.band) ? undefined : { band, lngLat };
+  return band === NOTHING && !journeysTo(cellAt(lngLat)) ? undefined : { band, lngLat };
+}
+
+// Pins the band at a point, or unpins it if it's the one pinned or there's none there.
+function pinBand(lngLat: LngLat): void {
+  const at = pinAt(lngLat);
+  pinned = at === undefined || (at.band !== NOTHING && at.band === pinned?.band) ? undefined : at;
+  restorePinnedBand();
+}
+
+// Picks the band pinned again in the cells as drawn now, as a band means something different in each view:
+// at a point, whatever's there now, unpinned only if nothing is,
+// and from the legend, the same band, unless it's from another view.
+function repinBand(viewChanged: boolean): void {
+  if (pinned?.lngLat !== undefined) {
+    pinned = pinAt(pinned.lngLat);
+  } else if (viewChanged) {
+    pinned = undefined;
+  }
   restorePinnedBand();
 }
 
