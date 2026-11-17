@@ -388,11 +388,18 @@ body,
 .band-popup .maplibregl-popup-content {
   padding: 4px 8px;
   font-size: 13px;
-  pointer-events: none;
 }
 
+/* Dragged, by mouse or finger, rather than selected or scrolling the page. */
 .band-popup {
-  pointer-events: none;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.band-popup:active {
+  cursor: grabbing;
 }
 
 /* Placed beside its point, off the journey, rather than pointing at it. */

@@ -1511,11 +1511,34 @@ const POPUP_ROUTE_MARGIN_PX = 8;
 // How finely the journey's lines are sampled, in pixels, to see whether the popup covers them.
 const ROUTE_SAMPLE_PX = 4;
 
+// Where the popup was dragged to, from the point it's for,
+// to keep it there whenever it's shown for that point again, as when pointing away and back to a pinned one,
+// rather than placing it again, until it's dragged for another.
+let bandPopupDragged: { readonly lngLat: LngLat; readonly offset: [number, number] } | undefined;
+
+// Sets the popup's top left corner, from its point, sliding it onto the map if it's off it.
+function setBandPopupOffset([x, y]: [number, number]): void {
+  const element = bandPopup.getElement();
+  const at = map.project(bandPopup.getLngLat());
+  const container = map.getContainer();
+  const onMap = (from: number, size: number, room: number): number =>
+    Math.max(Math.min(from, room - size), 0);
+  bandPopup.setOffset([
+    onMap(at.x + x, element.offsetWidth, container.clientWidth) - at.x,
+    onMap(at.y + y, element.offsetHeight, container.clientHeight) - at.y,
+  ]);
+}
+
 // Puts the popup beside its point, wherever it's the least off the map,
 // and then covers the least of the journey drawn, and then nearest above the point, as MapLibre would have it,
 // and then slides it onto the map if none of those places is all on it, as on a phone, where it's nearly as wide.
 function placeBandPopup(): void {
   if (!bandPopup.isOpen()) {
+    return;
+  }
+  const point = bandPopup.getLngLat();
+  if (bandPopupDragged?.lngLat.lng === point.lng && bandPopupDragged.lngLat.lat === point.lat) {
+    setBandPopupOffset(bandPopupDragged.offset);
     return;
   }
   const element = bandPopup.getElement();
@@ -1579,14 +1602,53 @@ function placeBandPopup(): void {
       best = candidate;
     }
   }
-  const [x, y] = best;
-  const onMap = (from: number, size: number, room: number): number =>
-    Math.max(Math.min(from, room - size), 0);
-  bandPopup.setOffset([
-    onMap(at.x + x, w, container.clientWidth) - at.x,
-    onMap(at.y + y, h, container.clientHeight) - at.y,
-  ]);
+  setBandPopupOffset(best);
 }
+
+// Dragging the popup, by mouse or finger, off whatever of the journey or the map it covers,
+// as there's nothing under it to point at or tap anyway.
+// On the map's container, as the popup's element is made only once it's shown.
+{
+  let from:
+    | { readonly x: number; readonly y: number; readonly offset: [number, number] }
+    | undefined;
+  const container = map.getContainer();
+  container.addEventListener("pointerdown", (event) => {
+    const element = bandPopup.isOpen() ? bandPopup.getElement() : undefined;
+    if (
+      element === undefined ||
+      !(event.target instanceof Node) ||
+      !element.contains(event.target)
+    ) {
+      return;
+    }
+    const at = map.project(bandPopup.getLngLat());
+    const rect = element.getBoundingClientRect();
+    const bounds = container.getBoundingClientRect();
+    from = {
+      x: event.clientX,
+      y: event.clientY,
+      offset: [rect.left - bounds.left - at.x, rect.top - bounds.top - at.y],
+    };
+    element.setPointerCapture(event.pointerId);
+  });
+  container.addEventListener("pointermove", (event) => {
+    if (from === undefined) {
+      return;
+    }
+    bandPopupDragged = {
+      lngLat: bandPopup.getLngLat(),
+      offset: [from.offset[0] + event.clientX - from.x, from.offset[1] + event.clientY - from.y],
+    };
+    setBandPopupOffset(bandPopupDragged.offset);
+  });
+  const stopDragging = (): void => {
+    from = undefined;
+  };
+  container.addEventListener("pointerup", stopDragging);
+  container.addEventListener("pointercancel", stopDragging);
+}
+
 // Zooming moves the journey's lines from the point, under the popup or out from it.
 map.on("zoom", placeBandPopup);
 
