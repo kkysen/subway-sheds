@@ -296,6 +296,12 @@ jobs:
           key: cargo-wasm-${{ runner.os }}-${{ hashFiles('web/times/Cargo.lock') }}
           restore-keys: cargo-wasm-${{ runner.os }}-
 
+      # QueensLink's icons, which `bun run build` downloads from queenslink.org if they're not here.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: .cache/queenslink-icons
+          key: queenslink-icons-${{ hashFiles('scripts/fetch-icons.sh') }}
+
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache

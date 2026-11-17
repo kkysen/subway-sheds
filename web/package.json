@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "wasm": "cd times && cargo build --release",
-    "dev": "bun run wasm && vite",
-    "build": "bun run wasm && tsrs --noEmit && vite build",
+    "icons": "../scripts/fetch-icons.sh",
+    "dev": "bun run wasm && bun run icons && vite",
+    "build": "bun run wasm && bun run icons && tsrs --noEmit && vite build",
     "check": "tsrs --noEmit && biome check"
   },
   "devDependencies": {

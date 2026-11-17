@@ -26,11 +26,6 @@ Remember "Don't show this again" per page,
 so someone who closed the main page's still sees `/queenslink`'s;
 today both keep it as `subway-sheds:explainer`.
 
-## Generate the QueensLink icons
-
-The QueensLink favicon and Apple touch icon PNGs in `web/public/` were copied from queenslink.org.
-Generate these files during the build instead of committing the PNGs.
-
 ## A before/after slider on our own map (not decided)
 
 A swipe between the map without QueensLink and with it, on the live map,
