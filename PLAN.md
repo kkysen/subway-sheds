@@ -189,3 +189,15 @@ walking to each nearby station rather than only the closest one.
 Your location stays in the browser: it's never sent anywhere or put in the URL,
 only the station picked is.
 If permission is denied, or you're outside the map's cells, say so and leave the origin as it is.
+
+## Keeping the station and the long press across views
+
+Changing the view, e.g. from time with QueensLink to time saved,
+should keep both the station selected and the point long-pressed,
+with its trip and band shown again in the new view.
+Today `drawCells` in `web/src/main.ts` calls `clearBand` whenever the view changes,
+dropping the pin.
+Instead, keep the pinned point and pick its band again with `bandAt`,
+as a band's number means something different in each view,
+and only drop the pin if nothing is there in the new view.
+The same goes for changing the day, fare, or projects shown.
