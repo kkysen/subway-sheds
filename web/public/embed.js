@@ -4,7 +4,7 @@
 //
 // Keeps whether its explainer was dismissed in the embedding site's own storage,
 // as the browser can block or clear the map's own in an `<iframe>`, as Safari does,
-// and tells the map when it asks or loads.
+// and tells the map when it asks, which it asks it to do as it loads.
 (() => {
   // Where the map is, as this is loaded from beside it.
   const script = document.currentScript;
@@ -67,10 +67,12 @@
     }
   });
 
-  // Also now and when the map's loaded, in case it asked before this was listening.
+  // Asks the map to ask, now and when it's loaded, in case it asked before this was listening,
+  // as only the map knows which page's explainer it is.
   // Before the map's there, the browser drops it, as it's not yet from `origin`.
+  const askToAsk = (frame) => frame.contentWindow?.postMessage({ type: ASK }, origin);
   for (const frame of maps()) {
-    tell(frame, "explainer");
-    frame.addEventListener("load", () => tell(frame, "explainer"));
+    askToAsk(frame);
+    frame.addEventListener("load", () => askToAsk(frame));
   }
 })();

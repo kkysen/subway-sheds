@@ -674,7 +674,8 @@ const explainer = element("#explainer", HTMLDialogElement);
 // Embedded, as on queenslink.org, where the browser can block or clear the page's own storage,
 // so it's also kept by the site embedding it, if that has `public/embed.js`, in that site's own storage.
 const embedder = window.parent === window ? undefined : window.parent;
-// What's said between the page and `embed.js`: asking whether the explainer was dismissed, and saying so.
+// What's said between the page and `embed.js`: asking whether the explainer was dismissed, and saying so,
+// and `embed.js` asking the page to ask, as it may not have been listening yet when the page did.
 const ASK_EXPLAINER = "subway-sheds:explainer?";
 const SAY_EXPLAINER = "subway-sheds:explainer";
 // How long to wait for `embed.js` to say before showing the explainer anyway, as when there's none.
@@ -715,6 +716,7 @@ if (!explainerOff && savedValue("explainer") !== "dismissed") {
       waiting = undefined;
       showExplainerOnItsOwn();
     }, EMBEDDER_WAIT_MS);
+    const ask = (): void => embedder.postMessage({ type: ASK_EXPLAINER, name: "explainer" }, "*");
     // Only from the site embedding the page, whichever it is, and only as `embed.js` says it.
     window.addEventListener("message", (event) => {
       const data: unknown = event.data;
@@ -722,7 +724,15 @@ if (!explainerOff && savedValue("explainer") !== "dismissed") {
         event.source !== embedder ||
         typeof data !== "object" ||
         data === null ||
-        !("type" in data) ||
+        !("type" in data)
+      ) {
+        return;
+      }
+      if (data.type === ASK_EXPLAINER) {
+        ask();
+        return;
+      }
+      if (
         data.type !== SAY_EXPLAINER ||
         !("name" in data) ||
         data.name !== "explainer" ||
@@ -740,7 +750,7 @@ if (!explainerOff && savedValue("explainer") !== "dismissed") {
         explainer.close();
       }
     });
-    embedder.postMessage({ type: ASK_EXPLAINER, name: "explainer" }, "*");
+    ask();
   }
 }
 // Shown from the "?", it isn't closed by `embed.js` saying late.
