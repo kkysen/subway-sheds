@@ -1511,8 +1511,9 @@ const POPUP_ROUTE_MARGIN_PX = 8;
 // How finely the journey's lines are sampled, in pixels, to see whether the popup covers them.
 const ROUTE_SAMPLE_PX = 4;
 
-// Puts the popup beside its point, wherever it covers the least of the journey drawn,
-// and then the least off the map, and then nearest above the point, as MapLibre would have it.
+// Puts the popup beside its point, wherever it's the least off the map,
+// and then covers the least of the journey drawn, and then nearest above the point, as MapLibre would have it,
+// and then slides it onto the map if none of those places is all on it, as on a phone, where it's nearly as wide.
 function placeBandPopup(): void {
   if (!bandPopup.isOpen()) {
     return;
@@ -1570,7 +1571,7 @@ function placeBandPopup(): void {
       Math.max(-(at.y + y), 0) +
       Math.max(at.y + y + h - container.clientHeight, 0);
     const fromAbove = Math.abs(x + w / 2) + Math.abs(y + h + POPUP_GAP_PX);
-    return covered * 1e6 + off * 1e3 + fromAbove;
+    return off * 1e6 + covered * 1e3 + fromAbove;
   };
   let best: [number, number] = [-w / 2, -h - POPUP_GAP_PX];
   for (const candidate of candidates) {
@@ -1578,7 +1579,13 @@ function placeBandPopup(): void {
       best = candidate;
     }
   }
-  bandPopup.setOffset(best);
+  const [x, y] = best;
+  const onMap = (from: number, size: number, room: number): number =>
+    Math.max(Math.min(from, room - size), 0);
+  bandPopup.setOffset([
+    onMap(at.x + x, w, container.clientWidth) - at.x,
+    onMap(at.y + y, h, container.clientHeight) - at.y,
+  ]);
 }
 // Zooming moves the journey's lines from the point, under the popup or out from it.
 map.on("zoom", placeBandPopup);
