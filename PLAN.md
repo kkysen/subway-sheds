@@ -115,14 +115,37 @@ Your location stays in the browser: it's never sent anywhere or put in the URL,
 only the station picked is.
 If permission is denied, or you're outside the map's cells, say so and leave the origin as it is.
 
-## Keeping the station and the long press across views
+## Keeping From and To across views
 
 Changing the view, e.g. from time with QueensLink to time saved,
-should keep both the station selected and the point long-pressed,
-with its trip and band shown again in the new view.
+should keep both From and To (see below),
+with To's trip and band shown again in the new view.
 Today `drawCells` in `web/src/main.ts` calls `clearBand` whenever the view changes,
 dropping the pin.
 Instead, keep the pinned point and pick its band again with `bandAt`,
 as a band's number means something different in each view,
 and only drop the pin if nothing is there in the new view.
 The same goes for changing the day, fare, or projects shown.
+
+## Picking From and To
+
+Click or tap a station to pick it as From, the origin, as today.
+Double-click or double-tap anywhere, a station or any other point, to lock it in as To, the destination,
+showing the trip there and its time.
+This replaces the long press, so it works the same with a mouse and a touchscreen.
+A single click anywhere but a station still locks that point in as To, as it does today.
+
+- MapLibre's own double-click and double-tap zoom (`doubleClickZoom`) is turned off for this.
+  What it does has better ways anyway:
+  pinching or the scroll wheel, a trackpad's pinch, `+` and `-` on the keyboard,
+  and double-tapping and dragging up or down (`tapDragZoom`, under `touchZoomRotate`), which stays.
+  Lost with it are a two-finger tap to zoom out, and Shift-double-click to zoom out.
+- A single click waits for a possible second click before picking From,
+  so start loading the station's times on the first click (`prefetchTimes`) to hide the wait.
+- On desktop, hovering keeps showing the trip to wherever the mouse is, until To is locked in;
+  then the trip to To stays shown, and hovering only changes the cursor.
+  Clearing To brings hovering back.
+
+Show two fields at the top: From, always, and To, once one is locked in, with a × to clear it.
+They're read only: clicking either one flies the map to its point.
+Typing a station or an address into them may come later.
