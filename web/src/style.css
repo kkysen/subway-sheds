@@ -432,6 +432,12 @@ body,
   transform: translateX(-50%);
 }
 
+/* QueensLink's logo under the band of places only it reaches, as small as the text. */
+#controls .legend-labels .logo {
+  height: 14px;
+  vertical-align: -3px;
+}
+
 /* As the stations are drawn on the map. */
 /* As the map draws stations, in proportion to each other,
    each centered in the same width, so that the names line up. */
@@ -482,8 +488,7 @@ body,
   vertical-align: -3px;
 }
 
-/* The M bullet under the band of places only QueensLink reaches, and after a new station's name, as small as the text. */
-.legend-labels .legend-station-new,
+/* The M bullet after a new station's name, as small as the text. */
 #station-name .legend-station-new {
   position: static;
   width: 14px;

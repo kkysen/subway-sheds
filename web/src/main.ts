@@ -456,12 +456,11 @@ function legendItems(view: View): HTMLElement[] {
     const onlyQueensLink = legendBand(savedBands.length, QUEENSLINK_ONLY_COLOR, view);
     onlyQueensLink.className = "legend-only-queenslink";
     bar.append(onlyQueensLink);
-    // QueensLink's M bullet, as its new stations are drawn, for "only with QueensLink".
-    const m = document.createElement("span");
-    m.className = "legend-station legend-station-new";
-    label(m, savedBands.length + 0.5);
+    // QueensLink's logo, as on its toggle, for "only with QueensLink".
+    const logo = projectLogo("queenslink");
+    label(logo, savedBands.length + 0.5);
     // As easy to tap as the band, as it's small.
-    bandKey(m, savedBands.length);
+    bandKey(logo, savedBands.length);
   } else {
     label(String(MAX_MINUTES), viewBands.length);
     // Beside the heading, to save a line.
