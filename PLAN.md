@@ -100,12 +100,3 @@ A single click anywhere but a station still locks that point in as To, as it doe
 Show two fields at the top: From, always, and To, once one is locked in, with a × to clear it.
 They're read only: clicking either one flies the map to its point.
 Typing a station or an address into them may come later.
-
-## Faster screenshots
-
-`scripts/screenshots.py` takes 72 screenshots in CI,
-as SwiftShader draws the map in software.
-
-- Render only at 3×, and scale each shot down to 2× and 1×,
-  as the layout is the same at every pixel ratio.
-  Compare a scaled-down shot with a natively drawn one first, for thin lines and text.

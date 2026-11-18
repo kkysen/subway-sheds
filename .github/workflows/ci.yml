@@ -355,7 +355,7 @@ jobs:
       # The screenshots, reused from the last run when nothing they're taken of changed:
       # the page as built, which has its data and QueensLink's icons in it,
       # the basemap under it,
-      # and the script and the Playwright and Chromium it runs on, which `uv.lock` pins.
+      # and the script and the Playwright, Chromium, and Pillow it runs on, which `uv.lock` pins.
       # The built page, rather than `web/` and the data, as the icons aren't tracked,
       # and the build comes out the same each time.
       - uses: actions/cache@v6.1.0
@@ -366,12 +366,14 @@ jobs:
             web/dist/queenslink/screenshots
           key: screenshots-${{ steps.basemap.outputs.hash }}-${{ hashFiles('web/dist/**', 'scripts/screenshots.py', 'uv.lock') }}
 
-      # Each station's views for each map page, at 1×, 2×, and 3× pixel density.
+      # Each station's views for each map page, drawn at 3× pixel density,
+      # and scaled down to 2× and 1× with Pillow, as `uv.lock` pins it.
       - name: screenshots
         if: steps.screenshots.outputs.cache-hit != 'true'
         run: |
           playwright="uv run --no-project --with playwright==$(sed -n '/^name = "playwright"$/{n;s/^version = "\(.*\)"$/\1/p}' uv.lock)"
-          $playwright python scripts/screenshots.py /${{ github.event.repository.name }}/
+          pillow="--with pillow==$(sed -n '/^name = "pillow"$/{n;s/^version = "\(.*\)"$/\1/p}' uv.lock)"
+          $playwright $pillow python scripts/screenshots.py /${{ github.event.repository.name }}/
 
       - uses: actions/configure-pages@v6.0.0
 
