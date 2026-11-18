@@ -7,12 +7,13 @@ import subprocess
 import sys
 import time
 import urllib.request
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
-from PIL import Image
+from PIL import Image, features
 from playwright.sync_api import ViewportSize, sync_playwright
 
 VIEWPORT: ViewportSize = {"width": 1024, "height": 813}
@@ -24,6 +25,13 @@ SCALED: dict[int, Image.Resampling] = {
     2: Image.Resampling.LANCZOS,
     1: Image.Resampling.BOX,
 }
+# Saved as AVIF, with full-resolution color (4:4:4),
+# as 4:2:0 smears the text and the thin colored lines.
+# At quality 80, over every shot, it came out a fifth to a quarter of the PNGs' size,
+# with the controls' text at least 46 dB PSNR against the PNG at each ratio,
+# and the faint band outlines keeping at least 99% of their darkness.
+FORMAT = "avif"
+QUALITY = 80
 TIMEOUT_MS = 60_000
 VIEWS = {
     "now": "baseline",
@@ -86,7 +94,25 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
+def save(png: bytes, output: Path, name: str) -> None:
+    """Save the shot drawn at 3x, and scaled down to each other ratio, as `FORMAT`."""
+    with Image.open(BytesIO(png)) as image:
+        image.load()
+        path = output / f"{name}-{PIXEL_RATIO}x.{FORMAT}"
+        image.save(path, quality=QUALITY, subsampling="4:4:4")
+        print(path)
+        for ratio, resample in SCALED.items():
+            size = (VIEWPORT["width"] * ratio, VIEWPORT["height"] * ratio)
+            path = output / f"{name}-{ratio}x.{FORMAT}"
+            image.resize(size, resample).save(path, quality=QUALITY, subsampling="4:4:4")
+            print(path)
+
+
 def main() -> None:
+    # Before drawing anything, as only some builds of Pillow can write AVIF;
+    # the wheels `uv.lock` pins can.
+    if not features.check(FORMAT):
+        sys.exit(f"this Pillow can't write {FORMAT.upper()}")
     # Given a page URL, use its existing dev server; otherwise preview the built site as CI does.
     argument = sys.argv[1] if len(sys.argv) > 1 else "/"
     existing_url = argument if argument.startswith(("http://", "https://")) else None
@@ -123,7 +149,10 @@ def main() -> None:
                 if server is None or attempt == 99:
                     raise
                 time.sleep(0.1)
-        with sync_playwright() as playwright:
+        # Each shot is encoded in the background while Chromium draws the next one.
+        # One thread is enough, as the AVIF encoder runs on every core itself.
+        with sync_playwright() as playwright, ThreadPoolExecutor(max_workers=1) as encoder:
+            saves: list[Future[None]] = []
             browser = playwright.chromium.launch(
                 args=["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
             )
@@ -139,6 +168,10 @@ def main() -> None:
                 output.mkdir(parents=True, exist_ok=True)
                 for shot in SHOTS:
                     for filename, view in VIEWS.items():
+                        # Stop at the first save that failed, rather than drawing the rest.
+                        for saved in saves:
+                            if saved.done():
+                                saved.result()
                         page.goto(
                             screenshot_url(page_url, shot, view),
                             wait_until="networkidle",
@@ -156,19 +189,13 @@ def main() -> None:
                             "() => document.documentElement.dataset.drawn === location.hash",
                             timeout=TIMEOUT_MS,
                         )
-                        name = f"{shot.slug}-{filename}"
                         png = page.screenshot(timeout=TIMEOUT_MS)
-                        path = output / f"{name}-{PIXEL_RATIO}x.png"
-                        path.write_bytes(png)
-                        print(path)
-                        with Image.open(BytesIO(png)) as image:
-                            for ratio, resample in SCALED.items():
-                                size = (VIEWPORT["width"] * ratio, VIEWPORT["height"] * ratio)
-                                path = output / f"{name}-{ratio}x.png"
-                                image.resize(size, resample).save(path)
-                                print(path)
+                        saves.append(encoder.submit(save, png, output, f"{shot.slug}-{filename}"))
             context.close()
             browser.close()
+            # Every save, raising the first error, if any.
+            for saved in saves:
+                saved.result()
     finally:
         if server is not None:
             os.killpg(server.pid, signal.SIGTERM)

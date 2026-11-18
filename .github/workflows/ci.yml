@@ -367,7 +367,8 @@ jobs:
           key: screenshots-${{ steps.basemap.outputs.hash }}-${{ hashFiles('web/dist/**', 'scripts/screenshots.py', 'uv.lock') }}
 
       # Each station's views for each map page, drawn at 3× pixel density,
-      # and scaled down to 2× and 1× with Pillow, as `uv.lock` pins it.
+      # and scaled down to 2× and 1× with Pillow, as `uv.lock` pins it,
+      # each saved as AVIF, which Pillow's wheels can write (the script checks before drawing).
       - name: screenshots
         if: steps.screenshots.outputs.cache-hit != 'true'
         run: |
