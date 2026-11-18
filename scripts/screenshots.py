@@ -30,6 +30,8 @@ SCALED: dict[int, Image.Resampling] = {
 # At quality 80, over every shot, it came out a fifth to a quarter of the PNGs' size,
 # with the controls' text at least 46 dB PSNR against the PNG at each ratio,
 # and the faint band outlines keeping at least 99% of their darkness.
+# The PNGs are still saved too, alongside, as queenslink.org links to them,
+# until it switches over to the AVIFs.
 FORMAT = "avif"
 QUALITY = 80
 TIMEOUT_MS = 60_000
@@ -95,7 +97,10 @@ def free_port() -> int:
 
 
 def save(png: bytes, output: Path, name: str) -> None:
-    """Save the shot drawn at 3x, and scaled down to each other ratio, as `FORMAT`."""
+    """Save the shot drawn at 3x, and scaled down to each other ratio, as PNG and `FORMAT`."""
+    path = output / f"{name}-{PIXEL_RATIO}x.png"
+    path.write_bytes(png)
+    print(path)
     with Image.open(BytesIO(png)) as image:
         image.load()
         path = output / f"{name}-{PIXEL_RATIO}x.{FORMAT}"
@@ -103,8 +108,12 @@ def save(png: bytes, output: Path, name: str) -> None:
         print(path)
         for ratio, resample in SCALED.items():
             size = (VIEWPORT["width"] * ratio, VIEWPORT["height"] * ratio)
+            scaled = image.resize(size, resample)
+            path = output / f"{name}-{ratio}x.png"
+            scaled.save(path)
+            print(path)
             path = output / f"{name}-{ratio}x.{FORMAT}"
-            image.resize(size, resample).save(path, quality=QUALITY, subsampling="4:4:4")
+            scaled.save(path, quality=QUALITY, subsampling="4:4:4")
             print(path)
 
 

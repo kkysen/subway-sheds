@@ -368,7 +368,8 @@ jobs:
 
       # Each station's views for each map page, drawn at 3× pixel density,
       # and scaled down to 2× and 1× with Pillow, as `uv.lock` pins it,
-      # each saved as AVIF, which Pillow's wheels can write (the script checks before drawing).
+      # each saved as AVIF, which Pillow's wheels can write (the script checks before drawing),
+      # and as PNG too, until queenslink.org switches over from the PNGs.
       - name: screenshots
         if: steps.screenshots.outputs.cache-hit != 'true'
         run: |
