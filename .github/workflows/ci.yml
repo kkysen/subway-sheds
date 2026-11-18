@@ -338,8 +338,37 @@ jobs:
           $playwright playwright install --with-deps chromium
           $playwright python scripts/e2e_browser.py 127 /${{ github.event.repository.name }}/
 
+      # The basemap as OpenFreeMap serves it now, which the screenshots are drawn over:
+      # its style, from `web/src/main.ts`, and each of its sources' TileJSON,
+      # which names the tiles' build, as `planet/20261115_080022_pt/`, so a new build changes it.
+      - name: basemap
+        id: basemap
+        run: |
+          style=$(grep -oE 'https://tiles\.openfreemap\.org/styles/[^"]+' web/src/main.ts)
+          test "$(echo "$style" | wc -l)" -eq 1
+          curl -fsS "$style" > "$RUNNER_TEMP/style.json"
+          {
+            cat "$RUNNER_TEMP/style.json"
+            jq -r '.sources[].url // empty' "$RUNNER_TEMP/style.json" | xargs -r -n 1 curl -fsS
+          } | sha256sum | cut -d ' ' -f 1 | sed 's/^/hash=/' >> "$GITHUB_OUTPUT"
+
+      # The screenshots, reused from the last run when nothing they're taken of changed:
+      # the page as built, which has its data and QueensLink's icons in it,
+      # the basemap under it,
+      # and the script and the Playwright and Chromium it runs on, which `uv.lock` pins.
+      # The built page, rather than `web/` and the data, as the icons aren't tracked,
+      # and the build comes out the same each time.
+      - uses: actions/cache@v6.1.0
+        id: screenshots
+        with:
+          path: |
+            web/dist/screenshots
+            web/dist/queenslink/screenshots
+          key: screenshots-${{ steps.basemap.outputs.hash }}-${{ hashFiles('web/dist/**', 'scripts/screenshots.py', 'uv.lock') }}
+
       # Each station's views for each map page, at 1×, 2×, and 3× pixel density.
       - name: screenshots
+        if: steps.screenshots.outputs.cache-hit != 'true'
         run: |
           playwright="uv run --no-project --with playwright==$(sed -n '/^name = "playwright"$/{n;s/^version = "\(.*\)"$/\1/p}' uv.lock)"
           $playwright python scripts/screenshots.py /${{ github.event.repository.name }}/

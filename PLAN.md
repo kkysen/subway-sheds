@@ -109,5 +109,3 @@ as SwiftShader draws the map in software.
 - Render only at 3×, and scale each shot down to 2× and 1×,
   as the layout is the same at every pixel ratio.
   Compare a scaled-down shot with a natively drawn one first, for thin lines and text.
-- Skip the step when nothing it depends on changed (`web/`, the data, and the script),
-  reusing the last screenshots from a cache.
