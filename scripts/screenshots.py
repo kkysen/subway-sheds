@@ -148,7 +148,7 @@ def main() -> None:
                             )
                             page.wait_for_timeout(QUIET_MS)
                             path = output / f"{shot.slug}-{filename}-{pixel_ratio}x.png"
-                            page.screenshot(path=str(path))
+                            page.screenshot(path=str(path), timeout=TIMEOUT_MS)
                             print(path)
                 context.close()
             browser.close()
