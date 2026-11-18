@@ -47,6 +47,8 @@ uniform usampler2D u_classes;
 uniform vec3 u_colors[${SLOTS}];
 // The slot highlighted, or 0 for none.
 uniform int u_highlight;
+// Device pixels to a CSS pixel, so that the edges are as wide on every screen.
+uniform float u_pixel_ratio;
 in vec2 v_cell;
 out vec4 fragColor;
 
@@ -102,12 +104,13 @@ void main() {
   vec4 nextColor = next == 0 ? vec4(0.0) : vec4(u_colors[next], 1.0) * opacity(next);
   vec4 fill = mix(nextColor, mostColor, clamp(0.5 + pixels, 0.5, 1.0));
 
-  // The edges, 0.75 pixels across, so that each band stands out from the next.
+  // The edges, 0.75 CSS pixels across, so that each band stands out from the next,
+  // smoothed over a device pixel.
   // Where two bands meet, each one's outline was drawn, so they're darker there.
   float edgeOpacity = most != 0 && next != 0 ? 1.0 - 0.75 * 0.75 : 0.25;
-  float edge = edgeOpacity * clamp(0.375 + 0.5 - pixels, 0.0, 1.0);
+  float edge = edgeOpacity * clamp(0.375 * u_pixel_ratio + 0.5 - pixels, 0.0, 1.0);
 
-  // The highlighted band's edge, 3 pixels across and opaque, so that it's clear which it is,
+  // The highlighted band's edge, 3 CSS pixels across and opaque, so that it's clear which it is,
   // from how far the point is from it, measured from that band alone,
   // so that it's unbroken where other bands meet it too.
   if (u_highlight != 0) {
@@ -119,7 +122,7 @@ void main() {
     }
     float inside = amounts[u_highlight] - rest;
     float fromEdge = abs(inside) / max(length(vec2(dFdx(inside), dFdy(inside))), 1e-6);
-    edge = max(edge, clamp(1.5 + 0.5 - fromEdge, 0.0, 1.0));
+    edge = max(edge, clamp(1.5 * u_pixel_ratio + 0.5 - fromEdge, 0.0, 1.0));
   }
   fragColor = vec4(0.0, 0.0, 0.0, edge) + fill * (1.0 - edge);
 }
@@ -170,6 +173,7 @@ export class BandsLayer implements CustomLayerInterface {
   private colors = new Float32Array(SLOTS * 3);
   private highlight = 0;
   private triggerRepaint = (): void => {};
+  private pixelRatio = (): number => 1;
 
   readonly id: string;
   private readonly grid: BandsGrid;
@@ -183,9 +187,13 @@ export class BandsLayer implements CustomLayerInterface {
     this.height = height;
   }
 
-  onAdd(map: { triggerRepaint(): void }, gl: WebGL2RenderingContext): void {
+  onAdd(
+    map: { triggerRepaint(): void; getPixelRatio(): number },
+    gl: WebGL2RenderingContext,
+  ): void {
     this.gl = gl;
     this.triggerRepaint = () => map.triggerRepaint();
+    this.pixelRatio = () => map.getPixelRatio();
 
     // A quad over the grid, from the edges of its outermost cells,
     // in Mercator coordinates from 0 to 1, and in cells, with cell centers at whole numbers.
@@ -283,6 +291,7 @@ export class BandsLayer implements CustomLayerInterface {
     gl.uniform1i(uniform("u_projection_clip_antimeridian"), projection.clipAntimeridian ? 1 : 0);
     gl.uniform3fv(uniform("u_colors"), this.colors);
     gl.uniform1i(uniform("u_highlight"), this.highlight);
+    gl.uniform1f(uniform("u_pixel_ratio"), this.pixelRatio());
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture ?? null);
     gl.uniform1i(uniform("u_classes"), 0);
