@@ -100,3 +100,17 @@ A single click anywhere but a station still locks that point in as To, as it doe
 Show two fields at the top: From, always, and To, once one is locked in, with a × to clear it.
 They're read only: clicking either one flies the map to its point.
 Typing a station or an address into them may come later.
+
+## Faster screenshots
+
+`scripts/screenshots.py` takes 72 screenshots in CI, 5 to 8 minutes,
+as SwiftShader draws the map in software and each shot sleeps 2 s first (`QUIET_MS`).
+
+- Wait for the map to be drawn instead of sleeping:
+  the page marks when MapLibre is `idle` after the station's times are shown,
+  and the script waits for that before each shot.
+- Render only at 3×, and scale each shot down to 2× and 1×,
+  as the layout is the same at every pixel ratio.
+  Compare a scaled-down shot with a natively drawn one first, for thin lines and text.
+- Skip the step when nothing it depends on changed (`web/`, the data, and the script),
+  reusing the last screenshots from a cache.
