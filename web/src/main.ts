@@ -553,6 +553,17 @@ fullMap.hidden = window.top === window.self;
 // so that links and what's kept work the same on either page.
 const savedControls = ["day", "measure", "with", "walking_speed_mph", "fare"] as const;
 
+// A short hash of some text, ignoring how its whitespace is laid out,
+// so that only a change to what it says changes it, not to its markup or indentation:
+// 32-bit FNV-1a, in hex.
+function textHash(text: string): string {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(text.trim().replace(/\s+/g, " "))) {
+    hash = Math.imul(hash ^ byte, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 // Prefixed, since every page on kkysen.github.io shares the same storage.
 const storageKey = (name: string): string => `subway-sheds:${name}`;
 
@@ -678,11 +689,13 @@ controls.classList.toggle("station-key-hidden", savedValue("station-key") === "h
 const explainer = element("#explainer", HTMLDialogElement);
 const explainerDismiss = element("#explainer-dismiss", HTMLButtonElement);
 // What it's kept dismissed as, and what `embed.js` is asked about, for each page apart,
-// so that someone who dismissed the main page's still sees `/queenslink`'s.
-const explainerName = explainerDismiss.dataset["name"];
-if (explainerName === undefined) {
+// so that someone who dismissed the main page's still sees `/queenslink`'s,
+// and for each version of its text, so that once it changes, it's shown again, even to those who dismissed it.
+const explainerPage = explainerDismiss.dataset["name"];
+if (explainerPage === undefined) {
   throw new Error("#explainer-dismiss has no data-name");
 }
+const explainerName = `${explainerPage}-${textHash(explainer.textContent)}`;
 // Embedded, as on queenslink.org, where the browser can block or clear the page's own storage,
 // so it's also kept by the site embedding it, if that has `public/embed.js`, in that site's own storage.
 const embedder = window.parent === window ? undefined : window.parent;

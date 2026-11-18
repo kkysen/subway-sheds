@@ -105,16 +105,39 @@ def check(url: str, station: str, control: str) -> list[str]:
             "() => document.documentElement.dataset.drawn === location.hash",
             timeout=TIMEOUT_MS,
         )
+        # Its routes as first loaded, before the reloads below load them again.
+        loaded = list(routes)
         # Opened for the first time, as in a new profile, so the explainer's shown.
         if not page.evaluate("document.querySelector('#explainer').open"):
             errors.append("didn't show the explainer on first opening the page")
+        else:
+            # Dismissed, it stays hidden on reloading, but only until its text changes,
+            # as when only an older version was dismissed.
+            page.click("#explainer-dismiss")
+            page.reload(wait_until="networkidle", timeout=TIMEOUT_MS)
+            if page.evaluate("document.querySelector('#explainer').open"):
+                errors.append("showed the explainer again after it was dismissed")
+            page.evaluate(
+                """() => {
+                    for (const key of Object.keys(localStorage)) {
+                        if (key.startsWith("subway-sheds:explainer-")) {
+                            const older = key.replace(/-[0-9a-f]{8}$/, "-00000000");
+                            localStorage.setItem(older, "dismissed");
+                            localStorage.removeItem(key);
+                        }
+                    }
+                }"""
+            )
+            page.reload(wait_until="networkidle", timeout=TIMEOUT_MS)
+            if not page.evaluate("document.querySelector('#explainer').open"):
+                errors.append("didn't show the explainer again once its text changed")
         for name in set(PAGES.values()):
             has = page.locator(f"input[name={name}]").count() > 0
             if has != (name == control):
                 errors.append(f"{'has' if has else 'has no'} {name} inputs on {url}")
         browser.close()
-    if routes != [200]:
-        errors.append(f"loaded {station}'s routes with {routes or 'no'} responses, not one 200")
+    if loaded != [200]:
+        errors.append(f"loaded {station}'s routes with {loaded or 'no'} responses, not one 200")
     return errors
 
 

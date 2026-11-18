@@ -5,7 +5,8 @@
 // Keeps whether its explainer was dismissed in the embedding site's own storage,
 // as the browser can block or clear the map's own in an `<iframe>`, as Safari does,
 // and tells the map when it asks, which it asks it to do as it loads.
-// Each of the map's pages names its own, so that dismissing one still shows the others.
+// Each of the map's pages names its own, so that dismissing one still shows the others,
+// with its explainer's version in the name, so that a new version is shown again.
 (() => {
   // Where the map is, as this is loaded from beside it.
   const script = document.currentScript;
@@ -15,8 +16,9 @@
   const origin = new URL(script.src).origin;
   const ASK = "subway-sheds:explainer?";
   const SAY = "subway-sheds:explainer";
-  // Only names `main.ts` uses, rather than anything a message says.
-  const isName = (name) => typeof name === "string" && /^[a-z-]+$/.test(name);
+  // Only names `main.ts` uses, rather than anything a message says:
+  // the page's, then its explainer's version, as `explainer-main-0123abcd`.
+  const isName = (name) => typeof name === "string" && /^[a-z-]+-[0-9a-f]{8}$/.test(name);
   const key = (name) => `subway-sheds:${name}`;
 
   function dismissed(name) {
