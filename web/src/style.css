@@ -785,9 +785,15 @@ body,
 }
 
 /* A project's parts, as QueensLink's route and schedule, under its name. */
-#explainer .explainer-body h4 {
+#explainer .explainer-body h4,
+#explainer .explainer-body summary {
   margin: 10px 0 2px;
   font-size: 1em;
+  font-weight: bold;
+}
+
+#explainer .explainer-body summary {
+  cursor: pointer;
 }
 
 #explainer .explainer-body p,
