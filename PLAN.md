@@ -103,12 +103,9 @@ Typing a station or an address into them may come later.
 
 ## Faster screenshots
 
-`scripts/screenshots.py` takes 72 screenshots in CI, 5 to 8 minutes,
-as SwiftShader draws the map in software and each shot sleeps 2 s first (`QUIET_MS`).
+`scripts/screenshots.py` takes 72 screenshots in CI,
+as SwiftShader draws the map in software.
 
-- Wait for the map to be drawn instead of sleeping:
-  the page marks when MapLibre is `idle` after the station's times are shown,
-  and the script waits for that before each shot.
 - Render only at 3×, and scale each shot down to 2× and 1×,
   as the layout is the same at every pixel ratio.
   Compare a scaled-down shot with a natively drawn one first, for thin lines and text.

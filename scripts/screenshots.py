@@ -16,7 +16,6 @@ from playwright.sync_api import ViewportSize, sync_playwright
 VIEWPORT: ViewportSize = {"width": 1024, "height": 813}
 PIXEL_RATIOS = (1, 2, 3)
 TIMEOUT_MS = 60_000
-QUIET_MS = 2_000
 VIEWS = {
     "now": "baseline",
     "queenslink": "queenslink",
@@ -146,7 +145,11 @@ def main() -> None:
                                 arg=shot.name,
                                 timeout=TIMEOUT_MS,
                             )
-                            page.wait_for_timeout(QUIET_MS)
+                            # Once the map has drawn this URL's times (`markDrawn` in `main.ts`).
+                            page.wait_for_function(
+                                "() => document.documentElement.dataset.drawn === location.hash",
+                                timeout=TIMEOUT_MS,
+                            )
                             path = output / f"{shot.slug}-{filename}-{pixel_ratio}x.png"
                             page.screenshot(path=str(path), timeout=TIMEOUT_MS)
                             print(path)

@@ -19,8 +19,6 @@ from playwright.sync_api import sync_playwright
 
 # How long the page has to load and work out the station's times, at most.
 TIMEOUT_MS = 60_000
-# And how long nothing else is loaded or logged for, after, for it to be done.
-QUIET_MS = 2_000
 
 
 # The main page, and QueensLink's (see `web/vite.config.ts`),
@@ -102,7 +100,11 @@ def check(url: str, station: str, control: str) -> list[str]:
             lambda r: routes.append(r.status) if r.url.endswith(f"/routes/{station}.bin") else None,
         )
         page.goto(url, wait_until="networkidle", timeout=TIMEOUT_MS)
-        page.wait_for_timeout(QUIET_MS)
+        # Once the map has drawn this URL's times (`markDrawn` in `main.ts`).
+        page.wait_for_function(
+            "() => document.documentElement.dataset.drawn === location.hash",
+            timeout=TIMEOUT_MS,
+        )
         # Opened for the first time, as in a new profile, so the explainer's shown.
         if not page.evaluate("document.querySelector('#explainer').open"):
             errors.append("didn't show the explainer on first opening the page")

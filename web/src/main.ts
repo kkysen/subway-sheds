@@ -1168,6 +1168,7 @@ controls.addEventListener("input", (event) => {
 
 // Forgets the times shown, and their bands, so that they aren't taken for another station's.
 function clearTimes(): void {
+  delete document.documentElement.dataset["drawn"];
   selectedTimes = undefined;
   selectedExitFrom = undefined;
   selectedExitMinute = undefined;
@@ -1190,7 +1191,24 @@ function drawCells(): void {
     bandsLayer.setClasses(selectedClasses, classColors(view));
     repinBand(view !== drawnView);
     drawnView = view;
+    markDrawn();
   }
+}
+
+// Said on the page once the map has finished drawing the times shown, with its tiles,
+// as `data-drawn` with the URL's hash they're for, station and controls,
+// for `scripts/screenshots.py` and `scripts/e2e_browser.py` to wait for it to match the hash.
+// The hash, not just the station, as a link to another view of the same station
+// is followed in the same page, which still says it drew the last until it draws this one.
+// Taken off while it's drawing them, so that it never says so of times drawn before.
+function markDrawn(): void {
+  delete document.documentElement.dataset["drawn"];
+  const drawn = location.hash;
+  map.once("idle", () => {
+    if (location.hash === drawn && selectedClasses !== undefined) {
+      document.documentElement.dataset["drawn"] = drawn;
+    }
+  });
 }
 
 // A station's name, with QueensLink's M bullet after a new station's, as the map draws it.
