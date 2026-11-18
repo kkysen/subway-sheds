@@ -14,6 +14,7 @@ import {
   setWorkerUrl,
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
+import { capture, capturePageview, navigationTimings, setContext } from "./analytics";
 import { BandsLayer, EARTH_CIRCUMFERENCE } from "./bands";
 import {
   type Arrivals,
@@ -426,7 +427,10 @@ function bandKey(key: HTMLElement, band: number): void {
       restorePinnedBand();
     }
   });
-  key.addEventListener("click", () => pinLegendBand(band));
+  key.addEventListener("click", () => {
+    capture("legend_band_clicked", { band });
+    pinLegendBand(band);
+  });
 }
 
 // Set once the map's layer is made, after the legend is first shown.
@@ -541,6 +545,9 @@ for (const button of controls.querySelectorAll<HTMLButtonElement>(".info-button"
   button.addEventListener("click", () => {
     const open = info.classList.toggle("open");
     button.setAttribute("aria-expanded", String(open));
+    if (open) {
+      capture("info_opened", { info: info.id });
+    }
   });
 }
 
@@ -677,10 +684,14 @@ function showStationKey(shown: boolean): void {
     // Not saved, as when storage is unavailable.
   }
 }
-element("#station-key-hide", HTMLButtonElement).addEventListener("click", () =>
-  showStationKey(false),
-);
-stationKeyShow.addEventListener("click", () => showStationKey(true));
+element("#station-key-hide", HTMLButtonElement).addEventListener("click", () => {
+  capture("station_key_toggled", { shown: false });
+  showStationKey(false);
+});
+stationKeyShow.addEventListener("click", () => {
+  capture("station_key_toggled", { shown: true });
+  showStationKey(true);
+});
 controls.classList.toggle("station-key-hidden", savedValue("station-key") === "hidden");
 
 // What the page is and how it works, shown when it's first opened, and on each load after
@@ -723,6 +734,15 @@ explainer.addEventListener("click", (event) => {
 // Never shown on its own where the page is embedded with `?explainer=off`,
 // as by a site that explains the map itself, though the "?" still opens it.
 const explainerOff = new URLSearchParams(location.search).get("explainer") === "off";
+// When the explainer was last opened, for how long it was read.
+let explainerOpenedAt = 0;
+function openExplainer(onItsOwn: boolean): void {
+  // Forgotten from the last time it was closed, as closing it by its backdrop or Escape doesn't set it.
+  explainer.returnValue = "";
+  explainerOpenedAt = performance.now();
+  capture("explainer_opened", { on_its_own: onItsOwn });
+  explainer.showModal();
+}
 // Whether it was shown on its own, rather than from the "?", so that `embed.js` saying late can close it.
 let explainerShownOnItsOwn = false;
 function showExplainerOnItsOwn(): void {
@@ -731,7 +751,7 @@ function showExplainerOnItsOwn(): void {
     return;
   }
   explainerShownOnItsOwn = true;
-  explainer.showModal();
+  openExplainer(true);
 }
 if (!explainerOff && savedValue(explainerName) !== "dismissed") {
   if (embedder === undefined) {
@@ -781,6 +801,32 @@ if (!explainerOff && savedValue(explainerName) !== "dismissed") {
 // Shown from the "?", it isn't closed by `embed.js` saying late.
 explainer.addEventListener("close", () => {
   explainerShownOnItsOwn = false;
+});
+
+// Its sections that open, as its schedule's, by their summary, for how many read them, and for how long.
+// Nothing opens them but the reader.
+for (const section of explainer.querySelectorAll("details")) {
+  const name = section.querySelector("summary")?.textContent.trim().toLowerCase() ?? "";
+  let openedAt = 0;
+  section.addEventListener("toggle", () => {
+    if (section.open) {
+      openedAt = performance.now();
+      capture("explainer_section_toggled", { section: name, open: true });
+    } else {
+      capture("explainer_section_toggled", {
+        section: name,
+        open: false,
+        seconds_open: Math.round((performance.now() - openedAt) / 1000),
+      });
+    }
+  });
+}
+// By "Show me the map" or the "×", as `close`, or "Don't show this again", as `dismiss`, or otherwise.
+explainer.addEventListener("close", () => {
+  capture("explainer_closed", {
+    how: explainer.returnValue === "" ? "other" : explainer.returnValue,
+    seconds_open: Math.round((performance.now() - explainerOpenedAt) / 1000),
+  });
 });
 
 // Collapsed to start with on small screens, unless the link says or they were left open.
@@ -891,6 +937,51 @@ function currentView(): View {
   return currentMeasure() === "saved" ? "saved" : "queenslink";
 }
 
+// What's shown, sent with every event, as the measure and projects added, on either page,
+// so that QueensLink's choice of view is said as what it changes of them, as the main page's controls would.
+function settings(): Readonly<Record<string, string | number>> {
+  return {
+    day: currentDay(),
+    measure: currentMeasure(),
+    with: currentProjects().join(","),
+    walking_speed_mph: currentSpeed(),
+    fare: currentFare(),
+    // Where the trips shown are from.
+    from_station: selected,
+  };
+}
+setContext(settings);
+// As last sent, for which changed.
+let settingsSent = settings();
+{
+  const { station } = parseHash();
+  capturePageview(station === "" ? {} : { linked_station: station });
+}
+// Not its marker turning, which `fullscreenGroup` keeps from opening or closing it.
+element("#controls summary", HTMLElement).addEventListener("click", (event) => {
+  if (!event.defaultPrevented) {
+    capture("controls_toggled", { open: !details.open });
+  }
+});
+document.addEventListener("fullscreenchange", () => {
+  capture("fullscreen_toggled", { fullscreen: document.fullscreenElement !== null });
+});
+
+// What's being drawn, for how long it takes from being asked for to being on the map:
+// the page loading, a station picked, or a setting changed,
+// and for a station, how long its times took to load, and whether they were already, from pointing at it.
+let drawing:
+  | {
+      readonly cause: "load" | "station" | "setting";
+      readonly start: number;
+      readonly prefetched?: boolean;
+      fetchMs?: number;
+    }
+  | undefined = { cause: "load", start: 0 };
+// When the data and the map were in, for how long the page took to load.
+let dataLoadedMs: number | undefined;
+let mapLoadedMs: number | undefined;
+
 const map = new MapLibreMap({
   container: "map",
   style: "https://tiles.openfreemap.org/styles/positron",
@@ -960,7 +1051,7 @@ explainerButton.title = "About this map";
 explainerButton.setAttribute("aria-label", "About this map");
 explainerButton.addEventListener("click", () => {
   explainerShownOnItsOwn = false;
-  explainer.showModal();
+  openExplainer(false);
 });
 explainerOpen.append(explainerButton);
 function placeExplainerOpen(): void {
@@ -976,6 +1067,9 @@ smallScreen.addEventListener("change", placeExplainerOpen);
 
 // Listened for before awaiting the data, which the map can finish loading before.
 const loaded = new Promise((resolve) => map.once("load", resolve));
+void loaded.then(() => {
+  mapLoadedMs = performance.now();
+});
 
 // As the pipeline writes them; see `src/subway_sheds/export.py`.
 interface RouteInfo {
@@ -996,6 +1090,7 @@ const [grid, stations, lines, nearExits, routeInfo, patterns] = await Promise.al
   fetchJson<Record<string, RouteInfo>>("routes.json"),
   fetchJson<Pattern[][]>("patterns.json"),
 ]);
+dataLoadedMs = performance.now();
 const { width, height } = rasterSize(grid);
 const bandsLayer = new BandsLayer("bands", grid, width, height);
 // Each raster pixel's cell, as `grid.json` lists them, or -1 where there's none.
@@ -1220,8 +1315,34 @@ function markDrawn(): void {
   map.once("idle", () => {
     if (location.hash === drawn && selectedClasses !== undefined) {
       document.documentElement.dataset["drawn"] = drawn;
+      sayDrawn();
     }
   });
+}
+
+function sayDrawn(): void {
+  if (drawing === undefined) {
+    return;
+  }
+  const round = (ms: number | undefined): number | undefined =>
+    ms === undefined ? undefined : Math.round(ms);
+  const ms = round(performance.now() - drawing.start);
+  if (drawing.cause === "load") {
+    capture("page_ready", {
+      ...navigationTimings(),
+      data_ms: round(dataLoadedMs),
+      map_ms: round(mapLoadedMs),
+      drawn_ms: ms,
+    });
+  } else {
+    capture("times_drawn", {
+      cause: drawing.cause,
+      ms,
+      prefetched: drawing.prefetched,
+      fetch_ms: round(drawing.fetchMs),
+    });
+  }
+  drawing = undefined;
 }
 
 // A station's name, with QueensLink's M bullet after a new station's, as the map draws it.
@@ -1234,13 +1355,19 @@ function stationLabel(station: Station): (string | HTMLElement)[] {
   return [station.name, " ", m];
 }
 
-async function selectStation(id: string): Promise<void> {
+// Picks a station, said as picked unless it's the one the page opens on.
+async function selectStation(id: string, picked = true): Promise<void> {
   const station = stationsById.get(id);
   // Picked again, as when a link to another view of it is followed, it's already loaded.
   if (station === undefined || (id === selected && selectedArrivals !== undefined)) {
     return;
   }
   selected = id;
+  if (picked) {
+    capture("station_selected");
+    drawing = { cause: "station", start: performance.now(), prefetched: timesCache.has(id) };
+  }
+  const asked = drawing;
   // The last station's, which its journeys would otherwise be drawn over, mixed with this one's.
   selectedArrivals = undefined;
   selectedRoutes = undefined;
@@ -1258,6 +1385,9 @@ async function selectStation(id: string): Promise<void> {
   const { arrivals, routes } = await fetchTimes(id);
   if (selected !== id) {
     return;
+  }
+  if (asked !== undefined && asked === drawing) {
+    asked.fetchMs = performance.now() - asked.start;
   }
   selectedArrivals = arrivals;
   selectedRoutes = routes;
@@ -1356,6 +1486,47 @@ function cellAt(lngLat: LngLat): number {
   return at === undefined
     ? -1
     : (cellOfPixel[Math.round(at.row) * width + Math.round(at.col)] ?? -1);
+}
+
+// Where a cell is, as where it's tapped or pointed at is said: its center, as "lat,lng", to about a meter,
+// so that it's said the same however the grid's cells are numbered, and pastes straight into a map,
+// or nothing if there's no cell.
+function cellPlace(cell: number): { readonly to_cell_center?: string } {
+  const col = grid.cols[cell];
+  const row = grid.rows[cell];
+  if (col === undefined || row === undefined) {
+    return {};
+  }
+  const x = grid.x0 + col * grid.spacing;
+  const y = grid.y0 + row * grid.spacing;
+  const degrees = (radians: number): number => Math.round((radians * 180 * 1e5) / Math.PI) / 1e5;
+  const lng = degrees((2 * Math.PI * x) / EARTH_CIRCUMFERENCE);
+  const lat = degrees(
+    2 * Math.atan(Math.exp((2 * Math.PI * y) / EARTH_CIRCUMFERENCE)) - Math.PI / 2,
+  );
+  return { to_cell_center: `${lat},${lng}` };
+}
+
+// How long the mouse rests on a station or cell before it's said to have been pointed at,
+// so that sweeping across the map says nothing.
+const DWELL_MS = 1000;
+let dwelling: string | undefined;
+let dwellTimeout: number | undefined;
+
+// Says the station or cell under the mouse once it's rested there, or stops waiting to if neither.
+function dwellOn(station: string | undefined, cell: number): void {
+  const at = station ?? (cell < 0 ? undefined : `cell ${cell}`);
+  if (at === dwelling) {
+    return;
+  }
+  dwelling = at;
+  clearTimeout(dwellTimeout);
+  dwellTimeout =
+    at === undefined
+      ? undefined
+      : window.setTimeout(() => {
+          capture("hovered", station === undefined ? cellPlace(cell) : { to_station: station });
+        }, DWELL_MS);
 }
 
 // The station quickest to walk out of to `cell` at the walking speed chosen, through its entrance,
@@ -1459,6 +1630,7 @@ locateButton.addEventListener("click", async () => {
   locateButton.classList.remove("maplibregl-ctrl-geolocate-waiting");
   locating = false;
   if (position === undefined) {
+    capture("locate_failed", { reason: failure === undefined ? "unknown" : failure });
     sayLocate(failure);
     return;
   }
@@ -1466,7 +1638,9 @@ locateButton.addEventListener("click", async () => {
   const cell = cellAt(here);
   const station = cell < 0 ? undefined : nearestStation(cell);
   if (station === undefined) {
-    sayLocate(cell < 0 ? "You’re outside the map" : "No station within an hour’s walk");
+    const note = cell < 0 ? "You’re outside the map" : "No station within an hour’s walk";
+    capture("locate_failed", { reason: note });
+    sayLocate(note);
     return;
   }
   // Brought into view if it's not, as a station clicked always is.
@@ -2556,12 +2730,16 @@ await loaded;
     } else {
       // On a phone, which has no pointing, this is the only way to see what a band is.
       pinBand(event.lngLat);
+      if (pinned?.lngLat !== undefined) {
+        capture("band_pinned", { band: pinned.band, ...cellPlace(cellAt(event.lngLat)) });
+      }
     }
   });
   map.on("mousemove", (event: MapMouseEvent) => {
     const id = stationAt(event, MOUSE_RADIUS);
     map.getCanvas().style.cursor = id === undefined ? "" : "pointer";
     hoverStation(id);
+    dwellOn(id, cellAt(event.lngLat));
     const station = id === undefined ? undefined : stationsById.get(id);
     if (station === undefined) {
       showBand(bandAt(event.lngLat), event.lngLat);
@@ -2620,6 +2798,7 @@ await loaded;
       const station = stationsById.get(id);
       if (station !== undefined) {
         held = true;
+        capture("station_held", { to_station: station.id });
         showStationPopup(station);
       }
     }, HOLD_MS);
@@ -2634,17 +2813,19 @@ await loaded;
     }
   });
   map.getCanvas().addEventListener("mouseleave", () => {
+    dwellOn(undefined, -1);
     hoverStation(undefined);
     restorePinnedBand();
   });
 
-  void selectStation(stationFromHash());
+  void selectStation(stationFromHash(), false);
 }
 
 // As when a link to another station or view is followed from the page itself.
 addEventListener("hashchange", () => {
   details.open = linkedOpen("legend", details.open);
   restoreControls();
+  settingsSent = settings();
   applyControls();
   void selectStation(stationFromHash());
 });
@@ -2663,5 +2844,18 @@ controls.addEventListener("change", (event) => {
   }
   saveControls();
   writeHash();
+  reportSettings();
   applyControls();
 });
+
+// Each setting changed, as one control can change another, as time saved adds QueensLink.
+function reportSettings(): void {
+  const now = settings();
+  for (const [setting, value] of Object.entries(now)) {
+    if (setting !== "from_station" && value !== settingsSent[setting]) {
+      capture("setting_changed", { setting, from: settingsSent[setting], to: value });
+    }
+  }
+  settingsSent = now;
+  drawing = { cause: "setting", start: performance.now() };
+}
