@@ -88,13 +88,19 @@ function projectLogo(project: Project): HTMLImageElement {
 }
 
 // What's measured and the projects added, as the minutes' row says them,
-// each shorter than the last, as the days are, with the projects' logos, or "now" with none added.
+// each shorter than the last, as the days are, with the projects' logos,
+// or with none added, "without" all the projects that can be, as QueensLink's page says it.
 function shortMeasureNames(
   measure: Measure,
   added: readonly Project[],
 ): (string | HTMLElement)[][] {
   if (added.length === 0) {
-    return [["time now"], ["time now"], ["now"]];
+    const logos = (): HTMLElement[] => projects.map(projectLogo);
+    return [
+      ["time without ", ...logos()],
+      ["time w/o ", ...logos()],
+      ["w/o ", ...logos()],
+    ];
   }
   const logos = (): HTMLElement[] => added.map(projectLogo);
   const what = measure === "saved" ? "time saved" : "time";
