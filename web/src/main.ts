@@ -390,15 +390,15 @@ function describeBand(band: number, view: View): string {
   if (view === "saved") {
     return `${minutes} saved with QueensLink`;
   }
-  // As the minutes' row and the journeys say them: "now", without any projects, or with them.
-  const scenario = view === "baseline" ? "now" : "with QueensLink";
+  // As the minutes' row says them: without QueensLink, or with it.
+  const scenario = view === "baseline" ? "without QueensLink" : "with QueensLink";
   return `${minutes} from ${selectedName} ${scenario}`;
 }
 
 // `words` with QueensLink's logo for its name, for where there's room for it, as the band's popup,
-// and "w/" for "with" if `short`.
+// and "w/" for "with" and "w/o" for "without" if `short`.
 function withLogo(words: string, short: boolean): (string | HTMLElement)[] {
-  return (short ? words.replaceAll(" with ", " w/ ") : words)
+  return (short ? words.replaceAll(" with ", " w/ ").replaceAll(" without ", " w/o ") : words)
     .split("QueensLink")
     .flatMap((words, i) => (i === 0 ? [words] : [projectLogo("queenslink"), words]));
 }
