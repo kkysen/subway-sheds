@@ -123,7 +123,7 @@ export function capturePageview(properties: Properties = {}): void {
   });
 }
 
-// What the page loaded, by kind, summed until it's next hidden:
+// What the page loaded, by kind, summed until it's next sent, as still visible or as hidden:
 // its own files by their folder or name, as `routes` for `data/routes/H03.bin`, and others' by host, as the map's tiles.
 interface Loads {
   count: number;
@@ -149,7 +149,8 @@ function loadKind(url: URL): string {
   return first;
 }
 
-// The slowest tap, click, or key press since the page was last hidden, from it to the next frame drawn after it.
+// The slowest tap, click, or key press since the page was last sent, as still visible or as hidden,
+// from it to the next frame drawn after it.
 let slowestInteraction: { readonly ms: number; readonly name: string } | undefined;
 
 if (enabled) {
@@ -204,18 +205,18 @@ if (enabled) {
     }
   });
 
-  // Since it was last shown, or since it was loaded.
+  // Since it was last sent, as still visible or as hidden, or else since it was last shown or loaded.
   let shownAt = performance.now();
-  // Whether it's been sent as hidden since it was last shown, so that it isn't sent twice.
-  let sentHidden = false;
-  const sendHidden = (): void => {
-    if (sentHidden) {
-      return;
-    }
-    sentHidden = true;
+  // What it's done since then, after which it's counted afresh,
+  // so that summed over a visit's `page_visible` and `page_hidden`, nothing is counted twice.
+  const usage = (): Properties => {
     const round = (ms: number): number => Math.round(ms);
-    capture("page_hidden", {
-      visible_seconds: Math.round((performance.now() - shownAt) / 1000),
+    const seconds = Math.round((performance.now() - shownAt) / 1000);
+    // By the seconds sent rather than to now, so that what they're rounded by is counted in the next,
+    // and their sum doesn't drift.
+    shownAt += seconds * 1000;
+    const properties = {
+      visible_seconds: seconds,
       loads: Object.fromEntries(
         [...loads].map(([kind, summed]) => [
           kind,
@@ -233,14 +234,42 @@ if (enabled) {
       slowest_interaction_ms:
         slowestInteraction === undefined ? undefined : round(slowestInteraction.ms),
       slowest_interaction: slowestInteraction?.name,
-    });
+    };
     loads.clear();
     slowestInteraction = undefined;
+    return properties;
+  };
+
+  // Every 15 seconds while it's visible, and sent at once,
+  // as the browsers in iPhone apps, as Instagram's, can close it without sending it as hidden,
+  // which would otherwise lose all of it, rather than at most the last 15 seconds.
+  const VISIBLE_MS = 15_000;
+  let visibleInterval: number | undefined;
+  const sendVisible = (): void => {
+    capture("page_visible", usage());
+    flush();
+  };
+  if (document.visibilityState === "visible") {
+    visibleInterval = window.setInterval(sendVisible, VISIBLE_MS);
+  }
+
+  // Whether it's been sent as hidden since it was last shown, so that it isn't sent twice.
+  let sentHidden = false;
+  const sendHidden = (): void => {
+    if (sentHidden) {
+      return;
+    }
+    sentHidden = true;
+    clearInterval(visibleInterval);
+    visibleInterval = undefined;
+    capture("page_hidden", usage());
   };
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "hidden") {
       shownAt = performance.now();
       sentHidden = false;
+      clearInterval(visibleInterval);
+      visibleInterval = window.setInterval(sendVisible, VISIBLE_MS);
       return;
     }
     sendHidden();
