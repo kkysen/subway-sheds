@@ -259,11 +259,30 @@ export function navigationTimings(): Properties {
   const [navigation] = performance.getEntriesByType("navigation");
   const connection = (navigator as { readonly connection?: { readonly effectiveType?: string } })
     .connection;
-  return navigation instanceof PerformanceNavigationTiming
-    ? {
-        first_byte_ms: Math.round(navigation.responseStart),
-        dom_ready_ms: Math.round(navigation.domContentLoadedEventEnd),
-        connection: connection?.effectiveType,
-      }
-    : { connection: connection?.effectiveType };
+  if (!(navigation instanceof PerformanceNavigationTiming)) {
+    return { connection: connection?.effectiveType };
+  }
+  // Not in every browser, nor in TypeScript's types of them yet.
+  const { activationStart, deliveryType } = navigation as {
+    readonly activationStart?: number | null;
+    readonly deliveryType?: string;
+  };
+  return {
+    // As the browser says them, to be made sense of in analysis,
+    // as Safari, for a page in another site's frame, as on QueensLink's, says it was asked for and began coming at 0.
+    // Unrounded, so that Chromium's times under a millisecond, from its cache, aren't taken for those 0s.
+    navigation: {
+      type: navigation.type,
+      fetchStart: navigation.fetchStart,
+      requestStart: navigation.requestStart,
+      responseStart: navigation.responseStart,
+      responseEnd: navigation.responseEnd,
+      domContentLoadedEventEnd: navigation.domContentLoadedEventEnd,
+      transferSize: navigation.transferSize,
+      deliveryType,
+      activationStart: activationStart ?? undefined,
+    },
+    dom_ready_ms: Math.round(navigation.domContentLoadedEventEnd),
+    connection: connection?.effectiveType,
+  };
 }
