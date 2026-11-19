@@ -5,7 +5,9 @@
   as the browser can block or clear the map's own in an iframe, as Safari does.
   For a site that explains the map itself, add `?explainer=off` to the iframe's `src`,
   and the map only explains itself when its "?" is clicked.
+  `allow="geolocation"` lets the map ask where the visitor is, to start from the station nearest them,
+  which browsers otherwise refuse in another site's iframe.
 -->
 <iframe src="https://kkysen.github.io/subway-sheds/queenslink/" title="Travel Times with QueensLink"
-  style="display: block; width: 100%; height: 80vh; border: 0;" loading="lazy" allowfullscreen></iframe>
+  style="display: block; width: 100%; height: 80vh; border: 0;" loading="lazy" allow="geolocation" allowfullscreen></iframe>
 <script src="https://kkysen.github.io/subway-sheds/embed.js" defer></script>
