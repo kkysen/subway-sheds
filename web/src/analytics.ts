@@ -206,11 +206,13 @@ if (enabled) {
 
   // Since it was last shown, or since it was loaded.
   let shownAt = performance.now();
-  const hidden = (): void => {
-    if (document.visibilityState !== "hidden") {
-      shownAt = performance.now();
+  // Whether it's been sent as hidden since it was last shown, so that it isn't sent twice.
+  let sentHidden = false;
+  const sendHidden = (): void => {
+    if (sentHidden) {
       return;
     }
+    sentHidden = true;
     const round = (ms: number): number => Math.round(ms);
     capture("page_hidden", {
       visible_seconds: Math.round((performance.now() - shownAt) / 1000),
@@ -234,11 +236,22 @@ if (enabled) {
     });
     loads.clear();
     slowestInteraction = undefined;
-    flush();
   };
-  document.addEventListener("visibilitychange", hidden);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") {
+      shownAt = performance.now();
+      sentHidden = false;
+      return;
+    }
+    sendHidden();
+    flush();
+  });
   // Closed without being hidden first, as some browsers do; sent then, as there's no later.
-  addEventListener("pagehide", flush);
+  // Either may come first, as Safari has sent `pagehide` before `visibilitychange`.
+  addEventListener("pagehide", () => {
+    sendHidden();
+    flush();
+  });
 }
 
 // How long the page took to start, from the browser's own timings of it.
