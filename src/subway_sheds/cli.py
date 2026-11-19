@@ -28,10 +28,11 @@ lazy from subway_sheds.grid import land_grid
 
 app = Typer(no_args_is_help=True)
 
-# Geofabrik's New York State extract, which they regenerate daily, with its MD5 beside it,
+# Geofabrik's New York State extract, which they regenerate daily,
 # and its `state.txt`, which names the OSM data's version (its replication sequence number).
-NEW_YORK_OSM_URL = "https://download.geofabrik.de/north-america/us/new-york-latest.osm.pbf"
-NEW_YORK_OSM_STATE_URL = "https://download.geofabrik.de/north-america/us/new-york-updates/state.txt"
+# The latest extract redirects to that day's, which has its MD5 beside it.
+NEW_YORK_OSM_URL = "https://download.geofabrik.de/north-america/us/new-york/new-york-latest.osm.pbf"
+NEW_YORK_OSM_STATE_URL = "https://download.geofabrik.de/north-america/us/new-york/updates/state.txt"
 # How often Geofabrik is asked whether it has newer OSM data, at most.
 OSM_CHECK_EVERY = datetime.timedelta(days=1)
 
@@ -53,9 +54,9 @@ def _download(url: str, dest: Path) -> None:
     partial.rename(dest)
 
 
-def _get_text(url: str) -> str:
+def _get(url: str, *, follow_redirects: bool = True) -> httpx.Response:
     """
-    A small file's text, over IPv4, retrying a server slow to answer.
+    A small file, over IPv4, retrying a server slow to answer.
 
     Geofabrik's servers sometimes take minutes to answer even for a few lines,
     most often over IPv6, though another of them, which a retry may reach, answers at once.
@@ -66,14 +67,29 @@ def _get_text(url: str) -> str:
     for attempt in range(8):
         try:
             with httpx.Client(transport=transport, timeout=10) as client:
-                response = client.get(url, follow_redirects=True)
+                response = client.get(url, follow_redirects=follow_redirects)
         except httpx.TimeoutException, httpx.ConnectError:
             if attempt == 7:
                 raise
             continue
-        response.raise_for_status()
-        return response.text
+        # Not `raise_for_status` alone, which fails on a redirect not followed too.
+        if response.is_error:
+            response.raise_for_status()
+        return response
     raise AssertionError("unreachable")
+
+
+def _get_text(url: str) -> str:
+    """A small file's text; see `_get`."""
+    return _get(url).text
+
+
+def _get_redirect(url: str) -> str:
+    """Where `url` redirects to; see `_get`."""
+    response = _get(url, follow_redirects=False)
+    if not response.is_redirect:
+        raise RuntimeError(f"{url} doesn't redirect, but answers {response.status_code}")
+    return str(response.url.join(response.headers["location"]))
 
 
 def _fetch_streets(force: bool) -> None:
@@ -106,22 +122,22 @@ def _fetch_streets(force: bool) -> None:
         _checked()
         return
     extract = paths.CACHE / "new-york-latest.osm.pbf"
-    md5_url = f"{NEW_YORK_OSM_URL}.md5"
+    # That day's extract, not the latest, which may change to the next day's mid-download,
+    # and which has no MD5 of its own.
+    url = _get_redirect(NEW_YORK_OSM_URL)
+    expected = _get_text(f"{url}.md5").split()[0]
     for attempt in range(3):
-        echo(f"downloading {NEW_YORK_OSM_URL}")
-        expected = _get_text(md5_url).split()[0]
-        _download(NEW_YORK_OSM_URL, extract)
+        echo(f"downloading {url}")
+        _download(url, extract)
         with extract.open("rb") as f:
             actual = hashlib.file_digest(f, "md5").hexdigest()
-        # Geofabrik may publish the next day's extract between its MD5 and the download,
-        # as it did once during CI; its MD5 then is the new one's.
-        if actual in (expected, _get_text(md5_url).split()[0]):
+        if actual == expected:
             break
         extract.unlink()
         if attempt == 2:
-            raise RuntimeError(f"{NEW_YORK_OSM_URL} has MD5 {actual}, not {expected}")
-    # The version downloaded, which may be newer than the one checked for.
-    latest = _get_text(NEW_YORK_OSM_STATE_URL)
+            raise RuntimeError(f"{url} has MD5 {actual}, not {expected}")
+    # The version checked for, before the extract was picked, so if the extract is newer,
+    # the next check downloads it again, rather than skipping a newer one.
     kept = osm.filter_streets(extract, paths.OSM_PBF)
     extract.unlink()
     paths.OSM_SOURCE_STATE.write_text(latest)
