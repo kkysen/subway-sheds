@@ -3,6 +3,7 @@ import gzip
 import hashlib
 import itertools
 import re
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -60,7 +61,8 @@ def _get(url: str, *, follow_redirects: bool = True) -> httpx.Response:
 
     Geofabrik's servers sometimes take minutes to answer even for a few lines,
     most often over IPv6, though another of them, which a retry may reach, answers at once.
-    From CI, though, none of them sometimes answer for minutes.
+    From CI, though, none of them sometimes answer for minutes,
+    or all of them refuse to connect at once, so the retries are spread over a minute and a half.
     """
     # Binding to IPv4's any address is how `httpx` is told to connect over IPv4.
     transport = httpx.HTTPTransport(local_address="0.0.0.0")
@@ -68,9 +70,12 @@ def _get(url: str, *, follow_redirects: bool = True) -> httpx.Response:
         try:
             with httpx.Client(transport=transport, timeout=10) as client:
                 response = client.get(url, follow_redirects=follow_redirects)
-        except httpx.TimeoutException, httpx.ConnectError:
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
             if attempt == 7:
                 raise
+            wait = min(2**attempt, 30)
+            echo(f"retrying {url} in {wait} s, after {e!r}", err=True)
+            time.sleep(wait)
             continue
         # Not `raise_for_status` alone, which fails on a redirect not followed too.
         if response.is_error:
@@ -108,10 +113,10 @@ def _fetch_streets(force: bool) -> None:
         return
     try:
         latest = _get_text(NEW_YORK_OSM_STATE_URL)
-    except httpx.TimeoutException, httpx.ConnectError:
+    except (httpx.TimeoutException, httpx.ConnectError) as e:
         if force or not paths.OSM_PBF.exists():
             raise
-        echo(f"keeping the streets, since {NEW_YORK_OSM_STATE_URL} didn't answer", err=True)
+        echo(f"keeping the streets, since {NEW_YORK_OSM_STATE_URL} didn't answer: {e!r}", err=True)
         return
     if (
         not force
